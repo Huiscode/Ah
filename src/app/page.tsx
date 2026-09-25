@@ -18,6 +18,7 @@ import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
 import { MarketTable } from "@/components/market-table";
 import { WatchStar } from "@/components/watch-star";
+import { RadarParamsPanel } from "@/components/radar-params-panel";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import Link from "next/link";
 
@@ -138,9 +139,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               )}
             </div>
           </Panel>
-          <Panel>
-            <PanelHeader title="雷达参数" action={<span className="font-mono text-[10px] text-terminal-muted">游戏内权威 · 扫描后同步</span>} />
-            <div className="space-y-2 p-3 font-mono text-xs">
+          <RadarParamsPanel note="游戏内权威 · 扫描后同步">
+            <div className="space-y-2 font-mono text-xs">
               <p className="text-[10px] leading-relaxed text-terminal-muted">
                 这些阈值在游戏内修改（拍卖行面板「设置」按钮或 /wahopt），改动立即生效并随下次扫描同步回这里。此处为只读跟随。捡漏雷达同时受 NPC 必赚（无门槛）与以下第二档门槛约束。
               </p>
@@ -190,7 +190,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               </div>
               <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">排除最新在售量超过该上限的物品——供给过剩的商品有囤积风险。0 表示不设上限。</p>
             </div>
-          </Panel>
+          </RadarParamsPanel>
           <Panel>
             <PanelHeader title="触发的预警" action={<Bell size={13} className={triggeredAlerts.length > 0 ? "text-terminal-red" : "text-terminal-muted"} />} />
             <div className="space-y-2 p-3 font-mono text-xs">
