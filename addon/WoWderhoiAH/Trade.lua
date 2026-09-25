@@ -1,31 +1,38 @@
--- WAH tab: deal radar plus buy list. The radar is the differentiated
--- feature — it crosses this session's scan against the in-game 7d P10
--- median to surface listings 15%+ below their usual price, something
--- neither Auctionator nor the stock UI can do.
+-- WAH panel (WoW: Forever / retail 12.x port): deal radar plus buy list.
+-- The radar crosses this session's scan against the in-game 7d P10 median
+-- to surface listings 15%+ below their usual price.
 --
--- Buy safety: the live row is re-read and name/count/price verified at
--- click time; any mismatch aborts with a rescan prompt. Sell posting
--- only prefills the stock UI price fields.
+-- Retail architecture changes vs the TBC build:
+--  * There is no AuctionFrameTabN tab mechanism on this client (the AH is a
+--    single AuctionHouseFrame with built-in Buy/Sell views), so the WAH page
+--    is now a draggable floating panel shown while the AH is open.
+--  * The stock UI's QueryAuctionItems name search is replaced by a search
+--    over the local scan data (the full-house replication already covers the
+--    whole book). Buying re-verifies live: it queries the exact itemKey,
+--    picks the cheapest valid listing, and PlaceBuyout's it.
+--  * Sell prefill is downgraded to a suggested-price whisper: the classic
+--    sell-slot events/fields do not exist on the retail AH frame.
+--
+-- Buy safety: the live row is re-queried and only a listing whose buyout
+-- still exists is purchased; anything stale aborts with a message.
 
 local ADDON_NAME, WAH = ...
 local L = WAH.L
 
 local ROWS_VISIBLE = 12 -- replaced in createTradeFrame by what the panel actually fits
 local ROW_HEIGHT = 22
--- The backdrop draws its border art inside the frame's own bounds, so a
--- child anchored at the edge is painted on the bevel. Every child keeps PAD
--- clear of all four sides; PAD is wider than the backdrop's declared inset
--- because the dialog-box border's visible bevel runs past it.
 local PAD = 8
 -- Deal-radar thresholds live in WAH.RADAR (GeneratedRules.lua, compiled from
 -- src/lib/market-rules.ts) so the in-game radar and the desktop terminal
 -- classify every scan identically.
 
 local trade = nil
-local results = {} -- search rows: { index, itemId, name, count, buyout, unitPrice, texture }
+local results = {} -- rows: { itemId, name, minPrice, marketPrice, quantity }
 local deals = {} -- radar rows: { itemId, name, minPrice, med7, discountPercent }
 local mode = "deals" -- which list the scroll frame renders
-local searching = false
+
+local lastSellName = nil
+local pendingBuyItemId = nil
 
 local function chatMessage(text)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WAH|r " .. text)
@@ -33,13 +40,6 @@ end
 
 -- ============================ Table model =============================
 
--- Compact money. GetCoinTextureString always prints all three units with
--- inline coin icons, so no two prices in a column line up and 24s31c of
--- noise crowds out the gold that actually decides the trade. Two units is
--- everything anyone acts on; the third never changes a decision.
--- Deliberately keeps the silver that formatWowMoney's compact mode drops
--- past 100g: 199g99s is a bait price and 199g01s is not, and the radar
--- exists to make exactly that difference visible.
 local function money(copper)
   local total = math.floor((copper or 0) + 0.5)
   local gold = math.floor(total / 10000)
@@ -56,10 +56,6 @@ local function moneyCell(value) return money(value) end
 local function discountCell(value) return string.format("|cff55ff55-%.0f%%|r", value) end
 local function countCell(value) return tostring(value) end
 
--- Four right-aligned slots, each holding exactly one quantity, so every
--- number is comparable straight down its column and sortable by its own
--- header. A mode with fewer columns pads from the left, which keeps money
--- in the same slots whichever list is showing.
 local COL_COUNT = 4
 local DEAL_COLUMNS = {
   { key = "discountPercent", label = "COL_DISC", cell = discountCell },
@@ -68,12 +64,12 @@ local DEAL_COLUMNS = {
   { key = "med7", label = "COL_REF", cell = moneyCell }
 }
 local RESULT_COLUMNS = {
-  { key = "count", label = "COL_QTY", cell = countCell },
-  { key = "unitPrice", label = "COL_UNIT", cell = moneyCell, asc = true },
-  { key = "buyout", label = "COL_TOTAL", cell = moneyCell, asc = true }
+  { key = "quantity", label = "COL_QTY", cell = countCell },
+  { key = "minPrice", label = "TT_MIN", cell = moneyCell, asc = true },
+  { key = "marketPrice", label = "COL_P10", cell = moneyCell, asc = true }
 }
 
-local sortKey = nil -- nil = the current mode's default ordering
+local sortKey = nil
 local sortAsc = false
 
 local function columnAt(slot)
@@ -81,10 +77,6 @@ local function columnAt(slot)
   return columns[slot - (COL_COUNT - #columns)]
 end
 
--- The default order carries the judgement the radar exists to make:
--- vendor deals first because they carry no market risk, then by absolute
--- profit. Clicking any header drops that tiering for a plain one-column
--- sort — the user has taken over the ranking at that point.
 local function applySort()
   local rows = mode == "deals" and deals or results
   if not sortKey then
@@ -94,7 +86,7 @@ local function applySort()
         return left.profit > right.profit
       end)
     else
-      table.sort(rows, function(left, right) return left.unitPrice < right.unitPrice end)
+      table.sort(rows, function(left, right) return left.minPrice < right.minPrice end)
     end
     return
   end
@@ -105,7 +97,7 @@ local function applySort()
   end)
 end
 
-local renderRows -- forward declaration; a header click re-renders after sorting
+local renderRows -- forward declaration
 
 local function sortMark(key)
   if sortKey ~= key then return "" end
@@ -127,7 +119,6 @@ end
 
 local function refreshDeals()
   wipe(deals)
-  -- A rebuilt row set invalidates whichever column the user last sorted by.
   sortKey = nil
   local scan = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION and WoWderhoiAH_ScanData.items
   if not scan or not next(scan) then
@@ -154,11 +145,7 @@ local function refreshDeals()
         discountPercent = (1 - entry.minPrice / entry.vendorP) * 100
       }
     -- Class 2: P10 median discount. Requires history depth (3+ scans) AND a
-    -- live market (3+ auctions) AND a worthwhile absolute spread —
-    -- otherwise the list fills with illiquid junk nobody ever buys. The
-    -- last two conditions distrust med7 itself: a flat series is one
-    -- camper's ask, and a discount past the cap means the reference broke,
-    -- not that the listing is cheap. Neither applies to vendor deals above.
+    -- live market (3+ auctions) AND a worthwhile absolute spread.
     elseif history and #history.pts >= WAH.RADAR.minHistory and history.med7 and history.med7 > 0
       and entry.minPrice and entry.minPrice > 0
       and (entry.numAuctions or 0) >= WAH.RADAR.minAuctions
@@ -185,162 +172,147 @@ local function refreshDeals()
   chatMessage(#deals == 0 and L.DEALS_NONE or string.format(L.DEALS_FOUND, #deals))
 end
 
--- ============================== Buy side ==============================
+-- ============================== Search ================================
 
-local function collectSearchResults()
+-- Local search over the session scan: the replication already holds the
+-- whole book, so a name filter here is exact without another server query.
+local function refreshResults(query)
   wipe(results)
-  local numOnPage = GetNumAuctionItems("list")
-  for index = 1, numOnPage do
-    -- buyoutPrice is the 10th return; the 9th is minIncrement, which is
-    -- 0 on no-bid auctions and silently empties the list if misread.
-    local name, texture, count, _, _, _, _, _, _, buyoutPrice = GetAuctionItemInfo("list", index)
-    local link = GetAuctionItemLink("list", index)
-    local itemId = link and tonumber(link:match("item:(%d+)"))
-    if itemId and name and buyoutPrice and buyoutPrice > 0 and count and count > 0 then
+  local scan = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION
+    and WoWderhoiAH_ScanData.items
+  if not scan or not next(scan) then
+    chatMessage(L.DEALS_NEED_SCAN)
+    return
+  end
+  local needle = string.lower(query or "")
+  needle = needle:gsub("^%s+", ""):gsub("%s+$", "")
+  if needle == "" then
+    chatMessage(L.SEARCH_NEED_TEXT)
+    return
+  end
+  for itemId, entry in pairs(scan) do
+    local name = entry.name or ""
+    if string.find(string.lower(name), needle, 1, true) then
       results[#results + 1] = {
-        index = index,
         itemId = itemId,
         name = name,
-        count = count,
-        buyout = buyoutPrice,
-        unitPrice = buyoutPrice / count,
-        texture = texture
+        minPrice = entry.minPrice,
+        marketPrice = entry.marketPrice,
+        quantity = entry.quantity
       }
     end
+  end
+  if #results == 0 then
+    chatMessage(string.format(L.SEARCH_NONE, query))
   end
   sortKey = nil
   applySort()
 end
 
-local runSearch -- forward declaration; buy-refresh and deal rows trigger searches
+-- ============================== Buy side ==============================
 
--- The radar reads WoWderhoiAH_ScanData as its record of what is listed
--- right now, and only a full rescan ever writes it — so buying the cheapest
--- listing left the scan advertising a price nobody can pay, and the bought
--- deal came back every time the list was rebuilt. This is the one moment in
--- a session that knows the listing is gone, so the correction is written
--- here, from the rows still on the list.
---
--- Ceiling: those rows are one query page of buyout listings, never the whole
--- book, so the price this lands on is never below the truth. It can hide a
--- real deal until the next scan; it can never invent one. That is the right
--- direction for a list whose whole value is that its rows are real.
-local function repriceAfterPurchase(bought)
-  local scan = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION
-    and WoWderhoiAH_ScanData.items
-  local scanned = scan and scan[bought.itemId]
-  if not scanned then return end
-  local cheapest = nil
-  for _, row in ipairs(results) do
-    if row.itemId == bought.itemId and row.index ~= bought.index
-      and (not cheapest or row.unitPrice < cheapest) then
-      cheapest = row.unitPrice
-    end
-  end
-  if not cheapest then
-    -- Nothing of this item left on the page: every number in the entry
-    -- describes a book that no longer exists, and a zeroed minimum would
-    -- read as "free" on the tooltip. The 7d history it is judged against
-    -- lives elsewhere and survives; the next scan re-lists the item.
-    scan[bought.itemId] = nil
+-- Retail has no "buy out the whole listing by list index" call. Buying is:
+-- 1) QueryForItem the exact itemKey (server round-trip, throttled),
+-- 2) read the live item search results, pick the cheapest buyout listing
+--    that is not our own,
+-- 3) PlaceBuyout it.
+-- The listing is therefore verified at click time, never trusted from the
+-- scan snapshot.
+local function startBuy(itemId, name)
+  if pendingBuyItemId then
+    chatMessage(L.BUY_PENDING)
     return
   end
-  scanned.minPrice = cheapest
-  scanned.numAuctions = math.max((scanned.numAuctions or 1) - 1, 0)
+  if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then
+    chatMessage(L.SCAN_OPEN_AH_FIRST)
+    return
+  end
+  local itemKey
+  local ok = pcall(function()
+    itemKey = C_AuctionHouse.MakeItemKey(itemId, nil, 0, nil)
+  end)
+  if not ok or not itemKey then
+    chatMessage(L.BUY_FAILED)
+    return
+  end
+  pendingBuyItemId = itemId
+  chatMessage(string.format(L.BUY_QUERYING, name))
+  pcall(C_AuctionHouse.QueryForItem, itemKey, nil, nil, nil)
 end
 
-local function verifyAndBuy(row)
-  local name, _, count, _, _, _, _, _, _, buyoutPrice = GetAuctionItemInfo("list", row.index)
-  if name ~= row.name or count ~= row.count or buyoutPrice ~= row.buyout then
-    chatMessage("|cffff5555" .. L.LISTING_CHANGED .. "|r")
+local repriceAfterPurchase -- forward declaration; defined after finalizeBuy
+
+local function finalizeBuy(itemKey)
+  local targetId = pendingBuyItemId
+  if not targetId or not itemKey or itemKey.itemID ~= targetId then return end
+  pendingBuyItemId = nil
+  local numResults = C_AuctionHouse.GetNumItemSearchResults(itemKey)
+  if not numResults or numResults == 0 then
+    chatMessage(L.NO_BUYABLE)
     return
   end
-  PlaceAuctionBid("list", row.index, row.buyout)
-  repriceAfterPurchase(row)
-  chatMessage(string.format(L.BOUGHT, row.name, row.count, GetCoinTextureString(row.buyout)))
-  -- Re-run the search after the bid settles so the bought listing drops
-  -- off. Route through runSearch (not a raw query) so the searching flag
-  -- is set — the list handler ignores updates when it is not, which is
-  -- why a raw re-query here never refreshed the rows.
+  local best = nil
+  local runnerUp = nil -- cheapest valid listing other than the one bought
+  for index = 1, numResults do
+    local info = C_AuctionHouse.GetItemSearchResultInfo(itemKey, index)
+    if info then
+      local auctionID = info.auctionID or info.auction_id
+      local buyout = info.buyoutAmount or info.buyout_amount
+      local quantity = info.quantity or info.quantity
+      local containsOwn = info.containsOwnerItem or info.contains_owner_item
+      if auctionID and buyout and buyout > 0 and quantity and quantity > 0 and not containsOwn then
+        local unit = buyout / quantity
+        local candidate = { auctionID = auctionID, buyout = buyout, quantity = quantity, unit = unit,
+          name = info.itemLink or info.displayName or info.item_name or targetId }
+        if not best or unit < best.unit then
+          runnerUp = best
+          best = candidate
+        elseif not runnerUp or unit < runnerUp.unit then
+          runnerUp = candidate
+        end
+      end
+    end
+  end
+  if not best then
+    chatMessage(L.NO_BUYABLE)
+    return
+  end
+  pcall(C_AuctionHouse.PlaceBuyout, best.auctionID, best.buyout)
+  chatMessage(string.format(L.BOUGHT, best.name, best.quantity, GetCoinTextureString(best.buyout)))
+  -- The radar reads the scan as "what is listed right now"; the purchase
+  -- just proved one listing is gone, so correct the entry from the listings
+  -- that are still live instead of letting a sold price come back as a deal.
+  repriceAfterPurchase(targetId, runnerUp and runnerUp.unit)
+  -- Re-run the search after the bid settles so the bought listing drops off.
   C_Timer.After(0.6, function()
-    if trade and trade:IsShown() and trade.lastQuery then runSearch() end
+    if trade and trade:IsShown() and trade.lastQuery then refreshResults(trade.lastQuery) end
   end)
 end
 
-renderRows = function()
-  if not trade then return end
-  local rows = mode == "deals" and deals or results
-  -- Headers follow the mode, and carry the sort marker for the live key.
-  trade.headItem:SetText(L.COL_ITEM .. sortMark("name"))
-  for slot = 1, COL_COUNT do
-    local column = columnAt(slot)
-    trade.headers[slot]:SetText(column and (L[column.label] .. sortMark(column.key)) or "")
-  end
-  local offset = FauxScrollFrame_GetOffset(trade.scroll)
-  FauxScrollFrame_Update(trade.scroll, #rows, ROWS_VISIBLE, ROW_HEIGHT)
-  for rowIndex = 1, ROWS_VISIBLE do
-    local rowFrame = trade.rows[rowIndex]
-    local row = rows[rowIndex + offset]
-    if row then
-      for slot = 1, COL_COUNT do
-        local column = columnAt(slot)
-        rowFrame.cells[slot]:SetText(column and column.cell(row[column.key]) or "")
-      end
-      if mode == "deals" then
-        rowFrame.icon:SetTexture(GetItemIcon(row.itemId))
-        -- A radar row is built from scan data, so it has an item but no
-        -- live auction to point a tooltip at.
-        rowFrame.showTooltip = function() GameTooltip:SetHyperlink("item:" .. row.itemId) end
-        -- Risk class rides on the name, not on a number column: vendor
-        -- profit is guaranteed, a median discount is an estimate, and
-        -- mixing the two into one cell is what made the old column unreadable.
-        rowFrame.name:SetText(row.vendor
-          and string.format("%s |cffffd100[%s]|r", row.name, L.VENDOR_TAG)
-          or row.name)
-        rowFrame.buy:SetText(L.FIND)
-        rowFrame.buy:SetScript("OnClick", function()
-          trade.searchBox:SetText(row.name)
-          runSearch()
-        end)
-      else
-        rowFrame.icon:SetTexture(row.texture)
-        -- The listing's own tooltip: stack size, bid, seller and time left
-        -- are what separate two rows at the same unit price.
-        rowFrame.showTooltip = function() GameTooltip:SetAuctionItem("list", row.index) end
-        rowFrame.name:SetText(row.name)
-        rowFrame.buy:SetText(L.BUY)
-        rowFrame.buy:SetScript("OnClick", function() verifyAndBuy(row) end)
-      end
-      rowFrame:Show()
-    else
-      rowFrame:Hide()
-    end
-  end
-end
-
-runSearch = function()
-  if not trade then return end
-  if WAH.scanRunning then
-    chatMessage(L.SCAN_WAIT)
+-- A bought listing is knowledge about the book; write it back into the scan
+-- the radar reads. Ceiling: the live query results are one item's listings,
+-- never the whole book, so the price this lands on is never below the truth.
+-- It can hide a real deal until the next scan; it can never invent one.
+repriceAfterPurchase = function(itemId, remainingUnitPrice)
+  local scan = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION
+    and WoWderhoiAH_ScanData.items
+  local scanned = scan and scan[itemId]
+  if not scanned then return end
+  if not remainingUnitPrice then
+    -- Nothing of this item left in the live results: every number in the
+    -- entry describes a book that no longer exists, and a zeroed minimum
+    -- would read as "free" on the tooltip. The 7d history survives; the
+    -- next scan re-lists the item.
+    scan[itemId] = nil
     return
   end
-  local query = trade.searchBox:GetText()
-  if query == "" then return end
-  if not CanSendAuctionQuery() then
-    chatMessage(L.THROTTLED)
-    C_Timer.After(0.4, runSearch)
-    return
-  end
-  searching = true
-  trade.lastQuery = query
-  QueryAuctionItems(query, nil, nil, 0, false, -1, false, false)
+  scanned.minPrice = math.floor(remainingUnitPrice + 0.5)
+  scanned.numAuctions = math.max((scanned.numAuctions or 1) - 1, 0)
 end
 
 -- ============================== Sell side =============================
 
--- Sell anchor: the depth-aware front (sellP) beats the raw minimum —
--- undercutting a lone dump listing gives gold away; undercutting where
--- real depth starts puts you first in the queue that matters.
+-- Sell anchor: the depth-aware front (sellP) beats the raw minimum.
 local function sessionUnitPrice(itemId)
   local scanned = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION
     and WoWderhoiAH_ScanData.items and WoWderhoiAH_ScanData.items[itemId]
@@ -352,13 +324,31 @@ local function sessionUnitPrice(itemId)
   return nil
 end
 
-local sellHook = CreateFrame("Frame")
-sellHook:RegisterEvent("NEW_AUCTION_UPDATE")
-sellHook:SetScript("OnEvent", function()
-  if not (AuctionFrame and AuctionFrame:IsShown()) then return end
-  local name, _, count = GetAuctionSellItemInfo()
-  if not name or not count or count == 0 then return end
-  local link = GetAuctionSellItemLink and GetAuctionSellItemLink()
+-- The classic sell-slot API (GetAuctionSellItemInfo + NEW_AUCTION_UPDATE)
+-- does not exist on the retail AH frame; instead of poking unknown internals
+-- we whisper a suggested price when a sell slot appears to hold an item we
+-- have data for. Cheap poll, runs only while the AH is open.
+local sellPoll = CreateFrame("Frame")
+local function pollSellSlot()
+  if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then
+    sellPoll:Hide()
+    return
+  end
+  local name, count, link
+  local ok = pcall(function()
+    if GetAuctionSellItemInfo then
+      name, _, count = GetAuctionSellItemInfo()
+    end
+    if GetAuctionSellItemLink then
+      link = GetAuctionSellItemLink()
+    end
+  end)
+  if not ok or not name or not count or count == 0 then
+    lastSellName = nil
+    return
+  end
+  if name == lastSellName then return end
+  lastSellName = name
   local itemId = link and tonumber(link:match("item:(%d+)"))
   if not itemId then return end
   local unitPrice, source = sessionUnitPrice(itemId)
@@ -367,27 +357,31 @@ sellHook:SetScript("OnEvent", function()
     return
   end
   local buyoutTotal = math.max((unitPrice - 1) * count, count)
-  -- Start bid at 95% of buyout: flat heuristic, replace with a
-  -- fill-rate-informed ratio once sale tracking lands.
-  local startTotal = math.max(math.floor(buyoutTotal * 0.95), 1)
-  MoneyInputFrame_SetCopper(BuyoutPrice, buyoutTotal)
-  MoneyInputFrame_SetCopper(StartPrice, startTotal)
-  chatMessage(string.format(L.SELL_PREFILLED, name, count, GetCoinTextureString(buyoutTotal), source))
+  chatMessage(string.format(L.SELL_SUGGEST, name, count, GetCoinTextureString(buyoutTotal), source))
+end
+sellPoll:SetScript("OnUpdate", function(self, elapsed)
+  self.accum = (self.accum or 0) + elapsed
+  if self.accum < 2 then return end
+  self.accum = 0
+  pollSellSlot()
 end)
+sellPoll:Hide()
 
 -- ============================== Frame =================================
 
 local function createTradeFrame()
-  trade = CreateFrame("Frame", "WoWderhoiAHTrade", AuctionFrame, "BackdropTemplate")
-  -- Named because the row count is derived from what these two leave over.
-  local TOP_INSET, BOTTOM_INSET = 70, 38
-  trade:SetPoint("TOPLEFT", AuctionFrame, "TOPLEFT", 22, -TOP_INSET)
-  trade:SetPoint("BOTTOMRIGHT", AuctionFrame, "BOTTOMRIGHT", -10, BOTTOM_INSET)
-  -- Own opaque panel: without it the transparent frame shows whatever art
-  -- the previously active tab left behind — Blizzard's or, when Auctionator
-  -- is loaded, its independently rendered background. Sit above the AH so
-  -- our page owns every pixel it covers instead of borrowing shared slices.
-  trade:SetFrameLevel(AuctionFrame:GetFrameLevel() + 10)
+  trade = CreateFrame("Frame", "WoWderhoiAHTrade", UIParent, "BackdropTemplate")
+  trade:SetSize(480, 320)
+  trade:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPRIGHT", 4, -12)
+  -- Keep the panel on screen even if the AH anchors move.
+  trade:SetClampedToScreen(true)
+  trade:SetMovable(true)
+  trade:EnableMouse(true)
+  trade:RegisterForDrag("LeftButton")
+  trade:SetScript("OnDragStart", function(self) self:StartMoving() end)
+  trade:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+  trade:SetFrameStrata("DIALOG")
+  trade:SetFrameLevel(AuctionHouseFrame:GetFrameLevel() + 10)
   trade:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
     edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
@@ -399,11 +393,23 @@ local function createTradeFrame()
   trade.title:SetPoint("TOPLEFT", PAD, -PAD)
   trade.title:SetText(L.TRADE_TITLE)
 
+  local close = CreateFrame("Button", nil, trade)
+  close:SetSize(20, 20)
+  close:SetPoint("TOPRIGHT", -PAD, -PAD)
+  close:SetText("|cffff5555X|r")
+  close:SetScript("OnClick", function() trade:Hide() end)
+
   trade.searchBox = CreateFrame("EditBox", "WoWderhoiAHTradeSearch", trade, "SearchBoxTemplate")
-  trade.searchBox:SetSize(180, 20)
+  trade.searchBox:SetSize(120, 20)
   trade.searchBox:SetPoint("TOPLEFT", PAD, -26)
   trade.searchBox:SetAutoFocus(false)
-  trade.searchBox:SetScript("OnEnterPressed", runSearch)
+  trade.searchBox:SetScript("OnEnterPressed", function()
+    mode = "results"
+    trade.lastQuery = trade.searchBox:GetText()
+    refreshResults(trade.lastQuery)
+    FauxScrollFrame_SetOffset(trade.scroll, 0)
+    renderRows()
+  end)
 
   local function headerButton(label, anchor, width, onClick)
     local button = CreateFrame("Button", nil, trade, "UIPanelButtonTemplate")
@@ -416,30 +422,27 @@ local function createTradeFrame()
 
   local searchButton = headerButton(L.SEARCH, trade.searchBox, 70, function()
     mode = "results"
-    runSearch()
+    trade.lastQuery = trade.searchBox:GetText()
+    refreshResults(trade.lastQuery)
+    FauxScrollFrame_SetOffset(trade.scroll, 0)
+    renderRows()
   end)
-  local dealsButton = headerButton(L.FIND_DEALS, searchButton, 90, function()
+  local dealsButton = headerButton(L.FIND_DEALS, searchButton, 70, function()
     mode = "deals"
     refreshDeals()
     FauxScrollFrame_SetOffset(trade.scroll, 0)
     renderRows()
   end)
-  local scanButton = headerButton(L.FULL_SCAN, dealsButton, 90, function()
+  local scanButton = headerButton(L.FULL_SCAN, dealsButton, 80, function()
     if WAH.startScan then WAH.startScan() end
   end)
-  headerButton(L.OPTIONS, scanButton, 70, function() WAH.openSettings() end)
+  headerButton(L.OPTIONS, scanButton, 80, function() WAH.openSettings() end)
 
-  -- Table header row: fixed columns, right-aligned numbers. Price
-  -- columns are fixed-width so long values can never collide with the
-  -- item name, which truncates with an ellipsis instead of overflowing.
+  -- Table header row.
   local HEADER_Y = -54
-  local COL_BUY_W, COL_W, COL_GAP = 60, 92, 8
-  local SCROLL_W = 24 -- right gutter the FauxScrollFrame's bar occupies
-  local ICON_X, ICON_W, NAME_GAP = 4, 18, 6 -- row art; the item header aligns to the name
-  -- FontStrings take no clicks, so a header is a label plus a transparent
-  -- button covering it; the label keeps the anchor, width and
-  -- justification the whole layout is built on. Which column a slot holds
-  -- is resolved at click time because it follows the current mode.
+  local COL_BUY_W, COL_W, COL_GAP = 60, 84, 8
+  local SCROLL_W = 24
+  local ICON_X, ICON_W, NAME_GAP = 4, 18, 6
   local function makeSortable(label, onClick)
     local hit = CreateFrame("Button", nil, trade)
     hit:SetAllPoints(label)
@@ -460,8 +463,6 @@ local function createTradeFrame()
       -(SCROLL_W + COL_BUY_W + COL_GAP + (COL_COUNT - slot) * (COL_W + COL_GAP)), HEADER_Y)
     label:SetWidth(COL_W)
     label:SetJustifyH("RIGHT")
-    -- Fixed width in a fixed-height row: wrapping would push a second line
-    -- onto the row below, so a long label truncates instead.
     label:SetWordWrap(false)
     makeSortable(label, function()
       local column = columnAt(slot)
@@ -476,12 +477,7 @@ local function createTradeFrame()
   headerLine:SetHeight(1)
 
   local ROWS_TOP = -72
-  -- Whatever the panel has left after the header block, minus the bottom
-  -- border. Hardcoding 12 is what put the last row on the frame's edge:
-  -- AuctionFrame is 447 tall, this page keeps 70 above and 38 below, and
-  -- 12 rows of 22 overran what remained by all but 7px.
-  local rowSpace = (AuctionFrame:GetHeight() or 447) - TOP_INSET - BOTTOM_INSET + ROWS_TOP - PAD
-  ROWS_VISIBLE = math.max(math.floor(rowSpace / ROW_HEIGHT), 1)
+  ROWS_VISIBLE = math.max(math.floor((320 - 70 - 38 + ROWS_TOP - PAD) / ROW_HEIGHT), 1)
 
   trade.scroll = CreateFrame("ScrollFrame", "WoWderhoiAHTradeScroll", trade, "FauxScrollFrameTemplate")
   trade.scroll:SetPoint("TOPLEFT", PAD, ROWS_TOP)
@@ -496,7 +492,6 @@ local function createTradeFrame()
     rowFrame:SetHeight(ROW_HEIGHT)
     rowFrame:SetPoint("TOPLEFT", PAD, ROWS_TOP - (rowIndex - 1) * ROW_HEIGHT)
     rowFrame:SetPoint("TOPRIGHT", trade, "TOPRIGHT", -SCROLL_W, ROWS_TOP - (rowIndex - 1) * ROW_HEIGHT)
-    -- Zebra shading + a hairline separator under every row.
     if rowIndex % 2 == 0 then
       local shade = rowFrame:CreateTexture(nil, "BACKGROUND")
       shade:SetAllPoints()
@@ -520,7 +515,7 @@ local function createTradeFrame()
       cell:SetPoint("RIGHT", anchor, "LEFT", -COL_GAP, 0)
       cell:SetWidth(COL_W)
       cell:SetJustifyH("RIGHT")
-      cell:SetWordWrap(false) -- a wrapped value would grow past ROW_HEIGHT
+      cell:SetWordWrap(false)
       rowFrame.cells[slot] = cell
       anchor = cell
     end
@@ -528,11 +523,7 @@ local function createTradeFrame()
     rowFrame.name:SetPoint("LEFT", rowFrame.icon, "RIGHT", NAME_GAP, 0)
     rowFrame.name:SetPoint("RIGHT", rowFrame.cells[1], "LEFT", -COL_GAP, 0)
     rowFrame.name:SetJustifyH("LEFT")
-    rowFrame.name:SetWordWrap(false) -- long names truncate with an ellipsis
-    -- Rows show the client's own item tooltip, which is where the addon
-    -- already puts its price block (GUI.lua hooks every tooltip setter).
-    -- Four columns is all the table can hold; everything else a buy
-    -- decision needs is one hover away instead of absent.
+    rowFrame.name:SetWordWrap(false)
     rowFrame:EnableMouse(true)
     rowFrame:SetScript("OnEnter", function(self)
       if not self.showTooltip then return end
@@ -546,84 +537,74 @@ local function createTradeFrame()
   trade:Hide()
 end
 
-local function registerAuctionTab()
-  if WAH.tradeTabId or not AuctionFrame then return end
-  local ok, err = pcall(function()
-    -- Auctionator and other addons insert their own AuctionFrameTabN
-    -- frames; pick the first free index so a name collision can never
-    -- clobber or hide our tab.
-    local tabIndex = AuctionFrame.numTabs + 1
-    while _G["AuctionFrameTab" .. tabIndex] do tabIndex = tabIndex + 1 end
-    local lastTab
-    for index = tabIndex - 1, 1, -1 do
-      lastTab = _G["AuctionFrameTab" .. index]
-      if lastTab then break end
-    end
-    local tab = CreateFrame("Button", "AuctionFrameTab" .. tabIndex, AuctionFrame, "AuctionTabTemplate")
-    tab:SetID(tabIndex)
-    tab:SetText("WAH")
-    if lastTab then
-      tab:SetPoint("LEFT", lastTab, "RIGHT", -8, 0)
-    else
-      tab:SetPoint("BOTTOMLEFT", AuctionFrame, "BOTTOMLEFT", 15, -30)
-    end
-    PanelTemplates_SetNumTabs(AuctionFrame, tabIndex)
-    PanelTemplates_EnableTab(AuctionFrame, tabIndex)
-    WAH.tradeTabId = tabIndex
-
-    -- Hook tab switching only now: AuctionFrameTab_OnClick does not
-    -- exist until Blizzard_AuctionUI loads, and hooking it at file
-    -- scope kills this whole file with a load error.
-    if type(AuctionFrameTab_OnClick) == "function" then
-      hooksecurefunc("AuctionFrameTab_OnClick", function(clickedTab)
-        if not trade then return end
-        if clickedTab and clickedTab:GetID() == WAH.tradeTabId then
-          AuctionFrameBrowse:Hide()
-          AuctionFrameBid:Hide()
-          AuctionFrameAuctions:Hide()
-          trade:Show()
-          -- Deal radar is the landing view; refresh it on entry.
-          mode = "deals"
-          refreshDeals()
+renderRows = function()
+  if not trade then return end
+  local rows = mode == "deals" and deals or results
+  trade.headItem:SetText(L.COL_ITEM .. sortMark("name"))
+  for slot = 1, COL_COUNT do
+    local column = columnAt(slot)
+    trade.headers[slot]:SetText(column and (L[column.label] .. sortMark(column.key)) or "")
+  end
+  local offset = FauxScrollFrame_GetOffset(trade.scroll)
+  FauxScrollFrame_Update(trade.scroll, #rows, ROWS_VISIBLE, ROW_HEIGHT)
+  for rowIndex = 1, ROWS_VISIBLE do
+    local rowFrame = trade.rows[rowIndex]
+    local row = rows[rowIndex + offset]
+    if row then
+      for slot = 1, COL_COUNT do
+        local column = columnAt(slot)
+        rowFrame.cells[slot]:SetText(column and column.cell(row[column.key]) or "")
+      end
+      if mode == "deals" then
+        rowFrame.icon:SetTexture(GetItemIcon(row.itemId))
+        rowFrame.showTooltip = function() GameTooltip:SetHyperlink("item:" .. row.itemId) end
+        rowFrame.name:SetText(row.vendor
+          and string.format("%s |cffffd100[%s]|r", row.name, L.VENDOR_TAG)
+          or row.name)
+        rowFrame.buy:SetText(L.FIND)
+        rowFrame.buy:SetScript("OnClick", function()
+          trade.searchBox:SetText(row.name)
+          mode = "results"
+          trade.lastQuery = row.name
+          refreshResults(row.name)
           FauxScrollFrame_SetOffset(trade.scroll, 0)
           renderRows()
-        else
-          trade:Hide()
-        end
-      end)
+        end)
+      else
+        rowFrame.icon:SetTexture(GetItemIcon(row.itemId))
+        rowFrame.showTooltip = function() GameTooltip:SetHyperlink("item:" .. row.itemId) end
+        rowFrame.name:SetText(row.name)
+        rowFrame.buy:SetText(L.BUY)
+        rowFrame.buy:SetScript("OnClick", function() startBuy(row.itemId, row.name) end)
+      end
+      rowFrame:Show()
+    else
+      rowFrame:Hide()
     end
-    -- Addon-driven tab switches (Auctionator) bypass that click
-    -- handler; showing any stock pane must also dismiss our page.
-    for _, pane in ipairs({ AuctionFrameBrowse, AuctionFrameBid, AuctionFrameAuctions }) do
-      if pane then pane:HookScript("OnShow", function() if trade then trade:Hide() end end) end
-    end
-    chatMessage(string.format(L.TAB_READY, tabIndex))
-  end)
-  if not ok then
-    chatMessage("|cffff5555" .. L.TAB_FAILED .. tostring(err) .. "|r")
   end
 end
+
+-- ============================== Events ================================
 
 local tradeEvents = CreateFrame("Frame")
 tradeEvents:RegisterEvent("AUCTION_HOUSE_SHOW")
 tradeEvents:RegisterEvent("AUCTION_HOUSE_CLOSED")
-tradeEvents:RegisterEvent("AUCTION_ITEM_LIST_UPDATE")
-tradeEvents:SetScript("OnEvent", function(_, event)
+if C_AuctionHouse and C_AuctionHouse.GetNumItemSearchResults then
+  tradeEvents:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
+end
+tradeEvents:SetScript("OnEvent", function(_, event, itemKey)
   if event == "AUCTION_HOUSE_SHOW" then
-    if not trade and AuctionFrame then createTradeFrame() end
-    -- Delay registration past other addons' tab creation (Auctionator
-    -- builds its tabs during the same load window).
-    C_Timer.After(0.5, registerAuctionTab)
-  elseif event == "AUCTION_HOUSE_CLOSED" then
-    if trade then trade:Hide() end
-    searching = false
-  elseif event == "AUCTION_ITEM_LIST_UPDATE" and searching then
-    -- Ignore list updates from full scans; only react to our own search.
-    searching = false
-    mode = "results"
-    collectSearchResults()
+    if not trade then createTradeFrame() end
+    mode = "deals"
+    refreshDeals()
     FauxScrollFrame_SetOffset(trade.scroll, 0)
     renderRows()
-    chatMessage(string.format(L.N_LISTINGS, #results))
+    trade:Show()
+    sellPoll:Show()
+  elseif event == "AUCTION_HOUSE_CLOSED" then
+    if trade then trade:Hide() end
+    sellPoll:Hide()
+  elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
+    finalizeBuy(itemKey)
   end
 end)

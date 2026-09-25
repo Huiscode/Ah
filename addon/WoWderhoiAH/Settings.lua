@@ -6,7 +6,7 @@ local ADDON_NAME, WAH = ...
 local L = WAH.L
 
 local DEFAULTS = {
-  autoScan = false, -- rescan whenever the getAll cooldown elapses at the AH
+  autoScan = false, -- rescan whenever the full-scan (ReplicateItems) cooldown elapses at the AH
   tooltip = true, -- trader section on item tooltips
   chart = true, -- price chart panel beside the auction frame
   verboseScan = false -- per-page progress messages during paged scans
@@ -18,10 +18,17 @@ local loader = CreateFrame("Frame")
 loader:RegisterEvent("ADDON_LOADED")
 loader:SetScript("OnEvent", function(_, _, name)
   if name ~= ADDON_NAME then return end
-  WoWderhoiAH_Settings = WoWderhoiAH_Settings or {}
+  -- Single-variable persistence (WoWderhoiAHDB): the Forever client ignores
+  -- multi-variable TOC declarations, so everything lives in one table
+  -- and the old global names stay as in-memory aliases.
+  WoWderhoiAHDB = WoWderhoiAHDB or {}
+  WoWderhoiAH_ScanData = WoWderhoiAHDB.scanData
+  WoWderhoiAH_Points = WoWderhoiAHDB.points
+  WoWderhoiAH_Settings = WoWderhoiAHDB.settings or {}
   for key, value in pairs(DEFAULTS) do
     if WoWderhoiAH_Settings[key] == nil then WoWderhoiAH_Settings[key] = value end
   end
+  WoWderhoiAHDB.settings = WoWderhoiAH_Settings
   WAH.settings = WoWderhoiAH_Settings
 end)
 

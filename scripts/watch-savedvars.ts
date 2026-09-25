@@ -14,7 +14,9 @@ const savedVarsPath = process.env.AQT_SAVEDVARS_PATH;
 if (!savedVarsPath) {
   throw new Error(
     "AQT_SAVEDVARS_PATH is not set. Point it at the WoW SavedVariables file, e.g. " +
-      "<WoW install dir>\\_anniversary_\\WTF\\Account\\<ACCOUNT>\\SavedVariables\\WoWderhoiAH.lua"
+      "<WoW install dir>\\_classic_beta_\\WTF\\Account\\<ACCOUNT>\\SavedVariables\\WoWderhoiAH.lua " +
+      "(the WoW: Forever Beta client uses the _classic_beta_ layout and names the file after the addon, " +
+      "not after the variable — confirmed on a live install)"
   );
 }
 const importUrl = process.env.AQT_IMPORT_URL ?? "http://localhost:3000/api/import/addon-scan";
@@ -24,7 +26,12 @@ let lastImportedScanAt = 0;
 
 async function importLatestScan() {
   const parsed = parseSavedVariables(readFileSync(savedVarsPath!, "utf8"));
-  const scan = parsed.WoWderhoiAH_ScanData as { scannedAt?: number; dataVersion?: number } | undefined;
+  // v0.3.1+ persists everything under the single WoWderhoiAHDB variable
+  // (the Forever beta refuses multi-variable TOC declarations); older scans
+  // used the standalone WoWderhoiAH_ScanData global. Accept both.
+  const scan = (parsed.WoWderhoiAH_ScanData ??
+    (parsed.WoWderhoiAHDB as Record<string, unknown> | undefined)?.scanData) as
+    { scannedAt?: number; dataVersion?: number } | undefined;
   if (!scan || typeof scan.scannedAt !== "number") {
     console.log("No WoWderhoiAH_ScanData in SavedVariables yet; waiting for the first /wahscan.");
     return;

@@ -14,7 +14,7 @@
 -- code passing here passes there. Upgrade path if integer-sensitive code
 -- ever lands: run the same stub under a real 5.1 binary.
 
-local bed = { chat = {}, frames = {}, timers = {}, hooks = {}, listings = {}, itemInfo = {}, ns = {} }
+local bed = { chat = {}, frames = {}, timers = {}, hooks = {}, listings = {}, itemInfo = {}, searchResults = {}, ns = {} }
 WowTest = bed
 
 local NOW = 1700000000 -- fixed clock; a real time() would make med7 windows flaky
@@ -100,10 +100,14 @@ end
 
 AuctionFrame = newFrame("AuctionFrame")
 AuctionFrame.numTabs = 3
--- The real 2.5.6 AuctionFrame is 800x447. The WAH page derives its row
--- count from that height, so an unsized stub would test nothing.
 AuctionFrame:SetSize(800, 447)
 AuctionFrame:Show()
+-- The retail/Forever AH is a single AuctionHouseFrame; the WAH page anchors
+-- itself to this. It is also the SellFrame host, so it must exist before any
+-- AUCTION_HOUSE_SHOW fires.
+AuctionHouseFrame = newFrame("AuctionHouseFrame")
+AuctionHouseFrame:SetSize(800, 447)
+AuctionHouseFrame:Show()
 AuctionFrameBrowse = newFrame("AuctionFrameBrowse")
 AuctionFrameBid = newFrame("AuctionFrameBid")
 AuctionFrameAuctions = newFrame("AuctionFrameAuctions")
@@ -203,30 +207,70 @@ function MoneyInputFrame_SetCopper(frame, copper) frame._copper = copper end
 function InterfaceOptions_AddCategory() end
 function InterfaceOptionsFrame_OpenToCategory() end
 
-function CanSendAuctionQuery() return true, bed.canGetAll ~= false end
-function QueryAuctionItems(query) bed.lastQuery = query end
-function PlaceAuctionBid(_, index, price) bed.bought = { index = index, price = price } end
-function GetNumAuctionItems() return #bed.listings, #bed.listings end
+-- ============ Retail/Forever auction house API ============
+-- The addon port talks to C_AuctionHouse exclusively. The pieces a test
+-- drives: MakeItemKey (buy flow), QueryForItem + search result reads (the
+-- async verification a buy performs), PlaceBuyout (the purchase itself),
+-- ReplicateItems (the full-house scan, exercised through WoWderhoiAH_ScanData
+-- injected by bed.setScan rather than a live replication).
+C_AuctionHouse = {
+  IsThrottled = function() return false end,
+  MakeItemKey = function(itemID, itemLevel, itemSuffix, battlePetSpeciesID)
+    return { itemID = itemID, itemLevel = itemLevel, itemSuffix = itemSuffix or 0, battlePetSpeciesID = battlePetSpeciesID }
+  end,
+  -- The real query answers asynchronously; queue the results-updated event
+  -- on the C_Timer queue so a test can control the moment it lands.
+  QueryForItem = function(itemKey)
+    bed.lastQueryKey = itemKey
+    bed.timers[#bed.timers + 1] = function()
+      bed.fireEvent("ITEM_SEARCH_RESULTS_UPDATED", itemKey)
+    end
+  end,
+  GetNumItemSearchResults = function(itemKey)
+    local rows = bed.searchResults[itemKey.itemID]
+    return rows and #rows or 0
+  end,
+  GetItemSearchResultInfo = function(itemKey, index)
+    local rows = bed.searchResults[itemKey.itemID]
+    return rows and rows[index] or nil
+  end,
+  PlaceBuyout = function(auctionID, buyout)
+    bed.bought = { auctionID = auctionID, buyout = buyout }
+  end,
+  ReplicateItems = function() bed.replicated = true end,
+  GetNumReplicateItems = function() return 0 end,
+  GetReplicateItemInfo = function() return nil end,
+  GetReplicateItemLink = function() return nil end
+}
 
-function GetAuctionItemInfo(_, index)
-  local listing = bed.listings[index]
-  if not listing then return nil end
-  return listing.name, "texture", listing.count, listing.quality or 2,
-    nil, nil, nil, nil, nil, listing.buyout
-end
+-- Bed control for the async buy verification: the test sets what the
+-- server answers for an itemId, buys a row, then flushes the C_Timer queue
+-- to land ITEM_SEARCH_RESULTS_UPDATED. Rows mirror the retail shape of
+-- GetItemSearchResultInfo.
+function bed.setSearchResults(itemId, rows) bed.searchResults[itemId] = rows end
 
-function GetAuctionItemLink(_, index)
-  local listing = bed.listings[index]
-  return listing and ("|Hitem:" .. listing.itemId .. ":0:0:0|h[" .. listing.name .. "]|h")
+-- Retail item info: C_Item.GetItemInfoByID returns class/subclass as IDs
+-- and vendor price in the same slot the addon reads (11). The addon
+-- translates the IDs through GetItemClassInfo/GetItemSubClassInfo.
+C_Item = {
+  GetItemInfoByID = function(itemId)
+    local info = bed.itemInfo[itemId] or {}
+    return info.name, nil, nil, nil, nil, info.classID or 6, info.subClassID or 0,
+      nil, nil, nil, info.vendorP or 0
+  end
+}
+local ITEM_CLASS_NAMES = { [6] = "Trade Goods", [7] = "Item Enhancement", [15] = "Battle Pets" }
+local ITEM_SUBCLASS_NAMES = { [6] = { [0] = "Other" }, [7] = { [0] = "Other" } }
+function GetItemClassInfo(classID) return ITEM_CLASS_NAMES[classID] or "Miscellaneous" end
+function GetItemSubClassInfo(classID, subClassID)
+  local map = ITEM_SUBCLASS_NAMES[classID]
+  return map and map[subClassID] or "Other"
 end
+-- Legacy global retail keeps for compatibility (deprecated but present);
+-- the addon's chart-title fallback calls it, so it must exist here too.
+function GetItemInfo(itemId) return C_Item.GetItemInfoByID(itemId) end
 
--- Real signature: name, link, quality, iLevel, reqLevel, class, subClass,
--- maxStack, equipSlot, texture, vendorPrice. The addon reads 6, 7 and 11.
-function GetItemInfo(itemId)
-  local info = bed.itemInfo[itemId] or {}
-  return info.name, nil, nil, nil, nil, info.class or "Trade Goods", info.subClass or "Other",
-    nil, nil, nil, info.vendorP or 0
-end
+-- ============================== WoW globals ===========================
 
 function GetAuctionSellItemInfo() return bed.sellItem and bed.sellItem.name, nil, bed.sellItem and bed.sellItem.count end
 function GetAuctionSellItemLink()
@@ -306,23 +350,10 @@ function bed.hoverHeader(text, enter)
   error("no header labelled '" .. text .. "'")
 end
 
--- The client shows the auction house, the addon builds its frame on a
--- timer, then the player clicks the WAH tab. openTab() replays that.
+-- The client shows the auction house; the addon builds its floating panel
+-- and shows it directly (the retail AH has no WAH tab to click).
 function bed.openTab()
   bed.fireEvent("AUCTION_HOUSE_SHOW")
-  bed.runTimers()
-  bed.clickTab()
-end
-
-function bed.clickTab()
-  local tab
-  for _, frame in ipairs(bed.frames) do
-    if frame._text == "WAH" and frame._id then tab = frame end
-  end
-  -- Tab setup runs inside a pcall, so a stub gap shows up as a TAB_FAILED
-  -- chat line rather than an error; carry it into the failure message.
-  if not tab then error("the WAH tab was never registered. Last chat: " .. bed.lastChat()) end
-  for _, hook in ipairs(bed.hooks.AuctionFrameTab_OnClick or {}) do hook(tab) end
 end
 
 function bed.setScan(items)
@@ -366,11 +397,38 @@ function bed.setListings(listings) bed.listings = listings end
 -- the book change under a row the way another buyer would.
 function bed.repriceListing(index, buyout) bed.listings[index].buyout = buyout end
 
+-- Search now runs against the session scan (the replication already holds the
+-- whole book), so old-style listing arrays are folded into the scan first:
+-- same itemId -> one aggregated row, minPrice = cheapest unit price,
+-- quantity = total listed, marketPrice follows the cheapest.
+function bed.mergeScanFromListings(listings)
+  local scan = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == bed.ns.PIPELINE_VERSION
+    and WoWderhoiAH_ScanData.items
+  if not scan then return end
+  for _, listing in ipairs(listings) do
+    local unit = listing.buyout / listing.count
+    local entry = scan[listing.itemId]
+    if not entry then
+      entry = {
+        name = listing.name, quality = listing.quality or 2,
+        itemClass = "unknown", itemSubClass = "unknown", vendorP = 0,
+        minPrice = unit, marketPrice = unit, sellP = unit,
+        quantity = listing.count, numAuctions = 1
+      }
+      scan[listing.itemId] = entry
+    else
+      if unit < entry.minPrice then entry.minPrice = unit end
+      entry.marketPrice = entry.marketPrice or entry.minPrice
+      entry.quantity = (entry.quantity or 0) + listing.count
+      entry.numAuctions = (entry.numAuctions or 0) + 1
+    end
+  end
+end
+
 function bed.search(query, listings)
-  bed.setListings(listings)
+  if listings then bed.mergeScanFromListings(listings) end
   tradeFrame().searchBox:SetText(query)
   bed.clickButton(bed.ns.L.SEARCH)
-  bed.fireEvent("AUCTION_ITEM_LIST_UPDATE")
 end
 
 function bed.rowCount()
@@ -440,12 +498,11 @@ function frameMeta:SetTextColor(red, green, blue) self._color = { red, green, bl
 
 -- ============================== Geometry ==============================
 
--- The panel pins two corners to AuctionFrame, so its own height follows
--- from the client's. Resolving it here means a layout test measures the
--- box the client would lay out rather than a number copied into the test.
+-- The panel is a fixed-size floating frame now, so its height is its own.
 function bed.panelHeight()
   local panel = tradeFrame()
-  return AuctionFrame:GetHeight() + panel._points.TOPLEFT.y - panel._points.BOTTOMRIGHT.y
+  if panel._height then return panel._height end
+  return AuctionHouseFrame:GetHeight() + panel._points.TOPLEFT.y - panel._points.BOTTOMRIGHT.y
 end
 
 -- Smallest gap between the panel's edge and anything anchored to it, per

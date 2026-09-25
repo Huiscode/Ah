@@ -5,14 +5,14 @@
 # WoWderhoi AHelper
 
 [![Release](https://img.shields.io/github/v/release/BrandNewJimZhang/wowderhoi-ah?color=f0479e)](https://github.com/BrandNewJimZhang/wowderhoi-ah/releases)
-![Interface](https://img.shields.io/badge/WoW-TBC%20Anniversary%202.5.6-ffd94d)
+![Interface](https://img.shields.io/badge/WoW-Forever%201.60.1-ffd94d)
 ![Stack](https://img.shields.io/badge/Next.js%2016-TypeScript-2ce8a4)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-c493ff)](LICENSE)
 
 **English** | [中文](#中文)
 
 Auction house price intelligence and short-swing trading kit for
-World of Warcraft Classic Anniversary (TBC 2.5.6).
+World of Warcraft: Forever / Infinite (1.60.1 Beta).
 
 </div>
 
@@ -59,8 +59,8 @@ path from installing the addon to your first real price curve, ~30 min.
 
 ### In game
 
-- `/wahscan` full scan: getAll fast path (whole AH in one query) with
-  paged fallback on cooldown; `/wahauto` auto-rescan (~every 15 min).
+- `/wahscan` full scan: `C_AuctionHouse.ReplicateItems()` whole-AH
+  replication with cooldown handling; `/wahauto` auto-rescan (~every 15 min).
 - Tooltip market data: sell front leads (orange), then min price,
   P5/P10, supply, 7-day P10 median and trend.
 - Price charts beside the auction frame: last 3 hours / last 48 hours,
@@ -80,7 +80,7 @@ path from installing the addon to your first real price curve, ~30 min.
 ## Stack
 
 Next.js 16 + React Server Components + TypeScript · TailwindCSS ·
-Prisma + SQLite · Recharts · WoW Lua addon (Interface 20506).
+Prisma + SQLite · Recharts · WoW Lua addon (Interface 16001).
 
 ## Development
 
@@ -104,10 +104,12 @@ npm run perf:run    # page/import latency budget gate
 ## Data pipeline (in-game addon)
 
 1. Copy `addon/WoWderhoiAH` into the game directory at
-   `_anniversary_\Interface\AddOns\WoWderhoiAH`.
+   `_classic_beta_\Interface\AddOns\WoWderhoiAH` (the WoW: Forever Beta client
+   uses the `_classic_beta_` layout; TBC used `_anniversary_`).
 2. In game, open the AH and run `/wahscan` (or enable `/wahauto`).
 3. Log out briefly or `/reload` — the client only writes
-   SavedVariables to disk on exit/reload.
+   SavedVariables to disk on exit/reload. The scan lands at
+   `_classic_beta_\WTF\Account\<ACCOUNT>\SavedVariables\WoWderhoiAH_ScanData.lua`.
 4. Point `AQT_SAVEDVARS_PATH` in `.env` at that file, then:
 
 ```powershell
@@ -145,7 +147,7 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 
 </div>
 
-《魔兽世界》经典周年服（TBC 2.5.6）拍卖行价格情报与短线交易工具。两个部件，一条本地数据闭环，不依赖 Battle.net API：
+《魔兽世界》无限服（WoW: Forever / Infinite 1.60.1 Beta）拍卖行价格情报与短线交易工具。两个部件，一条本地数据闭环，不依赖 Battle.net API：
 
 - **游戏内插件**（`addon/WoWderhoiAH`）——扫描拍卖行、逐次积累价格历史，提供 tooltip 行情、双窗口价格走势图，以及独立的 **WAH 交易页**：捡漏雷达、核验后一键购买、压价卖单预填。插件即数据后端。
 - **桌面终端**（Next.js 16）——类 Bloomberg 的深色高密度界面：市场监控表、盘中/日线图表、预警与关注列表、制造利润排行。
@@ -168,7 +170,7 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 
 **游戏内**
 
-- `/wahscan` 全量扫描：getAll 快路径 + 冷却时分页回退；`/wahauto` 挂机自动扫描（约 15 分钟一次）。
+- `/wahscan` 全量扫描：`C_AuctionHouse.ReplicateItems()` 全拍卖行复制 + 冷却处理；`/wahauto` 挂机自动扫描（约 15 分钟一次）。
 - tooltip 行情：建议卖价领衔（橙色标注），随后最低价、P5/P10、供给、7 日P10中位与趋势。
 - 拍卖行旁价格走势图：最近 3 小时 / 最近 48 小时双窗口，绘制 P10 低位价序列。
 - 卖货预填：自动以建议卖价压价填入买断价，确认后发布。

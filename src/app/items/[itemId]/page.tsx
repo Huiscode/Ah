@@ -108,8 +108,8 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                     <div><div className="text-terminal-muted">7日P10中位</div><div><Coins copper={signal.med7} /></div></div>
                     <div><div className="text-terminal-muted">折扣</div><div className={signal.discountPercent >= 15 ? "text-terminal-green" : ""}>{signal.discountPercent.toFixed(0)}%</div></div>
                     <div><div className="text-terminal-muted">环比上次</div><div className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</div></div>
-                    <div><div className="text-terminal-muted">在售量</div><div>{signal.quantity.toLocaleString()}</div></div>
-                    <div><div className="text-terminal-muted">挂单数</div><div>{signal.numAuctions.toLocaleString()}</div></div>
+                    <div><div className="text-terminal-muted">在售量</div><div>{signal.quantity.toLocaleString("en-US")}</div></div>
+                    <div><div className="text-terminal-muted">挂单数</div><div>{signal.numAuctions.toLocaleString("en-US")}</div></div>
                   </div>
                 </>
               )}

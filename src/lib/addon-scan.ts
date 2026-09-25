@@ -183,32 +183,40 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     throw new Error("Addon scan items must be a non-empty table of itemId entries");
   }
 
-  const items = Object.entries(scan.items as Record<string, unknown>).map(([key, value]) => {
-    const itemId = Number(key);
-    if (!Number.isInteger(itemId) || itemId <= 0) {
-      throw new Error(`Addon scan item key must be a positive itemId, got ${JSON.stringify(key)}`);
-    }
-    if (typeof value !== "object" || value === null) {
-      throw new Error(`Addon scan item ${key} must be a table, got ${JSON.stringify(value)}`);
-    }
-    const entry = value as Record<string, unknown>;
-    if (typeof entry.name !== "string" || entry.name === "") {
-      throw new Error(`Addon scan item ${key}: name must be a non-empty string`);
-    }
-    const qualityIndex = typeof entry.quality === "number" ? entry.quality : -1;
-    return {
-      itemId,
-      name: entry.name,
-      quality: QUALITY_NAMES[qualityIndex] ?? "unknown",
-      category: typeof entry.itemClass === "string" && entry.itemClass !== "" ? entry.itemClass : "unknown",
-      subCategory: typeof entry.itemSubClass === "string" && entry.itemSubClass !== "" ? entry.itemSubClass : "unknown",
-      minPrice: requirePositiveInt(entry.minPrice, "minPrice", key),
-      marketPrice: requirePositiveInt(entry.marketPrice, "marketPrice", key),
-      quantity: requirePositiveInt(entry.quantity, "quantity", key),
-      numAuctions: requirePositiveInt(entry.numAuctions, "numAuctions", key),
-      vendorPrice: normalizeVendorPrice(entry.vendorP, key)
-    };
-  });
+  const items = Object.entries(scan.items as Record<string, unknown>)
+    .map(([key, value]) => {
+      const itemId = Number(key);
+      if (!Number.isInteger(itemId) || itemId <= 0) {
+        throw new Error(`Addon scan item key must be a positive itemId, got ${JSON.stringify(key)}`);
+      }
+      if (typeof value !== "object" || value === null) {
+        throw new Error(`Addon scan item ${key} must be a table, got ${JSON.stringify(value)}`);
+      }
+      const entry = value as Record<string, unknown>;
+      // A few replicate listings carry an empty name on the Forever client
+      // (placeholder rows still streaming in). They are unusable for display
+      // and price math, so skip them instead of rejecting the whole scan.
+      if (typeof entry.name !== "string" || entry.name === "") {
+        return null;
+      }
+      const qualityIndex = typeof entry.quality === "number" ? entry.quality : -1;
+      return {
+        itemId,
+        name: entry.name,
+        quality: QUALITY_NAMES[qualityIndex] ?? "unknown",
+        category: typeof entry.itemClass === "string" && entry.itemClass !== "" ? entry.itemClass : "unknown",
+        subCategory: typeof entry.itemSubClass === "string" && entry.itemSubClass !== "" ? entry.itemSubClass : "unknown",
+        minPrice: requirePositiveInt(entry.minPrice, "minPrice", key),
+        marketPrice: requirePositiveInt(entry.marketPrice, "marketPrice", key),
+        quantity: requirePositiveInt(entry.quantity, "quantity", key),
+        numAuctions: requirePositiveInt(entry.numAuctions, "numAuctions", key),
+        vendorPrice: normalizeVendorPrice(entry.vendorP, key)
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  if (items.length === 0) {
+    throw new Error("Addon scan items contained no usable entries after filtering empty names");
+  }
 
   return {
     scannedAt: new Date(scan.scannedAt * 1000),

@@ -1,8 +1,12 @@
 // The addon's table is the only place where column slots, header clicks and
 // money formatting exist, and none of it is reachable from the Next.js side.
 // These tests drive the shipped Lua through the same entry points a player
-// uses -- open the tab, click a header -- and assert on the text that lands
+// uses -- open the panel, click a header -- and assert on the text that lands
 // in the cells.
+//
+// The retail port searches the session scan locally (the full-house
+// replication already holds the whole book), so a search row is one item
+// with aggregated numbers: cheapest unit price, total quantity, P10.
 
 import { describe, expect, it, beforeEach } from "vitest";
 import { loadAddon, type WowLua } from "./wow-lua";
@@ -122,39 +126,41 @@ describe("column sorting", () => {
 });
 
 describe("search results table", () => {
-  // Unit price is what decides a stack purchase, so it is both the default
-  // sort and the place the money formatter is exercised hardest.
+  // Both potions match the query, and each folds several listings into one
+  // aggregated row: cheapest unit price, total quantity, P10 reference.
+  // 99c + 3x33.67c folds to 34c min but keeps 99c as the P10-style close;
+  // 5000c for the Greater row exercises the gold-prefix money formatter.
   const LISTINGS = [
     { itemId: 858, name: "Lesser Healing Potion", count: 1, buyout: 99 },
-    { itemId: 858, name: "Lesser Healing Potion", count: 1, buyout: 100 },
-    { itemId: 858, name: "Lesser Healing Potion", count: 1, buyout: 9999 },
-    { itemId: 858, name: "Lesser Healing Potion", count: 1, buyout: 10000 },
-    { itemId: 858, name: "Lesser Healing Potion", count: 1, buyout: 1234567 },
-    { itemId: 858, name: "Lesser Healing Potion", count: 3, buyout: 101 }
+    { itemId: 858, name: "Lesser Healing Potion", count: 3, buyout: 101 },
+    { itemId: 929, name: "Greater Healing Potion", count: 2, buyout: 10000 }
   ];
 
   let lua: WowLua;
   beforeEach(() => {
     lua = openRadar();
-    lua.search("Lesser Healing Potion", LISTINGS);
+    lua.search("Healing Potion", LISTINGS);
   });
 
   it("switches the columns with the mode and blanks the slot it does not use", () => {
-    expect([1, 2, 3, 4].map((slot) => lua.header(slot))).toEqual(["", "数量", "单价", "总价"]);
+    expect([1, 2, 3, 4].map((slot) => lua.header(slot))).toEqual(["", "数量", "最低价", "P10"]);
   });
 
-  it("orders by unit price so a cheap stack cannot hide behind a small total", () => {
-    expect(lua.column(2)).toEqual(["3", "1", "1", "1", "1", "1"]);
-    expect(lua.column(4)).toEqual(["1银 01铜", "99铜", "1银 00铜", "99银 99铜", "1金 00银", "123金 45银"]);
+  it("aggregates listings of one item into a single row and sorts by unit price", () => {
+    expect(lua.names()).toEqual(["Lesser Healing Potion", "Greater Healing Potion"]);
+    // 34c comes from floor(33.67c + 0.5); 50银 00铜 from 5000c.
+    expect(lua.column(3)).toEqual(["34铜", "50银 00铜"]);
   });
 
   it("prints two units at every magnitude, keeping the silver that decides a bait price", () => {
-    expect(lua.column(3)).toEqual(["34铜", "99铜", "1银 00铜", "99银 99铜", "1金 00银", "123金 45银"]);
+    expect(lua.column(2)).toEqual(["4", "2"]);
+    expect(lua.column(4)).toEqual(["99铜", "50银 00铜"]);
   });
 
-  it("sorts by total price without disturbing the unit column's meaning", () => {
-    lua.clickHeader("总价");
-    expect(lua.column(4)).toEqual(["99铜", "1银 00铜", "1银 01铜", "99银 99铜", "1金 00银", "123金 45银"]);
+  it("reverses the default ascending order on a second click of the min price column", () => {
+    lua.clickHeader("最低价");
+    lua.clickHeader("最低价");
+    expect(lua.column(3)).toEqual(["50银 00铜", "34铜"]);
   });
 });
 

@@ -1,60 +1,148 @@
 -- WoWderhoiAH Scanner: grabs the auction house list and aggregates
 -- per-item min/weighted prices into the WoWderhoiAH_ScanData SavedVariable.
--- Fast path is a getAll query (one server roundtrip for the whole AH,
--- 15-minute server cooldown); on cooldown it falls back to paged
--- scanning gated on the regular per-page throttle.
+-- WoW: Forever / retail 12.x port: the classic QueryAuctionItems/getAll
+-- path does not exist on this client. The equivalent full-house scan is
+-- C_AuctionHouse.ReplicateItems() — a server-side replication of the whole
+-- auction house with a ~15-minute cooldown, streamed in over several frames
+-- and delivered via REPLICATE_ITEM_LIST_UPDATE. SavedVariables output keeps
+-- the exact shape of the TBC build (see finishScan) so the desktop terminal
+-- importer is unchanged.
 
-local PAGE_SIZE = 50
-local QUALITY_ANY = -1
+local ADDON_NAME, WAH = ...
+local L = WAH.L
+-- GetCoinTextureString does not exist on the Forever beta client (retail
+-- MoneyFrame global is absent). Provide a plain gold/silver/copper text
+-- fallback so tooltip, chart and purchase messages keep rendering.
+if type(GetCoinTextureString) ~= "function" then
+  function GetCoinTextureString(amount)
+    amount = math.max(0, math.floor(amount or 0))
+    local g = math.floor(amount / 10000)
+    local s = math.floor((amount % 10000) / 100)
+    local c = amount % 100
+    if g > 0 then
+      return string.format("%dg %ds %dc", g, s, c)
+    elseif s > 0 then
+      return string.format("%ds %dc", s, c)
+    end
+    return string.format("%dc", c)
+  end
+end
+
+-- Cooldown of a full replication scan, in seconds. Matches the classic
+-- getAll cooldown cadence; the server does not expose a public query for
+-- "is replicate ready", so the addon tracks its own ready-at timestamp.
+local REPLICATE_COOLDOWN = 15 * 60
 -- Hard ceiling on listings processed per OnUpdate frame. The real gate is
 -- the time budget below; this only caps a single catastrophically slow
 -- recordAuction from spinning one frame indefinitely.
 local PROCESS_PER_FRAME = 200
--- Per-frame time budget for getAll processing, in milliseconds. We yield
+-- Per-frame time budget for replicate processing, in milliseconds. We yield
 -- back to the renderer at ~8ms so a full-AH scan stays under one frame at
 -- 60fps instead of hitching on a 500-row burst. Measured with
--- debugprofilestop (ms float, available since client 2.5.6).
+-- debugprofilestop (ms float, available on retail 12.x).
 local FRAME_BUDGET_MS = 8
 
-local ADDON_NAME, WAH = ...
-local L = WAH.L
-
--- WAH.PIPELINE_VERSION and WAH.RADAR are set by GeneratedRules.lua, compiled
--- from src/lib/market-rules.ts. A bump means the meaning of the stored prices
--- changed, not just their values; consumers (tooltip, deal radar, desktop
--- importer) reject any other value.
-
-local scanState = nil -- { mode = "getall"|"paged", page, itemsById, processing, cursor }
+local scanState = nil -- { mode="replicate", itemsById, itemInfoCache, processing, cursor, pending, pendingOnly }
+local pendingRounds = 0 -- revisit passes over incomplete entries, capped to avoid a stall
 
 local function autoScanOn()
   return WAH.settings and WAH.settings.autoScan
 end
 
 local frame = CreateFrame("Frame")
-frame:RegisterEvent("AUCTION_ITEM_LIST_UPDATE")
+frame:RegisterEvent("REPLICATE_ITEM_LIST_UPDATE")
 frame:RegisterEvent("AUCTION_HOUSE_CLOSED")
 
 local function chatMessage(text)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r " .. text)
 end
 
-local function recordAuction(index)
-  local name, _, count, quality, _, _, _, _, _, buyoutPrice = GetAuctionItemInfo("list", index)
-  local link = GetAuctionItemLink("list", index)
-  local itemId = link and tonumber(link:match("item:(%d+)"))
-  if not (itemId and name and buyoutPrice and buyoutPrice > 0 and count and count > 0) then return end
+-- C_AuctionHouse.GetReplicateItemInfo returns a table on the retail 12.x /
+-- Forever client. Older builds returned 15+ positional values; accept both
+-- so the addon also survives a client rollback or a data-only stub. Table
+-- field naming differs across clients (camelCase vs snake_case), so read
+-- both spellings.
+local function readReplicateItem(index)
+  -- Positional-return layout on the Forever Beta client (verified by probe):
+  -- [0]=name [1]=texture [2]=count [3]=qualityID [4]=usable [5]=level
+  -- [6]=levelType [7]=minBid [8]=minIncrement [9]=buyoutPrice [10]=bidAmount
+  -- [11]=highBidder [12]=owner [13]=saleStatus [14..15]=extras [16]=itemID [17]=hasAllInfo
+  -- (fall back to the older 15-slot layout if a future client drops the extras)
+  local a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r = C_AuctionHouse.GetReplicateItemInfo(index)
+  if type(a) == "table" then
+    return {
+      name = a.name or a.displayName or a.display_name,
+      count = a.count or a.quantity,
+      qualityID = a.qualityID or a.quality_id,
+      buyoutPrice = a.buyoutPrice or a.buyout_price,
+      itemID = a.itemID or a.itemId or a.item_id,
+      hasAllInfo = a.hasAllInfo or a.has_all_info
+    }
+  end
+  return {
+    name = a,
+    count = c,
+    qualityID = d,
+    buyoutPrice = j,
+    itemID = q or o,      -- [16], falling back to [14] on the old layout
+    hasAllInfo = r or p   -- [17], falling back to [15] on the old layout
+  }
+end
+
+-- Diagnostic: print the raw shape of the first two replicate entries once
+-- per scan, so a client quirk (different return type, field names, or an
+-- off-by-one index) shows up in chat instead of a silent 0-item scan.
+local function printReplicateProbe()
+  local probe0 = { C_AuctionHouse.GetReplicateItemInfo(0) }
+  local parts = {}
+  for i = 1, math.min(#probe0, 20) do
+    local v = tostring(probe0[i])
+    if #v > 28 then v = string.sub(v, 1, 28) .. "..." end
+    parts[#parts + 1] = "[" .. (i - 1) .. "]=" .. v
+  end
+  chatMessage(string.format(L.SCAN_PROBE, #probe0, table.concat(parts, " | ")))
+end
+
+-- Class/subclass + vendor price for one itemId, cached for the scan's
+-- lifetime. Retail returns numeric classIDs; translate to localized names
+-- (the terminal stores category strings) with a safe fallback when the
+-- item is not cached yet or the legacy name API is gone.
+local function itemCategoryAndVendor(itemId)
+  local classID, subclassID, vendorPrice
+  local ok = pcall(function()
+    local _, _, _, _, _, c, s = C_Item.GetItemInfoByID(itemId)
+    classID, subclassID = c, s
+    vendorPrice = select(11, C_Item.GetItemInfoByID(itemId))
+  end)
+  if not ok then return "unknown", "unknown", 0 end
+  local className, subclassName = "unknown", "unknown"
+  if classID then
+    if GetItemClassInfo then
+      local cName = GetItemClassInfo(classID)
+      if cName and cName ~= "" then className = cName end
+    end
+    if classID and subclassID and GetItemSubClassInfo then
+      local sName = GetItemSubClassInfo(classID, subclassID)
+      if sName and sName ~= "" then subclassName = sName end
+    end
+  end
+  return className, subclassName, vendorPrice or 0
+end
+
+local function recordAuction(info)
+  local itemId = info.itemID
+  local name = info.name
+  local buyoutPrice = info.buyoutPrice
+  local count = info.count
+  local quality = info.qualityID
+  if not (itemId and name and name ~= "" and buyoutPrice and buyoutPrice > 0 and count and count > 0) then return end
   local unitPrice = buyoutPrice / count
   local entry = scanState.itemsById[itemId]
   if not entry then
-    -- GetItemInfo is the single most expensive call per new itemId; the
-    -- old code fired it twice (class lookup + select(11) vendor price).
-    -- Cache by itemId for the scan's lifetime so a repeat listing — and
-    -- there are many — reuses one call instead of re-querying.
     local cached = scanState.itemInfoCache[itemId]
     if cached == nil then
-      local _, _, _, _, _, itemClass, itemSubClass = GetItemInfo(itemId)
-      local vendorPrice = select(11, GetItemInfo(itemId))
-      cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice or 0 }
+      local itemClass, itemSubClass, vendorPrice = itemCategoryAndVendor(itemId)
+      cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice }
       scanState.itemInfoCache[itemId] = cached
     end
     entry = {
@@ -140,11 +228,13 @@ local function finishScan(totalAuctions)
     faction = UnitFactionGroup("player"),
     items = items
   }
+  WoWderhoiAHDB.scanData = WoWderhoiAH_ScanData -- persist under the single WoWderhoiAHDB variable
   -- Accumulate per-item price points in game: c is the P10 close — the
   -- price a buyer actually pays on this realm — and feeds the chart, the
   -- 7d P10 median and the deal radar alike. 7-day window, newest 192 points
   -- per item (~48 h at the 15-minute auto-scan cadence).
   WoWderhoiAH_Points = WoWderhoiAH_Points or {}
+  WoWderhoiAHDB.points = WoWderhoiAH_Points -- keep the alias in sync for persistence
   local nowTs = time()
   local cutoff = nowTs - 7 * 24 * 3600
   for itemId, item in pairs(items) do
@@ -164,6 +254,10 @@ local function finishScan(totalAuctions)
       WoWderhoiAH_Points[itemId] = pruned
     end
   end
+  -- Record when the next full replication scan is allowed.
+  if WAH.settings then
+    WAH.settings.replicateReadyAt = time() + REPLICATE_COOLDOWN
+  end
   scanState = nil
   WAH.scanRunning = false
   chatMessage(string.format(
@@ -171,48 +265,76 @@ local function finishScan(totalAuctions)
     totalAuctions or 0, itemCount, autoScanOn() and L.SCAN_AUTO_ARMED or ""))
 end
 
-local function processGetAllChunk()
-  local total = GetNumAuctionItems("list")
-  local cursor = scanState.cursor
-  local target = math.min(cursor + PROCESS_PER_FRAME - 1, total)
+local function processReplicateChunk()
+  local total = C_AuctionHouse.GetNumReplicateItems()
   local frameStart = debugprofilestop()
-  local index = cursor
   local yielded = false
-  while index <= target do
-    recordAuction(index)
-    -- Yield as soon as this frame has consumed its time budget, even if we
-    -- haven't hit the per-frame count ceiling. The count ceiling only
-    -- guards a single pathological recordAuction; the budget is the real
-    -- 60fps gate.
-    if debugprofilestop() - frameStart >= FRAME_BUDGET_MS then
-      yielded = true
-      break
+  if not scanState.pendingOnly then
+    -- First pass: walk every index once. Entries still streaming in
+    -- (hasAllInfo=false) are queued for a revisit; the rest are recorded.
+    local index = scanState.cursor
+    local target = math.min(index + PROCESS_PER_FRAME - 1, total - 1)
+    while index <= target do
+      local info = readReplicateItem(index)
+      if info then
+        if info.hasAllInfo == false then
+          scanState.pending[index] = true
+        else
+          recordAuction(info)
+        end
+      end
+      if debugprofilestop() - frameStart >= FRAME_BUDGET_MS then yielded = true break end
+      index = index + 1
     end
-    index = index + 1
-  end
-  -- On a normal completion index has advanced past `target`; on a budget
-  -- break it points at the last record actually processed. In both cases
-  -- the next frame resumes at index + 1.
-  scanState.cursor = index + 1
-  if not yielded and target >= total then
-    frame:SetScript("OnUpdate", nil)
-    finishScan(total)
+    scanState.cursor = index + 1
+    if not yielded and target >= total - 1 then
+      scanState.pendingOnly = true -- whole list walked; revisit incomplete entries
+    end
+  else
+    -- Revisit pass: re-read only the entries that were incomplete, until
+    -- none remain; a few capped rounds keep a stalled stream from hanging.
+    local keys = {}
+    for key in pairs(scanState.pending) do keys[#keys + 1] = key end
+    table.sort(keys)
+    local processed = 0
+    for _, index in ipairs(keys) do
+      if processed >= PROCESS_PER_FRAME then yielded = true break end
+      local info = readReplicateItem(index)
+      if info and info.hasAllInfo ~= false then
+        recordAuction(info)
+        scanState.pending[index] = nil
+      elseif not info then
+        scanState.pending[index] = nil -- index no longer valid; move on
+      end
+      processed = processed + 1
+      if debugprofilestop() - frameStart >= FRAME_BUDGET_MS then yielded = true break end
+    end
+    if not yielded then
+      if next(scanState.pending) then
+        pendingRounds = pendingRounds + 1
+        if pendingRounds >= 4 then
+          -- Streaming stalled; ship what completed rather than hanging.
+          chatMessage(string.format(L.SCAN_INCOMPLETE, #keys))
+          frame:SetScript("OnUpdate", nil)
+          finishScan(total)
+          return
+        end
+      else
+        frame:SetScript("OnUpdate", nil)
+        finishScan(total)
+      end
+    end
   end
 end
 
-local function queryCurrentPage()
-  if not scanState or scanState.mode ~= "paged" then return end
-  -- First return value is the regular per-page throttle (sub-second),
-  -- NOT select(2,...) which is the 15-minute getAll cooldown.
-  if not CanSendAuctionQuery() then
-    C_Timer.After(0.2, queryCurrentPage)
-    return
-  end
-  QueryAuctionItems("", nil, nil, scanState.page, false, QUALITY_ANY, false, false)
+local function replicateSecondsLeft()
+  local readyAt = WAH.settings and WAH.settings.replicateReadyAt
+  if not readyAt then return 0 end
+  return math.max(readyAt - time(), 0)
 end
 
 local function startScan()
-  if not AuctionFrame or not AuctionFrame:IsShown() then
+  if not AuctionHouseFrame or not AuctionHouseFrame:IsShown() then
     chatMessage(L.SCAN_OPEN_AH_FIRST)
     return
   end
@@ -220,17 +342,33 @@ local function startScan()
     chatMessage(L.SCAN_ALREADY_RUNNING)
     return
   end
-  WAH.scanRunning = true
-  local _, canGetAll = CanSendAuctionQuery()
-  if canGetAll then
-    scanState = { mode = "getall", itemsById = {}, itemInfoCache = {} }
-    chatMessage(L.SCAN_GETALL_START)
-    QueryAuctionItems("", nil, nil, 0, false, QUALITY_ANY, true, false)
-  else
-    scanState = { mode = "paged", page = 0, itemsById = {}, itemInfoCache = {} }
-    chatMessage(L.SCAN_PAGED_START)
-    queryCurrentPage()
+  if C_AuctionHouse.IsThrottled and C_AuctionHouse.IsThrottled() then
+    chatMessage(L.SCAN_THROTTLED)
+    return
   end
+  local cooldownLeft = replicateSecondsLeft()
+  if cooldownLeft > 0 then
+    chatMessage(string.format(L.SCAN_REPLICATE_COOLDOWN, math.ceil(cooldownLeft / 60)))
+    return
+  end
+  WAH.scanRunning = true
+  pendingRounds = 0
+  scanState = { mode = "replicate", itemsById = {}, itemInfoCache = {}, pending = {}, pendingOnly = false, probeDone = false }
+  chatMessage(L.SCAN_REPLICATE_START)
+  local throttled = false
+  if C_AuctionHouse.IsThrottled then throttled = C_AuctionHouse.IsThrottled() end
+  chatMessage(string.format(L.SCAN_DIAG_THROTTLE, throttled and "yes" or "no"))
+  C_AuctionHouse.ReplicateItems()
+  -- Watchdog: if REPLICATE_ITEM_LIST_UPDATE never fires (replication
+  -- rejected, or the event differs on this client), scanState would sit
+  -- here forever and block every later scan. Reset after 12s and say so.
+  C_Timer.After(12, function()
+    if not scanState then return end
+    if scanState.processing then return end -- data is flowing; normal path owns it
+    chatMessage(L.SCAN_NO_REPLICATE)
+    scanState = nil
+    WAH.scanRunning = false
+  end)
 end
 
 frame:SetScript("OnEvent", function(_, event)
@@ -243,42 +381,30 @@ frame:SetScript("OnEvent", function(_, event)
     end
     return
   end
-  -- AUCTION_ITEM_LIST_UPDATE
+  -- REPLICATE_ITEM_LIST_UPDATE fires once per streamed chunk (and once at
+  -- the end); the OnUpdate pass drains whatever is ready, resuming on the
+  -- next chunk event until the replication is fully consumed.
   if not scanState then return end
-  if scanState.mode == "getall" then
-    if scanState.processing then return end
-    scanState.processing = true
-    scanState.cursor = 1
-    chatMessage(string.format(L.SCAN_RECEIVED, GetNumAuctionItems("list")))
-    frame:SetScript("OnUpdate", processGetAllChunk)
-    return
+  if scanState.processing then return end
+  scanState.processing = true
+  scanState.cursor = 0 -- replicate indices are 0-based on this client
+  chatMessage(string.format(L.SCAN_RECEIVED, C_AuctionHouse.GetNumReplicateItems() or 0))
+  if not scanState.probeDone then
+    scanState.probeDone = true
+    printReplicateProbe()
   end
-  local numOnPage, totalAuctions = GetNumAuctionItems("list")
-  for index = 1, numOnPage do recordAuction(index) end
-  local scannedSoFar = scanState.page * PAGE_SIZE + numOnPage
-  if scannedSoFar < totalAuctions then
-    scanState.page = scanState.page + 1
-    local cadence = (WAH.settings and WAH.settings.verboseScan) and 1 or 10
-    if scanState.page % cadence == 0 then
-      chatMessage(string.format(L.SCAN_PAGE_PROGRESS, scanState.page, scannedSoFar, totalAuctions))
-    end
-    queryCurrentPage()
-  else
-    finishScan(totalAuctions)
-  end
+  frame:SetScript("OnUpdate", processReplicateChunk)
 end)
 
--- Auto-rescan: while the AH stays open, restart a getAll scan whenever
--- the 15-minute cooldown elapses. Ticker is cheap; all real gating is
+-- Auto-rescan: while the AH stays open, restart a replicate scan whenever
+-- the ~15-minute cooldown elapses. Ticker is cheap; all real gating is
 -- inside the check.
 C_Timer.NewTicker(20, function()
   if not autoScanOn() or scanState then return end
-  if not (AuctionFrame and AuctionFrame:IsShown()) then return end
-  local _, canGetAll = CanSendAuctionQuery()
-  if canGetAll then
-    chatMessage(L.AUTO_TRIGGER)
-    startScan()
-  end
+  if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then return end
+  if replicateSecondsLeft() > 0 then return end
+  chatMessage(L.AUTO_TRIGGER)
+  startScan()
 end)
 
 -- Single history authority: points accumulated across scans plus the
@@ -311,4 +437,27 @@ SlashCmdList["WOWDERHOIAHAUTO"] = function()
   chatMessage(WAH.settings.autoScan
     and L.AUTO_ON
     or L.AUTO_OFF)
+end
+-- Diagnostic: does this Forever beta allow file I/O at all? The client
+-- fails to inject SavedVariables on login (write works, read never lands),
+-- so the fallback plan is to read the file ourselves when io/loadfile
+-- are available.
+SLASH_WOWDERHOIAHTESTIO1 = "/wahtestio"
+SlashCmdList["WOWDERHOIAHTESTIO"] = function()
+  local out = {}
+  out[#out + 1] = "io=" .. tostring(io)
+  out[#out + 1] = "loadfile=" .. tostring(loadfile)
+  local p = "WTF/Account/1120133458#1/SavedVariables/WoWderhoiAH.lua"
+  if io and io.open then
+    local ok, f = pcall(io.open, p, "r")
+    out[#out + 1] = "ioopen=" .. tostring(ok)
+    if ok and f then
+      local chunk = f:read("*a")
+      f:close()
+      out[#out + 1] = "len=" .. tostring(chunk and #chunk or 0)
+    end
+  end
+  local ok2, res2 = pcall(loadfile, "Interface/AddOns/WoWderhoiAH/data.lua")
+  out[#out + 1] = "loadself=" .. tostring(ok2) .. "/" .. tostring(res2)
+  DEFAULT_CHAT_FRAME:AddMessage("WAH io-test: " .. table.concat(out, " | "))
 end

@@ -1,12 +1,17 @@
-## Interface: 20506
+## Interface: 16001
 ## Title: WoWderhoi AHelper
-## Notes: Auction house scanner and price intelligence for the WoWderhoi AH terminal.
+## Notes: Auction house scanner and price intelligence for WoW: Forever (Infinite) 1.60.1 and retail 12.x. Port of the TBC Anniversary build to the C_AuctionHouse API.
 ## Author: Jim Zhang
-## Version: 0.2.1
+## Version: 0.3.0
 ## IconTexture: Interface\AddOns\WoWderhoiAH\logo.tga
 ## Category: Auctions
 ## Category-zhCN: 拍卖
-## SavedVariables: WoWderhoiAH_ScanData, WoWderhoiAH_Settings, WoWderhoiAH_Points
+## SavedVariables: WoWderhoiAHDB
+# Interface 16001 = WoW: Forever client 1.60.1 (shares the retail 12.x UI
+# architecture, incl. C_AuctionHouse). Add 120xxx values here if the retail
+# client must load it too; Forever only reads the value that matches its own
+# client build. If the client flags the addon as out of date, set this number
+# to the version shown under the launcher's Play button.
 
 Locale.lua
 GeneratedRules.lua

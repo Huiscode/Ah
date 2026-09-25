@@ -105,8 +105,10 @@ export function loadAddon(options?: { locale?: string }) {
     setPoints: (entries: unknown[]) => exec(`WowTest.setPoints(${toLua(entries)})`),
     openTab: () => exec("WowTest.openTab()"),
     findDeals: () => exec("WowTest.clickButton(WowTest.ns.L.FIND_DEALS)"),
-    search: (query: string, listings: unknown[]) =>
-      exec(`WowTest.search(${toLua(query)}, ${toLua(listings)})`),
+    search: (query: string, listings?: unknown[]) =>
+      exec(listings === undefined
+        ? `WowTest.search(${toLua(query)})`
+        : `WowTest.search(${toLua(query)}, ${toLua(listings)})`),
     clickHeader: (label: string) => exec(`WowTest.clickHeader(${toLua(label)})`),
 
     rowCount: () => Number(evaluate("WowTest.rowCount()")),
@@ -138,8 +140,11 @@ export function loadAddon(options?: { locale?: string }) {
     tooltipShown: () => Boolean(evaluate("WowTest.tooltipShown()")),
 
     buyRow: (row: number) => exec(`WowTest.buyRow(${row})`),
-    repriceListing: (index: number, buyout: number) =>
-      exec(`WowTest.repriceListing(${index}, ${buyout})`),
+    // QueryForItem answers asynchronously; the stub queues the results
+    // update on the C_Timer queue. flushQueries() lands it.
+    flushQueries: () => exec("WowTest.runTimers()"),
+    setSearchResults: (itemId: number, rows: unknown[]) =>
+      exec(`WowTest.setSearchResults(${itemId}, ${toLua(rows)})`),
     scanned: (itemId: number) => Boolean(evaluate(`WowTest.scanned(${itemId})`)),
     scanMin: (itemId: number) => evaluate(`WowTest.scanMin(${itemId})`),
     scanAuctions: (itemId: number) => evaluate(`WowTest.scanAuctions(${itemId})`)

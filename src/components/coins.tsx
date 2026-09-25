@@ -12,7 +12,7 @@ function CoinPart({ value, kind }: { value: number; kind: keyof typeof COIN_ICON
   return (
     <span className="inline-flex items-center gap-0.5">
       <span className={kind === "gold" ? "text-wow-gold" : kind === "silver" ? "text-wow-silver" : "text-wow-copper"}>
-        {value.toLocaleString()}
+        {value.toLocaleString("en-US")}
       </span>
       {/* eslint-disable-next-line @next/next/no-img-element -- tiny external sprite, no optimization needed */}
       <img src={COIN_ICONS[kind]} alt={kind} width={10} height={10} className="inline-block" />

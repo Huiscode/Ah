@@ -39,13 +39,19 @@ end
 local lastTooltipItemId = nil
 local chart = nil -- declared before the hooks below close over it
 
-local function appendTraderSection(tooltip)
+local function appendTraderSection(tooltip, data)
   if tooltip ~= GameTooltip then return end
   if tooltip.wahAppended then return end
   if WAH.settings and not WAH.settings.tooltip then return end
-  local _, link = tooltip:GetItem()
-  if not link then return end
-  local itemId = tonumber(link:match("item:(%d+)"))
+  -- Retail 12.x post calls pass the tooltip data; fall back to reading the
+  -- tooltip's own link for clients that fire the legacy setters instead.
+  local itemId
+  if data and data.itemID then
+    itemId = data.itemID
+  else
+    local _, link = tooltip:GetItem()
+    if link then itemId = tonumber(link:match("item:(%d+)")) end
+  end
   if not itemId then return end
   lastTooltipItemId = itemId
   -- Session scan is the live view (AH prices swing by the hour);
@@ -98,7 +104,7 @@ end
 GameTooltip:HookScript("OnTooltipCleared", function(tooltip) tooltip.wahAppended = nil end)
 GameTooltip:HookScript("OnHide", function(tooltip)
   tooltip.wahAppended = nil
-  if chart and not (AuctionFrame and AuctionFrame:IsShown()) then chart:Hide() end
+  if chart and not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then chart:Hide() end
 end)
 
 if TooltipDataProcessor and Enum and Enum.TooltipDataType then
@@ -267,15 +273,18 @@ function WoWderhoiAH_UpdateChart(itemId)
   -- Follow the tooltip: anchored beside the AH when it is open,
   -- beside the game tooltip otherwise.
   chart:ClearAllPoints()
-  if AuctionFrame and AuctionFrame:IsShown() then
-    chart:SetPoint("TOPLEFT", AuctionFrame, "TOPRIGHT", -2, -12)
+  if AuctionHouseFrame and AuctionHouseFrame:IsShown() then
+    chart:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPRIGHT", -2, -12)
   elseif GameTooltip:IsShown() then
     chart:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -4, 0)
   else
     chart:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
   end
-  local itemName = GetItemInfo(itemId) or ("item:" .. itemId)
-  chart.title:SetText(itemName)
+  local itemName = GetItemInfo(itemId)
+  if not itemName and C_Item and C_Item.GetItemInfoByID then
+    itemName = C_Item.GetItemInfoByID(itemId)
+  end
+  chart.title:SetText(itemName or ("item:" .. itemId))
   chart.subtitle:SetText(string.format(L.CHART_SUBTITLE, #entry.pts, GetCoinTextureString(entry.latest)))
 
   local now = time()
@@ -292,8 +301,8 @@ guiFrame:RegisterEvent("AUCTION_HOUSE_CLOSED")
 guiFrame:SetScript("OnEvent", function(_, event)
   if event == "PLAYER_LOGIN" then
     local count = 0
-    if WoWderhoiAH_Points then
-      for _ in pairs(WoWderhoiAH_Points) do count = count + 1 end
+    if WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.items then
+      for _ in pairs(WoWderhoiAH_ScanData.items) do count = count + 1 end
     end
     DEFAULT_CHAT_FRAME:AddMessage(string.format(
       "|cff33ff99WoWderhoi AHelper|r " .. L.LOADED, count))
@@ -321,4 +330,19 @@ SlashCmdList["WOWDERHOIAHSTATUS"] = function()
   end
   DEFAULT_CHAT_FRAME:AddMessage(string.format(
     "|cff33ff99WoWderhoi AHelper|r " .. L.STATUS_FMT, historyCount, scanInfo))
+end
+
+SLASH_WOWDERHOIAHDEBUG1 = "/wahdebug"
+SlashCmdList["WOWDERHOIAHDEBUG"] = function()
+  local version = "n/a"
+  if C_AddOns and C_AddOns.GetAddOnMetadata then
+    version = C_AddOns.GetAddOnMetadata("WoWderhoiAH", "Version") or "n/a"
+  end
+  local parts = {
+    "scanData=" .. tostring(WoWderhoiAH_ScanData ~= nil),
+    "settings=" .. tostring(WAH.settings ~= nil),
+    "points=" .. tostring(WoWderhoiAH_Points ~= nil),
+    "tocVersion=" .. tostring(version),
+  }
+  DEFAULT_CHAT_FRAME:AddMessage("WAH debug: " .. table.concat(parts, " | "))
 end

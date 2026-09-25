@@ -13,7 +13,7 @@ process.loadEnvFile();
 import { prisma } from "@/lib/prisma";
 
 const execFileAsync = promisify(execFile);
-const proxy = process.env.AQT_PROXY ?? "http://127.0.0.1:7890";
+const proxy = process.env.AQT_PROXY ?? "";
 const iconsDir = join(process.cwd(), "public", "icons");
 const CONCURRENCY = 2; // Wowhead rate-limits bursts; keep it gentle
 const THROTTLE_MS = 400; // pause between requests per worker
@@ -21,7 +21,9 @@ const THROTTLE_MS = 400; // pause between requests per worker
 // curl handles the proxy reliably on Windows; Node's fetch ignores
 // HTTP(S)_PROXY without extra agents.
 async function curl(args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync("curl", ["-s", "--max-time", "15", "-x", proxy, ...args], {
+  const baseArgs = ["-s", "--max-time", "15"];
+  if (proxy) baseArgs.push("-x", proxy);
+  const { stdout } = await execFileAsync("curl", [...baseArgs, ...args], {
     maxBuffer: 4 * 1024 * 1024
   });
   return stdout;

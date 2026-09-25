@@ -3,15 +3,16 @@
 // about one rule: nothing the page draws may land on the edge it draws for
 // itself. The panel had the title's corner, the row icons and the last row
 // sitting on the bevel, which is what "some text overflows" looks like.
+//
+// The retail port is a fixed-size floating panel beside AuctionHouseFrame;
+// its height no longer follows the client's, so the row budget is a
+// constant derived from that size.
 
 import { describe, expect, it } from "vitest";
 import { loadAddon, type WowLua } from "./wow-lua";
 
-// The page pins two corners to AuctionFrame, so the client's height decides
-// the panel's. Tests set it explicitly instead of inheriting a default.
-function layout(auctionFrameHeight = 447): WowLua {
+function layout(): WowLua {
   const lua = loadAddon();
-  lua.exec(`AuctionFrame:SetSize(800, ${auctionFrameHeight})`);
   lua.openTab();
   return lua;
 }
@@ -39,17 +40,13 @@ describe("trade panel layout", () => {
     expect(layout().wrappingCells()).toBe(0);
   });
 
-  it("fits the row count to the panel instead of assuming one", () => {
-    const tall = layout();
-    const short = layout(360);
-    // 447 - 70 above - 38 below = 339 of panel; 72 goes to the header block
-    // and 8 to the bottom border, leaving 11 whole 22px rows.
-    expect(tall.visibleRows()).toBe(11);
-    expect(short.visibleRows()).toBeLessThan(tall.visibleRows());
-    // The count that matters is the one that still clears the bottom edge,
-    // at whatever height the client hands the page.
-    for (const panel of [tall, short]) {
-      expect(panel.clearance("BOTTOM")).toBeGreaterThanOrEqual(panel.backdropInset("bottom"));
-    }
+  it("derives a fixed row budget from the fixed panel height", () => {
+    const lua = layout();
+    expect(lua.panelHeight()).toBe(320);
+    // 320 - 70 above - 38 below = 212; 72 goes to the header block and 8 to
+    // the bottom border, leaving 6 whole 22px rows. The count that matters
+    // is the one that still clears the bottom edge.
+    expect(lua.visibleRows()).toBe(6);
+    expect(lua.clearance("BOTTOM")).toBeGreaterThanOrEqual(lua.backdropInset("bottom"));
   });
 });

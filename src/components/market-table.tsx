@@ -144,8 +144,8 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                 <td className="px-3 py-2 text-right"><Coins copper={signal.med7} /></td>
                 <td className={signal.discountPercent >= 15 ? "px-3 py-2 text-right text-terminal-green" : "px-3 py-2 text-right text-slate-300"}>{signal.discountPercent.toFixed(0)}%</td>
                 <td className={signal.changePercent >= 0 ? "px-3 py-2 text-right text-terminal-red" : "px-3 py-2 text-right text-terminal-green"}>{formatPercent(signal.changePercent)}</td>
-                <td className="px-3 py-2 text-right text-slate-300">{signal.quantity.toLocaleString()}</td>
-                <td className="px-3 py-2 text-right text-slate-300">{signal.numAuctions.toLocaleString()}</td>
+                <td className="px-3 py-2 text-right text-slate-300">{signal.quantity.toLocaleString("en-US")}</td>
+                <td className="px-3 py-2 text-right text-slate-300">{signal.numAuctions.toLocaleString("en-US")}</td>
               </tr>
             ))}
           </tbody>
