@@ -30,7 +30,7 @@ export function TimeSeriesChart({ data }: { data: TimePoint[] }) {
         <YAxis yAxisId="price" domain={["auto", "auto"]} tick={{ fill: "#8d96a8", fontSize: 11 }} tickFormatter={formatGold} width={72} />
         <YAxis yAxisId="volume" orientation="right" tick={{ fill: "#8d96a8", fontSize: 11 }} width={54} />
         <Tooltip
-          contentStyle={{ background: "#10141d", border: "1px solid #263042", color: "#dce3ef" }}
+          contentStyle={{ background: "rgba(18, 22, 31, 0.88)", border: "1px solid #263042", color: "#dce3ef" }}
           itemStyle={{ color: "#dce3ef" }}
           labelStyle={{ color: "#dce3ef" }}
           labelFormatter={(value) => formatClock(Number(value))}
@@ -99,7 +99,7 @@ export function CandlestickChart({ data }: { data: CandlePoint[] }) {
           width={72}
         />
         <Tooltip
-          contentStyle={{ background: "#10141d", border: "1px solid #263042", color: "#dce3ef" }}
+          contentStyle={{ background: "rgba(18, 22, 31, 0.88)", border: "1px solid #263042", color: "#dce3ef" }}
           itemStyle={{ color: "#dce3ef" }}
           labelStyle={{ color: "#dce3ef" }}
           formatter={(value, name) => {
