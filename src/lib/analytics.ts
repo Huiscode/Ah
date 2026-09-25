@@ -73,6 +73,7 @@ export type DealRadarRow = {
   itemId: number;
   name: string;
   quality: string;
+  category: string;
   minPrice: number;
   reference: number; // vendorPrice for vendor deals, med7 otherwise
   profit: number; // copper spread between reference and current min
@@ -117,6 +118,7 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         itemId: signal.itemId,
         name: signal.name,
         quality: signal.quality,
+        category: signal.category,
         minPrice: signal.minPrice,
         reference: signal.vendorPrice,
         profit: signal.vendorPrice - signal.minPrice,
@@ -144,6 +146,7 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         itemId: signal.itemId,
         name: signal.name,
         quality: signal.quality,
+        category: signal.category,
         minPrice: signal.minPrice,
         reference: signal.med7,
         profit: signal.med7 - signal.minPrice,

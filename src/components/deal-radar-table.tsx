@@ -15,14 +15,18 @@ type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent";
 // Headers sort: first click high-to-low, second click low-to-high; without
 // any click the rows keep the radar's own ranking (NPC deals first, then
 // absolute profit).
-export function DealRadarTable({ deals, prices }: {
+export function DealRadarTable({ deals, prices, categories }: {
   deals: DealRadarRow[];
   prices: Map<number, number>;
+  categories: string[];
 }) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
+  const [category, setCategory] = useState("");
 
-  const rows = [...deals];
+  const rows = category
+    ? deals.filter((deal) => deal.category === category)
+    : [...deals];
   if (sortKey) {
     rows.sort((left, right) => {
       const a = sortKey === "name" ? left.name : sortKey === "price" ? (prices.get(left.itemId) ?? 0) : left[sortKey];
@@ -43,9 +47,20 @@ export function DealRadarTable({ deals, prices }: {
 
   const mark = (key: SortKey) => (sortKey === key ? (sortAsc ? " ▲" : " ▼") : "");
   const thClass = "cursor-pointer select-none border-b border-terminal-border px-3 py-2 hover:text-slate-200";
+  const inputClass = "border border-terminal-border bg-terminal-panel2 px-2 py-1 text-slate-100 focus:outline-none";
 
   return (
-    <div className="max-h-[384px] overflow-y-auto">
+    <div>
+      <div className="flex flex-wrap items-center gap-2 border-b border-terminal-border px-3 py-2 font-mono text-xs">
+        <select value={category} onChange={(event) => setCategory(event.target.value)} className={inputClass}>
+          <option value="">全部品类</option>
+          {categories.map((value) => (
+            <option key={value} value={value}>{value}</option>
+          ))}
+        </select>
+        <span className="text-terminal-muted">{rows.length} / {deals.length} 条</span>
+      </div>
+      <div className="max-h-[344px] overflow-y-auto">
       <table className="w-full min-w-[880px] border-collapse font-mono text-xs">
         <thead className="sticky top-0 z-10 bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
           <tr>
@@ -77,6 +92,7 @@ export function DealRadarTable({ deals, prices }: {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

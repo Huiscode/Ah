@@ -50,6 +50,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // apply.
   const radarRules = mergeRadarRules(storedRules);
   const deals = buildDealRadar(signals, radarRules);
+  const radarCategories = Array.from(new Set(deals.map((deal) => deal.category))).sort();
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
   const craftRows = computeCraftProfits(craftRecipes, priceByItemId);
   const craftOk = craftRows.filter((row) => row.status === "ok");
@@ -86,7 +87,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   {signals.length === 0 ? "暂无市场数据。进游戏 /wahscan 扫描。" : "当前没有满足流动性与利润门槛的捡漏挂单。"}
                 </div>
               ) : (
-                <DealRadarTable deals={deals} prices={priceByItemId} />
+                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} />
               )}
             </div>
           </Panel>
