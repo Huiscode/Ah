@@ -22,6 +22,15 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import Link from "next/link";
 
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  // Chinese labels for the alert metrics surfaced on the dashboard; kept in
+  // sync with components/trader-panels.tsx.
+  const alertMetricLabels: Record<string, string> = {
+    price: "P10 市价",
+    minPrice: "最低价",
+    med7: "7日P10中位",
+    discountPercent: "折扣%",
+    quantity: "在售量"
+  };
   const view = parseMarketView(await searchParams);
   const [{ signals, latestSnapshotAt }, upcomingEvents, watchedIds, alertRules, storedRules] = await Promise.all([
     getMarketSignals(),
@@ -111,50 +120,50 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             <PanelHeader title="雷达参数" action={<span className="font-mono text-[10px] text-terminal-muted">游戏内权威 · 扫描后同步</span>} />
             <div className="space-y-2 p-3 font-mono text-xs">
               <p className="text-[10px] leading-relaxed text-terminal-muted">
-                这些阈值在游戏内修改（拍卖行面板「设置」按钮或 /wahopt），改动立即生效并随下次扫描同步回这里。此处为只读跟随。捡漏雷达同时受 NPC 必赚（无门槛）与以下 Class 2 门槛约束。
+                这些阈值在游戏内修改（拍卖行面板「设置」按钮或 /wahopt），改动立即生效并随下次扫描同步回这里。此处为只读跟随。捡漏雷达同时受 NPC 必赚（无门槛）与以下第二档门槛约束。
               </p>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">minProfit <span className="text-[10px] text-terminal-muted">（绝对利润下限）</span></span>
+                <span className="text-slate-100">绝对利润下限</span>
                 <Coins copper={radarRules.minProfit} />
               </div>
               <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">利润低于此铜币数的价差视为噪音而非机会。开服初期 30 铜是合适的灰尘下限；物价起来后可适当上调。</p>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">minProfitRatio <span className="text-[10px] text-terminal-muted">（相对利润下限）</span></span>
+                <span className="text-slate-100">相对利润下限</span>
                 <span>{formatPercent(radarRules.minProfitRatio * 100)}</span>
               </div>
               <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">利润还须达到 7 日 P10 中位的该比例，让下限随物价缩放。0.25 = 利润不低于中位的 25%。</p>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">maxDiscount <span className="text-[10px] text-terminal-muted">（最大折扣）</span></span>
+                <span className="text-slate-100">最大折扣</span>
                 <span>-{formatPercent(radarRules.maxDiscount * 100)}</span>
               </div>
               <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">雷达信任的最大折扣深度；超过此深度说明参考价已失效，而不是挂单便宜。0.75 = 最多信任低于中位 75%。</p>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">minAuctions <span className="text-[10px] text-terminal-muted">（最低挂单数）</span></span>
+                <span className="text-slate-100">最低挂单数</span>
                 <span>{radarRules.minAuctions}</span>
               </div>
               <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">构成真实市场所需的最低挂单数；挂单太少就没有可买入的市场。</p>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">minHistory <span className="text-[10px] text-terminal-muted">（历史样本数）</span></span>
+                <span className="text-slate-100">历史样本数</span>
                 <span>{radarRules.minHistory}</span>
               </div>
               <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">7 日窗口内中位有效所需的最少扫描次数；历史太浅时中位没有意义。</p>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">minMed7Distinct <span className="text-[10px] text-terminal-muted">（中位去重样本）</span></span>
+                <span className="text-slate-100">中位去重样本</span>
                 <span>{radarRules.minMed7Distinct}</span>
               </div>
               <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">要求的 7 日 P10 去重样本数。完全平坦的序列是一个蹲守卖家的报价，不是市场，雷达拒绝按它折扣。</p>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">A 供给收缩 <span className="text-[10px] text-terminal-muted">（流通性筛选）</span></span>
+                <span className="text-slate-100">供给收缩</span>
                 <span className={radarRules.supplyShrink ? "text-terminal-green" : "text-terminal-muted"}>{radarRules.supplyShrink ? `开（≤${formatPercent(Math.abs(radarRules.supplyShrinkMax) * 100)}）` : "关"}</span>
               </div>
               <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">开启后要求最近 4 次扫描的在售量净收缩至少 {formatPercent(Math.abs(radarRules.supplyShrinkMax) * 100)}——供给在被买走，周转快、囤积风险低。关闭则不要求。</p>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">B 流动性下限 <span className="text-[10px] text-terminal-muted">（minAuctions 提高）</span></span>
+                <span className="text-slate-100">流动性下限</span>
                 <span className={radarRules.minAuctionsBoost ? "text-terminal-green" : "text-terminal-muted"}>{radarRules.minAuctionsBoost ? `开（≥${radarRules.minAuctionsFloor}）` : "关"}</span>
               </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">开启后最低挂单数从 minAuctions 提高到 {radarRules.minAuctionsFloor}，更严格的流动性门槛。</p>
+              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">开启后最低挂单数从默认门槛提高到 {radarRules.minAuctionsFloor}，更严格的流动性门槛。</p>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">C 供给量上限 <span className="text-[10px] text-terminal-muted">（排除积压货）</span></span>
+                <span className="text-slate-100">供给量上限</span>
                 <span className={radarRules.supplyCap > 0 ? "text-terminal-green" : "text-terminal-muted"}>{radarRules.supplyCap > 0 ? radarRules.supplyCap.toLocaleString("zh-CN") : "关（0）"}</span>
               </div>
               <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">排除最新在售量超过该上限的物品——供给过剩的商品有囤积风险。0 表示不设上限。</p>
@@ -168,7 +177,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 <div key={hit.rule.id} className="flex items-center justify-between gap-2">
                   <Link href={`/items/${hit.rule.itemId}`} className="text-slate-100 hover:text-terminal-amber">{hit.signal.name}</Link>
                   <span className="text-terminal-red">
-                    {hit.rule.metric} {hit.rule.operator === "gt" ? ">" : "<"} {hit.rule.threshold}（现 {hit.actual.toFixed(2)}）
+                    {alertMetricLabels[hit.rule.metric] ?? hit.rule.metric} {hit.rule.operator === "gt" ? ">" : "<"} {hit.rule.threshold}（现 {hit.actual.toFixed(2)}）
                   </span>
                 </div>
               ))}
