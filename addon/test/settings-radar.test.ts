@@ -95,24 +95,6 @@ describe("liquidity gate A (supply shrink)", () => {
   });
 });
 
-describe("liquidity gate B (raised liquidity floor)", () => {
-  const THIN: Candidate = {
-    itemId: 3, name: "Thin Book", minPrice: 8000, numAuctions: 4, quantity: 100,
-    closes: [10000, 11000, 12000, 11000], qs: [100, 95, 90, 80]
-  };
-  const RULES = { minAuctionsBoost: true, minAuctionsFloor: 5 } as const;
-
-  it("rejects a 4-listing book under the boosted floor, identically in Lua and TS", () => {
-    expect(addonNames(addonWith([CLEAN, THIN], RULES))).toEqual(["Clean"]);
-    expect(webWith([CLEAN, THIN], RULES)).toEqual(["Clean"]);
-  });
-
-  it("keeps the base minAuctions when B is off", () => {
-    expect(addonNames(addonWith([CLEAN, THIN], {}))).toEqual(["Clean", "Thin Book"]);
-    expect(webWith([CLEAN, THIN], {})).toEqual(["Clean", "Thin Book"]);
-  });
-});
-
 describe("liquidity gate C (supply cap)", () => {
   const OVERSOLD: Candidate = {
     itemId: 4, name: "Oversold", minPrice: 8000, numAuctions: 6, quantity: 1000,

@@ -20,8 +20,6 @@ export type DealRadarRules = {
   maxDiscount: number;
   supplyShrink: boolean;
   supplyShrinkMax: number;
-  minAuctionsBoost: boolean;
-  minAuctionsFloor: number;
   supplyCap: number;
 };
 
@@ -43,9 +41,6 @@ export const dealRadarRules: DealRadarRules = {
   // up (fast turnover) rather than sitting on the board.
   supplyShrink: false,
   supplyShrinkMax: -0.15,
-  // B — raise the liquidity floor from minAuctions to minAuctionsFloor.
-  minAuctionsBoost: false,
-  minAuctionsFloor: 5,
   // C — supply cap: 0 = off; >0 excludes items whose latest listed
   // quantity exceeds this (oversupplied goods are a hoarding risk).
   supplyCap: 0

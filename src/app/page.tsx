@@ -169,11 +169,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               </div>
               <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">开启后要求最近 4 次扫描的在售量净收缩至少 {formatPercent(Math.abs(radarRules.supplyShrinkMax) * 100)}——供给在被买走，周转快、囤积风险低。关闭则不要求。</p>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">流动性下限</span>
-                <span className={radarRules.minAuctionsBoost ? "text-terminal-green" : "text-terminal-muted"}>{radarRules.minAuctionsBoost ? `开（≥${radarRules.minAuctionsFloor}）` : "关"}</span>
-              </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">流动性下限 = 雷达接受物品所需的最低挂单数门槛。开启后，该门槛从最低挂单数（当前 {radarRules.minAuctions}）提高到 {radarRules.minAuctionsFloor}，只接受挂单更充足、更容易买到的物品；关闭则维持最低挂单数。</p>
-              <div className="flex items-center justify-between gap-2">
                 <span className="text-slate-100">供给量上限</span>
                 <span className={radarRules.supplyCap > 0 ? "text-terminal-green" : "text-terminal-muted"}>{radarRules.supplyCap > 0 ? radarRules.supplyCap.toLocaleString("zh-CN") : "关（0）"}</span>
               </div>

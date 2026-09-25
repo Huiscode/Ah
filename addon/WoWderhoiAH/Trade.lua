@@ -189,11 +189,7 @@ local function refreshDeals()
     chatMessage(L.DEALS_NEED_SCAN)
     return
   end
-  -- B raises the liquidity floor: when enabled, at least minAuctionsFloor
-  -- listings are required regardless of the base minAuctions setting.
-  local minAuctions = WAH.RADAR.minAuctionsBoost
-    and math.max(WAH.RADAR.minAuctions, WAH.RADAR.minAuctionsFloor)
-    or WAH.RADAR.minAuctions
+  -- Class 2 requires a live market of at least minAuctions listings.
   local anyHistory = false
   for itemId, entry in pairs(scan) do
     local history = WAH.history(itemId)
@@ -221,7 +217,7 @@ local function refreshDeals()
     -- pool when enabled; both only ever filter, never reorder.
     elseif history and #history.pts >= WAH.RADAR.minHistory and history.med7 and history.med7 > 0
       and entry.minPrice and entry.minPrice > 0
-      and (entry.numAuctions or 0) >= minAuctions
+      and (entry.numAuctions or 0) >= WAH.RADAR.minAuctions
       and (history.med7 - entry.minPrice) >= WAH.RADAR.minProfit
       and (history.med7 - entry.minPrice) >= history.med7 * WAH.RADAR.minProfitRatio
       and entry.minPrice <= history.med7 * WAH.RADAR.discount

@@ -101,15 +101,9 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
     maxDiscount: RADAR_MAX_DISCOUNT,
     supplyShrink: RADAR_SUPPLY_SHRINK,
     supplyShrinkMax: RADAR_SUPPLY_SHRINK_MAX,
-    minAuctionsBoost: RADAR_MIN_AUCTIONS_BOOST,
-    minAuctionsFloor: RADAR_MIN_AUCTIONS_FLOOR,
     supplyCap: RADAR_SUPPLY_CAP
   } = rules;
-  // B raises the liquidity floor: when enabled, at least minAuctionsFloor
-  // listings are required regardless of the base minAuctions setting.
-  const minAuctionsGate = RADAR_MIN_AUCTIONS_BOOST
-    ? Math.max(RADAR_MIN_AUCTIONS, RADAR_MIN_AUCTIONS_FLOOR)
-    : RADAR_MIN_AUCTIONS;
+  const minAuctionsGate = RADAR_MIN_AUCTIONS;
   const deals: DealRadarRow[] = [];
   for (const signal of signals) {
     // Class 1: vendor arbitrage. Listed below the NPC sell price is a

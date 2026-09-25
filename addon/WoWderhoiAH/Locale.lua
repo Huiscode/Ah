@@ -98,8 +98,6 @@ local L = {
   OPT_R_SUPPLYSHRINK_TIP = "Require the last four scans' listed quantity to have shrunk by the threshold below — the supply is being bought up (fast turnover), not sitting on the board. Off = no requirement.",
   OPT_R_SHRINK = "A threshold (negative change, e.g. -0.15)",
   OPT_R_SHRINK_TIP = "Net change over the last four scans' listed quantity, as a fraction. -0.15 means supply must shrink by at least 15% to pass. Enter a negative number; positives are flipped.",
-  OPT_R_AUCBOOST = "Liquidity floor",
-  OPT_R_AUCBOOST_TIP = "Liquidity floor = the minimum listing count the radar accepts. On: raise it from minAuctions to 5, so only items with more plentiful listings pass. Off: keep minAuctions.",
   OPT_R_CAP = "C: supply cap (0 = off)",
   OPT_R_CAP_TIP = "Exclude items whose latest listed quantity exceeds this — oversupplied goods are a hoarding risk. 0 disables the cap.",
   OPT_R_MINPROFIT = "minProfit (copper)",
@@ -109,7 +107,7 @@ local L = {
   OPT_R_MAXDISC = "maxDiscount (0-1)",
   OPT_R_MAXDISC_TIP = "Deepest discount the radar trusts: past this the reference is broken, not the listing cheap. 0.75 allows up to -75% off med7.",
   OPT_R_MINAUC = "minAuctions",
-  OPT_R_MINAUC_TIP = "Minimum listing count for a real market: fewer sellers = no market to buy into. 3 = default, 5 = stricter (see B).",
+  OPT_R_MINAUC_TIP = "Minimum listing count for a real market: fewer sellers = no market to buy into. 3 = default.",
   OPT_R_DISTINCT = "minMed7Distinct",
   OPT_R_DISTINCT_TIP = "Distinct 7d P10 values required: a flat series is one camper's ask, not a market. 2 = default.",
   OPT_R_HISTORY = "minHistory",
@@ -204,8 +202,6 @@ if GetLocale() == "zhCN" then
   L.OPT_R_SUPPLYSHRINK_TIP = "要求最近 4 次扫描的在售量按下方阈值收缩——说明供给在被买走（周转快），而不是压在货架上。关闭则不要求。"
   L.OPT_R_SHRINK = "供给收缩阈值（负数，如 -0.15）"
   L.OPT_R_SHRINK_TIP = "最近 4 次扫描在售量的净变化比例。-0.15 表示在售量至少收缩 15% 才算通过。输入负数；正数会自动取负。"
-  L.OPT_R_AUCBOOST = "流动性下限"
-  L.OPT_R_AUCBOOST_TIP = "流动性下限 = 雷达接受物品所需的最低挂单数门槛。开启后，该门槛从最低挂单数（默认 3）提高到 5，只接受挂单更充足、更容易买到的物品；关闭则维持最低挂单数。"
   L.OPT_R_CAP = "供给量上限（0=关闭）"
   L.OPT_R_CAP_TIP = "排除最新在售量超过该上限的物品——供给过剩的商品有囤积风险。0 表示不设上限。"
   L.OPT_R_MINPROFIT = "绝对利润下限（铜）"
@@ -215,7 +211,7 @@ if GetLocale() == "zhCN" then
   L.OPT_R_MAXDISC = "最大折扣（0-1）"
   L.OPT_R_MAXDISC_TIP = "雷达信任的最大折扣：超过此深度说明参考价已失效，而不是挂单便宜。0.75 允许低于中位最多 75%。"
   L.OPT_R_MINAUC = "最低挂单数"
-  L.OPT_R_MINAUC_TIP = "构成真实市场所需的最低挂单数：挂单太少就没有可买入的市场。3=默认，5=更严格（见流动性下限）。"
+  L.OPT_R_MINAUC_TIP = "构成真实市场所需的最低挂单数：挂单太少就没有可买入的市场。3=默认。"
   L.OPT_R_DISTINCT = "中位去重样本"
   L.OPT_R_DISTINCT_TIP = "要求的 7 日 P10 去重样本数：完全平坦的序列是一个蹲守卖家的报价，不是市场。2=默认。"
   L.OPT_R_HISTORY = "历史样本数"

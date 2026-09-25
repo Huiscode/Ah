@@ -53,6 +53,11 @@ loader:SetScript("OnEvent", function(_, _, name)
       WoWderhoiAH_Settings.radar[key] = value
     end
   end
+  -- The liquidity-floor toggle (minAuctionsBoost/minAuctionsFloor) was
+  -- removed: drop the stale keys from any saved state so a future scan
+  -- import never replays them to the terminal.
+  WoWderhoiAH_Settings.radar.minAuctionsBoost = nil
+  WoWderhoiAH_Settings.radar.minAuctionsFloor = nil
   WoWderhoiAHDB.settings = WoWderhoiAH_Settings
   WAH.settings = WoWderhoiAH_Settings
   applyRadarSettings()
@@ -111,8 +116,7 @@ local RADAR_NUMERIC = {
   { key = "supplyCap", label = L.OPT_R_CAP, tip = L.OPT_R_CAP_TIP }
 }
 local RADAR_CHECKS = {
-  { key = "supplyShrink", label = L.OPT_R_SUPPLYSHRINK, tip = L.OPT_R_SUPPLYSHRINK_TIP },
-  { key = "minAuctionsBoost", label = L.OPT_R_AUCBOOST, tip = L.OPT_R_AUCBOOST_TIP }
+  { key = "supplyShrink", label = L.OPT_R_SUPPLYSHRINK, tip = L.OPT_R_SUPPLYSHRINK_TIP }
 }
 
 local function formatRadarValue(value)

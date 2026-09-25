@@ -16,7 +16,5 @@ WAH.RADAR = {
   maxDiscount = 0.75,
   supplyShrink = false,
   supplyShrinkMax = -0.15,
-  minAuctionsBoost = false,
-  minAuctionsFloor = 5,
   supplyCap = 0
 }

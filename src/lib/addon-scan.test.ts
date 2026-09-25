@@ -123,7 +123,6 @@ describe("normalizeAddonScan", () => {
         minProfitRatio: 0.2,
         supplyShrink: true,
         supplyShrinkMax: -0.1,
-        minAuctionsBoost: true,
         supplyCap: 0
       }
     });
@@ -132,7 +131,6 @@ describe("normalizeAddonScan", () => {
       minProfitRatio: 0.2,
       supplyShrink: true,
       supplyShrinkMax: -0.1,
-      minAuctionsBoost: true,
       supplyCap: 0
     });
   });
@@ -144,10 +142,22 @@ describe("normalizeAddonScan", () => {
         minProfit: "no",
         minProfitRatio: 0.2,
         supplyShrink: "yes",
+        supplyCap: 5
+      }
+    });
+    expect(scan.rules).toEqual({ minProfitRatio: 0.2, supplyCap: 5 });
+  });
+
+  it("ignores removed liquidity-floor fields from older saved state", () => {
+    const scan = normalizeAddonScan({
+      ...(rawScan() as Record<string, unknown>),
+      rules: {
+        minAuctions: 3,
+        minAuctionsBoost: true,
         minAuctionsFloor: 5
       }
     });
-    expect(scan.rules).toEqual({ minProfitRatio: 0.2, minAuctionsFloor: 5 });
+    expect(scan.rules).toEqual({ minAuctions: 3 });
   });
 
   it("omits rules when none survive validation", () => {
@@ -171,8 +181,6 @@ describe("normalizeRadarRules", () => {
       maxDiscount: 0.75,
       supplyShrink: false,
       supplyShrinkMax: -0.15,
-      minAuctionsBoost: false,
-      minAuctionsFloor: 5,
       supplyCap: 0
     })).toEqual({
       minProfit: 30,
@@ -184,8 +192,6 @@ describe("normalizeRadarRules", () => {
       maxDiscount: 0.75,
       supplyShrink: false,
       supplyShrinkMax: -0.15,
-      minAuctionsBoost: false,
-      minAuctionsFloor: 5,
       supplyCap: 0
     });
   });

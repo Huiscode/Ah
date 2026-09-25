@@ -23,3 +23,8 @@ data.json
 
 # self-hosted item icons, refetchable via npm run icons:fetch
 public/icons/
+
+# scratch files and local artifacts — never tracked
+.tmp-*
+dev.db
+WoWderhoiAH-*.zip
