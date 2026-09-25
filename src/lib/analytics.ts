@@ -79,6 +79,9 @@ export type DealRadarRow = {
   profit: number; // copper spread between reference and current min
   vendor: boolean;
   discountPercent: number;
+  changePercent: number;
+  quantity: number;
+  numAuctions: number;
 };
 
 // Deal radar, mirroring addon/WoWderhoiAH/Trade.lua refreshDeals: the two
@@ -123,7 +126,10 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         reference: signal.vendorPrice,
         profit: signal.vendorPrice - signal.minPrice,
         vendor: true,
-        discountPercent: (1 - signal.minPrice / signal.vendorPrice) * 100
+        discountPercent: (1 - signal.minPrice / signal.vendorPrice) * 100,
+        changePercent: signal.changePercent,
+        quantity: signal.quantity,
+        numAuctions: signal.numAuctions
       });
     // Class 2: P10 median discount. Requires history depth (3+ scans) AND a
     // live market (3+ auctions) AND a worthwhile absolute spread —
@@ -151,7 +157,10 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         reference: signal.med7,
         profit: signal.med7 - signal.minPrice,
         vendor: false,
-        discountPercent: signal.discountPercent
+        discountPercent: signal.discountPercent,
+        changePercent: signal.changePercent,
+        quantity: signal.quantity,
+        numAuctions: signal.numAuctions
       });
     }
   }

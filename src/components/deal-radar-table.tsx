@@ -5,9 +5,10 @@ import Link from "next/link";
 import { ItemIcon } from "@/components/item-icon";
 import { Coins } from "@/components/coins";
 import { qualityColorClass } from "@/lib/quality";
+import { formatPercent } from "@/lib/utils";
 import type { DealRadarRow } from "@/lib/analytics";
 
-type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent";
+type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" | "changePercent" | "quantity" | "numAuctions";
 
 // Deal radar as a table that mirrors the market monitor's column skeleton
 // (leading spacer, item, P10, min price, 7d-P10 median, discount) so the
@@ -70,6 +71,9 @@ export function DealRadarTable({ deals, prices, categories }: {
             <th onClick={() => toggle("minPrice")} className={`${thClass} text-right`}>最低价{mark("minPrice")}</th>
             <th onClick={() => toggle("reference")} className={`${thClass} text-right`}>7日P10中位{mark("reference")}</th>
             <th onClick={() => toggle("discountPercent")} className={`${thClass} text-right`}>折扣%{mark("discountPercent")}</th>
+            <th onClick={() => toggle("changePercent")} className={`${thClass} text-right`}>环比%{mark("changePercent")}</th>
+            <th onClick={() => toggle("quantity")} className={`${thClass} text-right`}>在售量{mark("quantity")}</th>
+            <th onClick={() => toggle("numAuctions")} className={`${thClass} text-right`}>挂单数{mark("numAuctions")}</th>
           </tr>
         </thead>
         <tbody>
@@ -88,6 +92,9 @@ export function DealRadarTable({ deals, prices, categories }: {
               {deal.vendor
                 ? <td className="px-3 py-2 text-right text-terminal-amber">NPC必赚 +<Coins copper={deal.profit} /></td>
                 : <td className="px-3 py-2 text-right text-terminal-green">-{deal.discountPercent.toFixed(0)}%</td>}
+              <td className={deal.changePercent >= 0 ? "px-3 py-2 text-right text-terminal-red" : "px-3 py-2 text-right text-terminal-green"}>{formatPercent(deal.changePercent)}</td>
+              <td className="px-3 py-2 text-right text-slate-300">{deal.quantity.toLocaleString("en-US")}</td>
+              <td className="px-3 py-2 text-right text-slate-300">{deal.numAuctions.toLocaleString("en-US")}</td>
             </tr>
           ))}
         </tbody>
