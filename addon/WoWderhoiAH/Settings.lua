@@ -215,6 +215,7 @@ panel:SetScript("OnShow", function(self)
     label:SetJustifyH("LEFT")
     label:SetWordWrap(false)
     label.tooltipText = item.tip
+    label:SetText(item.label)
     local box = CreateFrame("EditBox", "WoWderhoiAHRadarBox" .. item.key, self, "InputBoxTemplate")
     box:SetSize(110, 20)
     box:SetPoint("LEFT", label, "RIGHT", 10, 0)
