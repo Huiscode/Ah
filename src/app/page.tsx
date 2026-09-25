@@ -86,7 +86,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   {signals.length === 0 ? "暂无市场数据。进游戏 /wahscan 扫描。" : "当前没有满足流动性与利润门槛的捡漏挂单。"}
                 </div>
               ) : (
-                <DealRadarTable deals={deals} />
+                <DealRadarTable deals={deals} prices={priceByItemId} />
               )}
             </div>
           </Panel>
