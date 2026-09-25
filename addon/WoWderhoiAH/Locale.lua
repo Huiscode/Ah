@@ -98,8 +98,8 @@ local L = {
   OPT_R_SUPPLYSHRINK_TIP = "Require the last four scans' listed quantity to have shrunk by the threshold below — the supply is being bought up (fast turnover), not sitting on the board. Off = no requirement.",
   OPT_R_SHRINK = "A threshold (negative change, e.g. -0.15)",
   OPT_R_SHRINK_TIP = "Net change over the last four scans' listed quantity, as a fraction. -0.15 means supply must shrink by at least 15% to pass. Enter a negative number; positives are flipped.",
-  OPT_R_AUCBOOST = "B: raise the liquidity floor",
-  OPT_R_AUCBOOST_TIP = "Raise the minimum listing count from minAuctions to 5 — a stronger liquidity guard. Off = keep minAuctions.",
+  OPT_R_AUCBOOST = "Liquidity floor",
+  OPT_R_AUCBOOST_TIP = "Liquidity floor = the minimum listing count the radar accepts. On: raise it from minAuctions to 5, so only items with more plentiful listings pass. Off: keep minAuctions.",
   OPT_R_CAP = "C: supply cap (0 = off)",
   OPT_R_CAP_TIP = "Exclude items whose latest listed quantity exceeds this — oversupplied goods are a hoarding risk. 0 disables the cap.",
   OPT_R_MINPROFIT = "minProfit (copper)",
@@ -205,7 +205,7 @@ if GetLocale() == "zhCN" then
   L.OPT_R_SHRINK = "供给收缩阈值（负数，如 -0.15）"
   L.OPT_R_SHRINK_TIP = "最近 4 次扫描在售量的净变化比例。-0.15 表示在售量至少收缩 15% 才算通过。输入负数；正数会自动取负。"
   L.OPT_R_AUCBOOST = "流动性下限"
-  L.OPT_R_AUCBOOST_TIP = "把最低挂单数从最低挂单数提高到 5——更严格的流动性门槛。关闭则维持最低挂单数。"
+  L.OPT_R_AUCBOOST_TIP = "流动性下限 = 雷达接受物品所需的最低挂单数门槛。开启后，该门槛从最低挂单数（默认 3）提高到 5，只接受挂单更充足、更容易买到的物品；关闭则维持最低挂单数。"
   L.OPT_R_CAP = "供给量上限（0=关闭）"
   L.OPT_R_CAP_TIP = "排除最新在售量超过该上限的物品——供给过剩的商品有囤积风险。0 表示不设上限。"
   L.OPT_R_MINPROFIT = "绝对利润下限（铜）"
