@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeAddonScan, parseSavedVariables } from "@/lib/addon-scan";
+import { normalizeAddonScan, normalizeRadarRules, parseSavedVariables } from "@/lib/addon-scan";
 
 const savedVariablesFixture = `
 WoWderhoiAH_ScanData = {
@@ -113,5 +113,86 @@ describe("normalizeAddonScan", () => {
     // dataVersion 2 carried a P50 marketPrice; the P10 rework redefined that
     // field, so v2 scans must be rejected rather than silently mixed in.
     expect(() => normalizeAddonScan({ ...stale, dataVersion: 2 })).toThrow(/dataVersion/i);
+  });
+
+  it("rides the in-game radar rules along with the scan", () => {
+    const scan = normalizeAddonScan({
+      ...(rawScan() as Record<string, unknown>),
+      rules: {
+        minProfit: 50,
+        minProfitRatio: 0.2,
+        supplyShrink: true,
+        supplyShrinkMax: -0.1,
+        minAuctionsBoost: true,
+        supplyCap: 0
+      }
+    });
+    expect(scan.rules).toEqual({
+      minProfit: 50,
+      minProfitRatio: 0.2,
+      supplyShrink: true,
+      supplyShrinkMax: -0.1,
+      minAuctionsBoost: true,
+      supplyCap: 0
+    });
+  });
+
+  it("drops malformed rule fields instead of rejecting the scan", () => {
+    const scan = normalizeAddonScan({
+      ...(rawScan() as Record<string, unknown>),
+      rules: {
+        minProfit: "no",
+        minProfitRatio: 0.2,
+        supplyShrink: "yes",
+        minAuctionsFloor: 5
+      }
+    });
+    expect(scan.rules).toEqual({ minProfitRatio: 0.2, minAuctionsFloor: 5 });
+  });
+
+  it("omits rules when none survive validation", () => {
+    const scan = normalizeAddonScan({
+      ...(rawScan() as Record<string, unknown>),
+      rules: { minProfit: "no", supplyShrink: "yes" }
+    });
+    expect("rules" in scan).toBe(false);
+  });
+});
+
+describe("normalizeRadarRules", () => {
+  it("accepts a full in-game radar payload", () => {
+    expect(normalizeRadarRules({
+      minProfit: 30,
+      minProfitRatio: 0.25,
+      discount: 0.85,
+      minAuctions: 3,
+      minHistory: 3,
+      minMed7Distinct: 2,
+      maxDiscount: 0.75,
+      supplyShrink: false,
+      supplyShrinkMax: -0.15,
+      minAuctionsBoost: false,
+      minAuctionsFloor: 5,
+      supplyCap: 0
+    })).toEqual({
+      minProfit: 30,
+      minProfitRatio: 0.25,
+      discount: 0.85,
+      minAuctions: 3,
+      minHistory: 3,
+      minMed7Distinct: 2,
+      maxDiscount: 0.75,
+      supplyShrink: false,
+      supplyShrinkMax: -0.15,
+      minAuctionsBoost: false,
+      minAuctionsFloor: 5,
+      supplyCap: 0
+    });
+  });
+
+  it("returns undefined for non-object input", () => {
+    expect(normalizeRadarRules(null)).toBeUndefined();
+    expect(normalizeRadarRules("x")).toBeUndefined();
+    expect(normalizeRadarRules(undefined)).toBeUndefined();
   });
 });

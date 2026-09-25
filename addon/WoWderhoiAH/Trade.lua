@@ -159,6 +159,22 @@ end
 
 -- ============================== Deal radar ============================
 
+-- Optional liquidity gate A: does the supply look like it is being bought
+-- up? Compare the newest four quantity samples in the history window:
+-- a net shrink of at least |supplyShrinkMax| says the board is turning
+-- over fast (low hoarding risk) instead of piling up. Falls back to false
+-- (no opinion) when there are fewer than two quantity samples.
+local function supplyShrinking(pts)
+  local qs = {}
+  for i = #pts, 1, -1 do
+    if pts[i].q and pts[i].q > 0 then qs[#qs + 1] = pts[i].q end
+    if #qs >= 4 then break end
+  end
+  if #qs < 2 then return false end
+  local oldest, newest = qs[#qs], qs[1]
+  return (newest - oldest) / oldest <= (WAH.RADAR.supplyShrinkMax or 0)
+end
+
 local function refreshDeals()
   wipe(deals)
   sortKey = nil
@@ -167,6 +183,11 @@ local function refreshDeals()
     chatMessage(L.DEALS_NEED_SCAN)
     return
   end
+  -- B raises the liquidity floor: when enabled, at least minAuctionsFloor
+  -- listings are required regardless of the base minAuctions setting.
+  local minAuctions = WAH.RADAR.minAuctionsBoost
+    and math.max(WAH.RADAR.minAuctions, WAH.RADAR.minAuctionsFloor)
+    or WAH.RADAR.minAuctions
   local anyHistory = false
   for itemId, entry in pairs(scan) do
     local history = WAH.history(itemId)
@@ -189,15 +210,19 @@ local function refreshDeals()
     -- Class 2: P10 median discount. Requires history depth (3+ scans), a
     -- live market (3+ auctions), a worthwhile absolute spread (30c dust
     -- floor), and a discount deep enough relative to med7 (25%) that the
-    -- trip is worth taking in the early-server economy.
+    -- trip is worth taking in the early-server economy. The optional
+    -- liquidity gates A (supply shrinking) and C (supply cap) tighten the
+    -- pool when enabled; both only ever filter, never reorder.
     elseif history and #history.pts >= WAH.RADAR.minHistory and history.med7 and history.med7 > 0
       and entry.minPrice and entry.minPrice > 0
-      and (entry.numAuctions or 0) >= WAH.RADAR.minAuctions
+      and (entry.numAuctions or 0) >= minAuctions
       and (history.med7 - entry.minPrice) >= WAH.RADAR.minProfit
       and (history.med7 - entry.minPrice) >= history.med7 * WAH.RADAR.minProfitRatio
       and entry.minPrice <= history.med7 * WAH.RADAR.discount
       and (history.distinct or 0) >= WAH.RADAR.minMed7Distinct
-      and entry.minPrice >= history.med7 * (1 - WAH.RADAR.maxDiscount) then
+      and entry.minPrice >= history.med7 * (1 - WAH.RADAR.maxDiscount)
+      and (not WAH.RADAR.supplyShrink or supplyShrinking(history.pts))
+      and ((WAH.RADAR.supplyCap or 0) <= 0 or (entry.quantity or 0) <= WAH.RADAR.supplyCap) then
       deals[#deals + 1] = {
         itemId = itemId,
         name = entry.name,
@@ -677,3 +702,14 @@ tradeEvents:SetScript("OnEvent", function(_, event, itemKey)
     finalizeBuy(itemKey)
   end
 end)
+
+-- Settings.lua calls this after applying radar tunables: if the trade panel
+-- is open on the deal radar, re-run it immediately with the new rules.
+-- Guarded so Settings can be loaded in any TOC order.
+WAH.radarChanged = function()
+  if trade and trade:IsShown() and mode == "deals" then
+    refreshDeals()
+    FauxScrollFrame_SetOffset(trade.scroll, 0)
+    renderRows()
+  end
+end

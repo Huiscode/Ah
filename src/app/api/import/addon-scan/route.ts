@@ -32,6 +32,17 @@ export async function POST(request: Request) {
   });
   const { date, creates, updates } = mergeScanIntoDailySummaries(scan.items, scan.scannedAt, existingDayRows);
 
+  // Route 2: replay the in-game radar rules (single authority row id=1) in
+  // the same commit as the scan, so the terminal's deal radar can never
+  // drift from what the addon is actually using.
+  const rulesPayload = scan.rules !== undefined
+    ? [prisma.radarRule.upsert({
+        where: { id: 1 },
+        update: { rules: scan.rules as object },
+        create: { id: 1, rules: scan.rules as object }
+      })]
+    : [];
+
   // One transaction for the whole scan: a single commit instead of one
   // autocommit fsync per item, and the import lands all-or-nothing.
   await prisma.$transaction([
@@ -50,7 +61,8 @@ export async function POST(request: Request) {
       }))
     }),
     ...(creates.length > 0 ? [prisma.dailySummary.createMany({ data: creates })] : []),
-    ...updates.map((update) => prisma.dailySummary.update({ where: { itemId_date: { itemId: update.itemId, date } }, data: update.data }))
+    ...updates.map((update) => prisma.dailySummary.update({ where: { itemId_date: { itemId: update.itemId, date } }, data: update.data })),
+    ...rulesPayload
   ]);
 
   return NextResponse.json({ imported: scan.items.length, scannedAt: scan.scannedAt.toISOString() });

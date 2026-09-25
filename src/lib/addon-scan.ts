@@ -19,11 +19,31 @@ export type AddonScanItem = {
   vendorPrice: number; // NPC sell price in copper; 0 = unsellable to vendors
 };
 
+// Route-2 authority mirror: the in-game options panel owns these values and
+// each scan import replays them so the terminal renders deals with the same
+// rules the addon used. Every field is optional; absent fields fall back to
+// the compiled defaults in market-rules.ts.
+export type AddonRadarRules = {
+  minProfit?: number;
+  minProfitRatio?: number;
+  discount?: number;
+  minAuctions?: number;
+  minHistory?: number;
+  minMed7Distinct?: number;
+  maxDiscount?: number;
+  supplyShrink?: boolean;
+  supplyShrinkMax?: number;
+  minAuctionsBoost?: boolean;
+  minAuctionsFloor?: number;
+  supplyCap?: number;
+};
+
 export type AddonScan = {
   scannedAt: Date;
   server: string;
   faction: string;
   items: AddonScanItem[];
+  rules?: AddonRadarRules;
 };
 
 type LuaValue = string | number | boolean | null | { [key: string]: LuaValue };
@@ -159,6 +179,31 @@ function normalizeVendorPrice(value: unknown, itemId: string): number {
   return Math.round(value);
 }
 
+// Radar rules are auxiliary data: a malformed field must never reject a
+// good scan. Each field is validated in isolation and dropped on failure;
+// if nothing survives, rules is omitted entirely and the terminal falls
+// back to its compiled defaults.
+const RULE_NUMBER_FIELDS = [
+  "minProfit", "minProfitRatio", "discount", "minAuctions", "minHistory",
+  "minMed7Distinct", "maxDiscount", "supplyShrinkMax", "minAuctionsFloor", "supplyCap"
+] as const;
+const RULE_BOOL_FIELDS = ["supplyShrink", "minAuctionsBoost"] as const;
+
+export function normalizeRadarRules(raw: unknown): AddonRadarRules | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const source = raw as Record<string, unknown>;
+  const rules: AddonRadarRules = {};
+  for (const key of RULE_NUMBER_FIELDS) {
+    const value = source[key];
+    if (typeof value === "number" && Number.isFinite(value)) rules[key] = value;
+  }
+  for (const key of RULE_BOOL_FIELDS) {
+    const value = source[key];
+    if (typeof value === "boolean") rules[key] = value;
+  }
+  return Object.keys(rules).length > 0 ? rules : undefined;
+}
+
 export function normalizeAddonScan(raw: unknown): AddonScan {
   if (typeof raw !== "object" || raw === null) {
     throw new Error(`Addon scan payload must be an object, got ${JSON.stringify(raw)}`);
@@ -222,6 +267,9 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     scannedAt: new Date(scan.scannedAt * 1000),
     server: scan.server,
     faction: scan.faction,
-    items
+    items,
+    ...(normalizeRadarRules(scan.rules) !== undefined
+      ? { rules: normalizeRadarRules(scan.rules) }
+      : {})
   };
 }

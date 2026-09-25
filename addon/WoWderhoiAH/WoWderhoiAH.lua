@@ -239,7 +239,10 @@ local function finishScan(totalAuctions)
   local cutoff = nowTs - 7 * 24 * 3600
   for itemId, item in pairs(items) do
     local pts = WoWderhoiAH_Points[itemId] or {}
-    pts[#pts + 1] = { t = nowTs, c = item.marketPrice }
+    -- Each point carries the scan's close price (c) and the listed
+    -- quantity (q); q feeds the optional supply-shrink liquidity gate of
+    -- the deal radar. c remains the only field any chart or median reads.
+    pts[#pts + 1] = { t = nowTs, c = item.marketPrice, q = item.quantity }
     WoWderhoiAH_Points[itemId] = pts
   end
   for itemId, pts in pairs(WoWderhoiAH_Points) do
@@ -409,7 +412,9 @@ end)
 
 -- Single history authority: points accumulated across scans plus the
 -- 7d P10 median derived from them. GUI chart, tooltip history, and the
--- deal radar all read through here.
+-- deal radar all read through here. Points carry {t, c, q}: c is the
+-- close price every chart/median reads; q is the listed quantity, used
+-- only by the optional supply-shrink liquidity gate.
 function WAH.history(itemId)
   local pts = WoWderhoiAH_Points and WoWderhoiAH_Points[itemId]
   if not pts or #pts == 0 then return nil end

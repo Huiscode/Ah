@@ -42,10 +42,17 @@ async function importLatestScan() {
   }
   if (scan.scannedAt <= lastImportedScanAt) return;
 
+  // Route 2: the in-game options panel is the authority for radar rules.
+  // Ride the current settings.radar along with the scan so the terminal
+  // keeps rendering deals with exactly the thresholds the addon uses.
+  const db = parsed.WoWderhoiAHDB as Record<string, unknown> | undefined;
+  const settings = db?.settings as Record<string, unknown> | undefined;
+  const radarRules = settings?.radar;
+
   const response = await fetch(importUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(scan)
+    body: JSON.stringify({ ...scan, ...(radarRules !== undefined ? { rules: radarRules } : {}) })
   });
   const body = await response.json();
   if (!response.ok && response.status !== 409) {

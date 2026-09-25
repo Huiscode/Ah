@@ -44,3 +44,12 @@ export async function getLatestSnapshotTime() {
   const row = await prisma.auctionSnapshot.findFirst({ orderBy: { timestamp: "desc" }, select: { timestamp: true } });
   return row?.timestamp ?? null;
 }
+
+// Route-2 authority mirror: the in-game options panel owns the deal-radar
+// thresholds; the import route replays them into the single RadarRule row
+// (id=1). Returns null until the first scan with rules arrives — callers
+// then fall back to the compiled defaults in market-rules.ts.
+export async function getRadarRules(): Promise<unknown> {
+  const row = await prisma.radarRule.findFirst({ orderBy: { updatedAt: "desc" } });
+  return row?.rules ?? null;
+}

@@ -87,3 +87,12 @@ model AlertRule {
 
   @@index([enabled])
 }
+
+// Route-2 authority mirror: the in-game options panel owns the deal-radar
+// thresholds; each scan import replays them here so the terminal renders
+// deals with the same rules the addon used. Single row (id = 1).
+model RadarRule {
+  id        Int      @id @default(autoincrement())
+  rules     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+}

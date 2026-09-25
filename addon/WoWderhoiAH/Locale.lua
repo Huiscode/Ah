@@ -90,7 +90,30 @@ local L = {
   OPT_CHART = "Price chart beside the auction frame",
   OPT_CHART_TIP = "3-hour and 48-hour line charts for the item most recently hovered while the AH is open.",
   OPT_VERBOSE = "Verbose scan progress",
-  OPT_VERBOSE_TIP = "Print per-page progress during paged fallback scans."
+  OPT_VERBOSE_TIP = "Print per-page progress during paged fallback scans.",
+  -- radar tunables (route 2: the in-game panel is the authority)
+  OPT_RADAR_HEADER = "Deal radar thresholds (applied immediately)",
+  OPT_RADAR_NOTE = "Enter to commit a number; toggles apply at once. Saved on logout/reload and synced to the terminal with the next scan.",
+  OPT_R_SUPPLYSHRINK = "A: supply-shrink gate",
+  OPT_R_SUPPLYSHRINK_TIP = "Require the last four scans' listed quantity to have shrunk by the threshold below — the supply is being bought up (fast turnover), not sitting on the board. Off = no requirement.",
+  OPT_R_SHRINK = "A threshold (negative change, e.g. -0.15)",
+  OPT_R_SHRINK_TIP = "Net change over the last four scans' listed quantity, as a fraction. -0.15 means supply must shrink by at least 15% to pass. Enter a negative number; positives are flipped.",
+  OPT_R_AUCBOOST = "B: raise the liquidity floor",
+  OPT_R_AUCBOOST_TIP = "Raise the minimum listing count from minAuctions to 5 — a stronger liquidity guard. Off = keep minAuctions.",
+  OPT_R_CAP = "C: supply cap (0 = off)",
+  OPT_R_CAP_TIP = "Exclude items whose latest listed quantity exceeds this — oversupplied goods are a hoarding risk. 0 disables the cap.",
+  OPT_R_MINPROFIT = "minProfit (copper)",
+  OPT_R_MINPROFIT_TIP = "Absolute profit floor in copper: below this the spread is noise, not a deal. Early-server economy: 30c is a good dust floor.",
+  OPT_R_RATIO = "minProfitRatio (0-1)",
+  OPT_R_RATIO_TIP = "Profit must also be at least this fraction of the 7d P10 median, so the floor scales with the economy. 0.25 = profit >= 25% of med7.",
+  OPT_R_MAXDISC = "maxDiscount (0-1)",
+  OPT_R_MAXDISC_TIP = "Deepest discount the radar trusts: past this the reference is broken, not the listing cheap. 0.75 allows up to -75% off med7.",
+  OPT_R_MINAUC = "minAuctions",
+  OPT_R_MINAUC_TIP = "Minimum listing count for a real market: fewer sellers = no market to buy into. 3 = default, 5 = stricter (see B).",
+  OPT_R_DISTINCT = "minMed7Distinct",
+  OPT_R_DISTINCT_TIP = "Distinct 7d P10 values required: a flat series is one camper's ask, not a market. 2 = default.",
+  OPT_R_HISTORY = "minHistory",
+  OPT_R_HISTORY_TIP = "Scans inside the 7d window before the median means anything. 3 = default."
 }
 
 if GetLocale() == "zhCN" then
@@ -174,6 +197,28 @@ if GetLocale() == "zhCN" then
   L.OPT_CHART_TIP = "拍卖行开着时，为最近悬停的物品显示 3 小时与 48 小时折线图。"
   L.OPT_VERBOSE = "详细扫描进度"
   L.OPT_VERBOSE_TIP = "逐页降级扫描时每页播报进度。"
+  L.OPT_RADAR_HEADER = "捡漏雷达参数（改动立即生效）"
+  L.OPT_RADAR_NOTE = "数字回车提交；开关即时生效。小退或 /reload 后保存，并随下次扫描同步到网页终端。"
+  L.OPT_R_SUPPLYSHRINK = "A：供给收缩门槛"
+  L.OPT_R_SUPPLYSHRINK_TIP = "要求最近 4 次扫描的在售量按下方阈值收缩——说明供给在被买走（周转快），而不是压在货架上。关闭则不要求。"
+  L.OPT_R_SHRINK = "A 阈值（负变化，如 -0.15）"
+  L.OPT_R_SHRINK_TIP = "最近 4 次扫描在售量的净变化比例。-0.15 表示在售量至少收缩 15% 才算通过。输入负数；正数会自动取负。"
+  L.OPT_R_AUCBOOST = "B：提高流动性下限"
+  L.OPT_R_AUCBOOST_TIP = "把最低挂单数从 minAuctions 提高到 5——更严格的流动性门槛。关闭则维持 minAuctions。"
+  L.OPT_R_CAP = "C：供给量上限（0=关闭）"
+  L.OPT_R_CAP_TIP = "排除最新在售量超过该上限的物品——供给过剩的商品有囤积风险。0 表示不设上限。"
+  L.OPT_R_MINPROFIT = "minProfit（铜）"
+  L.OPT_R_MINPROFIT_TIP = "绝对利润下限（铜）：低于此价差的都是噪音而非机会。开服初期经济下 30 铜是合适的灰尘下限。"
+  L.OPT_R_RATIO = "minProfitRatio（0-1）"
+  L.OPT_R_RATIO_TIP = "利润还须达到 7 日P10中位的这一比例，让下限随物价缩放。0.25 = 利润不低于中位的 25%。"
+  L.OPT_R_MAXDISC = "maxDiscount（0-1）"
+  L.OPT_R_MAXDISC_TIP = "雷达信任的最大折扣：超过此深度说明参考价已失效，而不是挂单便宜。0.75 允许低于中位最多 75%。"
+  L.OPT_R_MINAUC = "minAuctions"
+  L.OPT_R_MINAUC_TIP = "构成真实市场所需的最低挂单数：挂单太少就没有可买入的市场。3=默认，5=更严格（见 B）。"
+  L.OPT_R_DISTINCT = "minMed7Distinct"
+  L.OPT_R_DISTINCT_TIP = "要求的 7 日 P10 去重样本数：完全平坦的序列是一个蹲守卖家的报价，不是市场。2=默认。"
+  L.OPT_R_HISTORY = "minHistory"
+  L.OPT_R_HISTORY_TIP = "7 日窗口内中位有效所需的最少扫描次数。3=默认。"
 end
 
 WAH.L = L

@@ -161,7 +161,12 @@ describe("history statistics", () => {
   it("loads the generated thresholds the web rules generated", () => {
     const lua = loadAddon();
     for (const [rule, value] of Object.entries(dealRadarRules)) {
-      expect(lua.number(`WowTest.ns.RADAR.${rule}`)).toBe(value);
+      // Fengari numbers a Lua boolean as 0/1 through the number reader, so
+      // boolean fields are read through the typed evaluator instead.
+      const actual = typeof value === "boolean"
+        ? lua.eval(`WowTest.ns.RADAR.${rule}`)
+        : lua.number(`WowTest.ns.RADAR.${rule}`);
+      expect(actual).toBe(value);
     }
   });
 });

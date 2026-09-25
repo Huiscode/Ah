@@ -3,7 +3,7 @@
 // snapshots, never means over daily aggregates — means inherit every
 // bait listing, and daily closes erase the hourly structure of the AH.
 import type { MarketHistory } from "@/lib/market-data";
-import { dealRadarRules } from "@/lib/market-rules";
+import { dealRadarRules, type DealRadarRules } from "@/lib/market-rules";
 
 export type MarketSignal = {
   itemId: number;
@@ -20,6 +20,7 @@ export type MarketSignal = {
   med7Distinct: number; // distinct P10 values in that window; 1 = flat series
   discountPercent: number; // how far the current min sits below med7
   changePercent: number; // latest P10 vs the previous scan's P10
+  supplyShrinkPercent: number; // net change of listed quantity over the latest 4 snapshots; 0 when <2 samples
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -42,6 +43,13 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
     .filter((snapshot) => snapshot.timestamp.getTime() >= windowStart)
     .map((snapshot) => snapshot.marketPrice);
   const med7 = windowPrices.length > 0 ? median(windowPrices) : latest.marketPrice;
+  // Liquidity gate A mirrors the addon: net change of the listed quantity
+  // over the latest four snapshots. A negative value means the supply is
+  // being bought up (fast turnover); 0 when there is no baseline.
+  const recentQuantity = snapshots.slice(-4).map((snapshot) => snapshot.quantity);
+  const supplyShrinkPercent = recentQuantity.length >= 2 && recentQuantity[0] > 0
+    ? ((recentQuantity[recentQuantity.length - 1] - recentQuantity[0]) / recentQuantity[0]) * 100
+    : 0;
   return {
     itemId: item.itemId,
     name: item.name,
@@ -56,7 +64,8 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
     med7Samples: windowPrices.length,
     med7Distinct: new Set(windowPrices).size,
     discountPercent: med7 > 0 ? (1 - latest.minPrice / med7) * 100 : 0,
-    changePercent: previous && previous.marketPrice > 0 ? ((latest.marketPrice - previous.marketPrice) / previous.marketPrice) * 100 : 0
+    changePercent: previous && previous.marketPrice > 0 ? ((latest.marketPrice - previous.marketPrice) / previous.marketPrice) * 100 : 0,
+    supplyShrinkPercent
   };
 }
 
@@ -74,18 +83,29 @@ export type DealRadarRow = {
 // Deal radar, mirroring addon/WoWderhoiAH/Trade.lua refreshDeals: the two
 // implementations must classify the same scan identically or the terminal
 // promises deals the in-game buy list can't deliver. Both read the same
-// thresholds from the single source of truth (src/lib/market-rules.ts).
-const {
-  minProfit: RADAR_MIN_PROFIT,
-  minProfitRatio: RADAR_MIN_PROFIT_RATIO,
-  discount: RADAR_DISCOUNT,
-  minAuctions: RADAR_MIN_AUCTIONS,
-  minHistory: RADAR_MIN_HISTORY,
-  minMed7Distinct: RADAR_MIN_MED7_DISTINCT,
-  maxDiscount: RADAR_MAX_DISCOUNT
-} = dealRadarRules;
-
-export function buildDealRadar(signals: MarketSignal[]): DealRadarRow[] {
+// thresholds; defaults come from the single source of truth
+// (src/lib/market-rules.ts) and route-2 overrides arrive with each scan
+// import (the in-game panel is the authority).
+export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = dealRadarRules): DealRadarRow[] {
+  const {
+    minProfit: RADAR_MIN_PROFIT,
+    minProfitRatio: RADAR_MIN_PROFIT_RATIO,
+    discount: RADAR_DISCOUNT,
+    minAuctions: RADAR_MIN_AUCTIONS,
+    minHistory: RADAR_MIN_HISTORY,
+    minMed7Distinct: RADAR_MIN_MED7_DISTINCT,
+    maxDiscount: RADAR_MAX_DISCOUNT,
+    supplyShrink: RADAR_SUPPLY_SHRINK,
+    supplyShrinkMax: RADAR_SUPPLY_SHRINK_MAX,
+    minAuctionsBoost: RADAR_MIN_AUCTIONS_BOOST,
+    minAuctionsFloor: RADAR_MIN_AUCTIONS_FLOOR,
+    supplyCap: RADAR_SUPPLY_CAP
+  } = rules;
+  // B raises the liquidity floor: when enabled, at least minAuctionsFloor
+  // listings are required regardless of the base minAuctions setting.
+  const minAuctionsGate = RADAR_MIN_AUCTIONS_BOOST
+    ? Math.max(RADAR_MIN_AUCTIONS, RADAR_MIN_AUCTIONS_FLOOR)
+    : RADAR_MIN_AUCTIONS;
   const deals: DealRadarRow[] = [];
   for (const signal of signals) {
     // Class 1: vendor arbitrage. Listed below the NPC sell price is a
@@ -109,13 +129,17 @@ export function buildDealRadar(signals: MarketSignal[]): DealRadarRow[] {
     // last two conditions distrust med7 itself: a flat series is one
     // camper's ask, and a discount past the cap means the reference broke,
     // not that the listing is cheap. Neither applies to vendor deals above.
+    // Optional liquidity gates A (supply shrinking) and C (supply cap)
+    // tighten the pool when enabled; both only ever filter, never reorder.
     } else if (signal.med7Samples >= RADAR_MIN_HISTORY && signal.med7 > 0 && signal.minPrice > 0
-      && signal.numAuctions >= RADAR_MIN_AUCTIONS
+      && signal.numAuctions >= minAuctionsGate
       && signal.med7 - signal.minPrice >= RADAR_MIN_PROFIT
       && signal.med7 - signal.minPrice >= signal.med7 * RADAR_MIN_PROFIT_RATIO
       && signal.minPrice <= signal.med7 * RADAR_DISCOUNT
       && signal.med7Distinct >= RADAR_MIN_MED7_DISTINCT
-      && signal.minPrice >= signal.med7 * (1 - RADAR_MAX_DISCOUNT)) {
+      && signal.minPrice >= signal.med7 * (1 - RADAR_MAX_DISCOUNT)
+      && (!RADAR_SUPPLY_SHRINK || signal.supplyShrinkPercent <= RADAR_SUPPLY_SHRINK_MAX * 100)
+      && (RADAR_SUPPLY_CAP <= 0 || signal.quantity <= RADAR_SUPPLY_CAP)) {
       deals.push({
         itemId: signal.itemId,
         name: signal.name,

@@ -16,6 +16,7 @@ function makeSignal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId"
     med7Distinct: 1,
     discountPercent: 0,
     changePercent: 0,
+    supplyShrinkPercent: 0,
     ...partial
   };
 }

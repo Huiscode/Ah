@@ -39,7 +39,10 @@ local function newFrame(frameName, parent)
   return frame
 end
 
-function frameMeta:Show() self._shown = true end
+function frameMeta:Show()
+  self._shown = true
+  if self._scripts.OnShow then self._scripts.OnShow(self) end
+end
 function frameMeta:Hide() self._shown = false end
 function frameMeta:IsShown() return self._shown end
 function frameMeta:SetScript(script, handler) self._scripts[script] = handler end
@@ -95,6 +98,11 @@ function frameMeta:GetChecked() return self._checked end
 function CreateFrame(kind, frameName, parent, template)
   local frame = newFrame(frameName, parent)
   frame._kind, frame._template = kind, template
+  -- CheckButton templates carry a Text child the addon labels; give it one
+  -- so Settings.lua's options panel can build under test.
+  if template == "InterfaceOptionsCheckButtonTemplate" then
+    frame.Text = newFrame(nil, frame)
+  end
   return frame
 end
 
@@ -395,12 +403,18 @@ function bed.setScan(items)
 end
 
 -- closes are P10 values oldest-first, one per scan, all inside the 7d window.
+-- An entry may carry qs, the listed quantity per scan, which feeds the
+-- optional supply-shrink liquidity gate of the deal radar.
 function bed.setPoints(entries)
   WoWderhoiAH_Points = {}
   for _, entry in ipairs(entries) do
     local points = {}
     for index, close in ipairs(entry.closes) do
-      points[index] = { t = NOW - (#entry.closes - index) * 900, c = close }
+      points[index] = {
+        t = NOW - (#entry.closes - index) * 900,
+        c = close,
+        q = entry.qs and entry.qs[index]
+      }
     end
     WoWderhoiAH_Points[entry.itemId] = points
   end

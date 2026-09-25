@@ -13,5 +13,10 @@ WAH.RADAR = {
   minAuctions = 3,
   minHistory = 3,
   minMed7Distinct = 2,
-  maxDiscount = 0.75
+  maxDiscount = 0.75,
+  supplyShrink = false,
+  supplyShrinkMax = -0.15,
+  minAuctionsBoost = false,
+  minAuctionsFloor = 5,
+  supplyCap = 0
 }
