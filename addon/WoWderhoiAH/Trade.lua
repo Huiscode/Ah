@@ -706,8 +706,10 @@ tradeEvents:SetScript("OnEvent", function(_, event, itemKey)
     if trade then trade:Hide() end
     sellPoll:Hide()
   elseif event == "GET_ITEM_INFO_RECEIVED" then
-    -- An icon texture finished loading (itemIcon asked for it): repaint the
-    -- visible rows so the previously-blank icon slot fills in.
+    -- Item info landed (itemIcon or the scanner asked for it): backfill a
+    -- category that came back unknown during the scan, then repaint the
+    -- visible rows so a previously-blank icon slot fills in.
+    if WAH.refreshPendingCategories then WAH.refreshPendingCategories(itemKey) end
     if trade and trade:IsShown() then renderRows() end
   elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
     finalizeBuy(itemKey)

@@ -129,6 +129,27 @@ local function itemCategoryAndVendor(itemId)
   return className, subclassName, vendorPrice or 0
 end
 
+-- Item info arrives asynchronously: when a category came back unknown during
+-- the scan (the client had no cache entry yet), GET_ITEM_INFO_RECEIVED calls
+-- this to backfill the class/subclass once the info lands. The running scan's
+-- entry is patched in place so the export that ends this scan — and every
+-- later scan — carries the real category instead of "unknown".
+WAH.refreshPendingCategories = function(itemId)
+  if not scanState or not scanState.pendingCategory or not scanState.pendingCategory[itemId] then return end
+  local entry = scanState.itemsById and scanState.itemsById[itemId]
+  if not entry then
+    scanState.pendingCategory[itemId] = nil
+    return
+  end
+  local itemClass, itemSubClass = itemCategoryAndVendor(itemId)
+  if itemClass ~= "unknown" and itemSubClass ~= "unknown" then
+    entry.itemClass, entry.itemSubClass = itemClass, itemSubClass
+    local cache = scanState.itemInfoCache[itemId]
+    if cache then cache.class, cache.subClass = itemClass, itemSubClass end
+    scanState.pendingCategory[itemId] = nil
+  end
+end
+
 local function recordAuction(info)
   local itemId = info.itemID
   local name = info.name
@@ -144,6 +165,11 @@ local function recordAuction(info)
       local itemClass, itemSubClass, vendorPrice = itemCategoryAndVendor(itemId)
       cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice }
       scanState.itemInfoCache[itemId] = cached
+    end
+    -- The client may not have this item's info cached yet; flag it so
+    -- GET_ITEM_INFO_RECEIVED can backfill the category in place.
+    if cached.class == "unknown" or cached.subClass == "unknown" then
+      scanState.pendingCategory[itemId] = true
     end
     entry = {
       name = name,
@@ -356,7 +382,7 @@ local function startScan()
   end
   WAH.scanRunning = true
   pendingRounds = 0
-  scanState = { mode = "replicate", itemsById = {}, itemInfoCache = {}, pending = {}, pendingOnly = false, probeDone = false }
+  scanState = { mode = "replicate", itemsById = {}, itemInfoCache = {}, pending = {}, pendingOnly = false, probeDone = false, pendingCategory = {} }
   chatMessage(L.SCAN_REPLICATE_START)
   local throttled = false
   if C_AuctionHouse.IsThrottled then throttled = C_AuctionHouse.IsThrottled() end
