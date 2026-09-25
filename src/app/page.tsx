@@ -156,7 +156,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">利润还须达到 7 日 P10 中位的该比例，让下限随物价缩放。0.25 = 利润不低于中位的 25%。</p>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-slate-100">最大折扣</span>
-                <span>-{formatPercent(radarRules.maxDiscount * 100)}</span>
+                <span>{formatPercent(radarRules.maxDiscount * 100).replace(/^\+/, "")}</span>
               </div>
               <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">雷达信任的最大折扣深度；超过此深度说明参考价已失效，而不是挂单便宜。0.75 = 最多信任低于中位 75%。</p>
               <div className="flex items-center justify-between gap-2">
