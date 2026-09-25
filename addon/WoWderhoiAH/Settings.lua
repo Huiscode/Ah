@@ -210,8 +210,9 @@ panel:SetScript("OnShow", function(self)
     label:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -16)
     -- Fixed label width: every input box anchors to the label's right edge,
     -- so a fixed width keeps all boxes in one column (anchoring to the box
-    -- instead made each row drift right like a staircase).
-    label:SetWidth(200)
+    -- instead made each row drift right like a staircase). Wide enough for
+    -- the longest localized name (supply-shrink threshold).
+    label:SetWidth(260)
     label:SetJustifyH("LEFT")
     label:SetWordWrap(false)
     label.tooltipText = item.tip
