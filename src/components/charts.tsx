@@ -51,18 +51,16 @@ type CandleShapeProps = {
   y?: number;
   height?: number;
   payload?: CandlePoint;
-  background?: { y: number; height: number };
 };
 
 function CandleShape(props: CandleShapeProps) {
-  const { x = 0, width = 0, payload, background } = props;
-  if (!payload || !background || background.height <= 0) return <g />;
+  const { x = 0, width = 0, y = 0, height = 0, payload } = props;
+  if (!payload || height <= 0) return <g />;
   const { open, close, high, low } = payload;
   const range = high - low || 1;
-  // props.y/height describe the [low, high] bar span in pixels.
-  const top = props.y ?? background.y;
-  const pixelHeight = props.height ?? background.height;
-  const pixelFor = (value: number) => top + ((high - value) / range) * pixelHeight;
+  // Recharts always passes the bar's x/y/width/height span to the shape; the
+  // high-low wick runs the full height, the body sits between open/close.
+  const pixelFor = (value: number) => y + ((high - value) / range) * height;
   const rising = close >= open;
   const color = rising ? "#39d98a" : "#ff5c7a";
   const bodyTop = pixelFor(Math.max(open, close));
@@ -70,13 +68,15 @@ function CandleShape(props: CandleShapeProps) {
   const centerX = x + width / 2;
   return (
     <g>
-      <line x1={centerX} x2={centerX} y1={pixelFor(high)} y2={pixelFor(low)} stroke={color} strokeWidth={1} />
+      <line x1={centerX} x2={centerX} y1={pixelFor(high)} y2={pixelFor(low)} stroke={color} strokeWidth={2} />
       <rect
         x={x + width * 0.2}
-        width={Math.max(width * 0.6, 2)}
+        width={Math.max(width * 0.6, 3)}
         y={bodyTop}
-        height={Math.max(bodyBottom - bodyTop, 1)}
+        height={Math.max(bodyBottom - bodyTop, 2)}
         fill={color}
+        stroke={color}
+        strokeWidth={1}
       />
     </g>
   );
