@@ -96,16 +96,13 @@ export function CandlestickChart({ data }: { data: CandlePoint[] }) {
           tickFormatter={formatGold}
           width={72}
         />
-        <YAxis yAxisId="volume" orientation="right" tick={{ fill: "#8d96a8", fontSize: 11 }} width={54} />
         <Tooltip
           contentStyle={{ background: "#10141d", border: "1px solid #263042", color: "#dce3ef" }}
           formatter={(value, name) => {
-            if (name === "volume") return [String(value), "在售量"];
             if (Array.isArray(value)) return [`${formatGold(Number(value[0]))} - ${formatGold(Number(value[1]))}`, "低-高"];
             return [formatGold(Number(value)), String(name)];
           }}
         />
-        <Bar yAxisId="volume" dataKey="volume" fill="#263f5c" opacity={0.6} />
         <Bar yAxisId="price" dataKey="lowHigh" shape={<CandleShape />} isAnimationActive={false} />
       </ComposedChart>
     </ResponsiveContainer>
