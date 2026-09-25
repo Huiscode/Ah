@@ -42,11 +42,14 @@ describe("trade panel layout", () => {
 
   it("derives a fixed row budget from the fixed panel height", () => {
     const lua = layout();
-    expect(lua.panelHeight()).toBe(320);
-    // 320 - 70 above - 38 below = 212; 72 goes to the header block and 8 to
-    // the bottom border, leaving 6 whole 22px rows. The count that matters
-    // is the one that still clears the bottom edge.
-    expect(lua.visibleRows()).toBe(6);
+    // The panel is exactly as tall as AuctionHouseFrame (447 in the stub),
+    // so its top and bottom edges line up with the AH's.
+    expect(lua.panelHeight()).toBe(447);
+    // 447 - 72 header block - 8 bottom padding = 367, which is 16 whole
+    // 22px rows. Rows run to the bottom padding: the scroll arrows live in
+    // the 24px scroll-bar strip to the right of the rows, so the last row
+    // clears the bottom border without leaving dead space.
+    expect(lua.visibleRows()).toBe(16);
     expect(lua.clearance("BOTTOM")).toBeGreaterThanOrEqual(lua.backdropInset("bottom"));
   });
 });

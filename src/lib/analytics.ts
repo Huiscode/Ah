@@ -77,6 +77,7 @@ export type DealRadarRow = {
 // thresholds from the single source of truth (src/lib/market-rules.ts).
 const {
   minProfit: RADAR_MIN_PROFIT,
+  minProfitRatio: RADAR_MIN_PROFIT_RATIO,
   discount: RADAR_DISCOUNT,
   minAuctions: RADAR_MIN_AUCTIONS,
   minHistory: RADAR_MIN_HISTORY,
@@ -111,6 +112,7 @@ export function buildDealRadar(signals: MarketSignal[]): DealRadarRow[] {
     } else if (signal.med7Samples >= RADAR_MIN_HISTORY && signal.med7 > 0 && signal.minPrice > 0
       && signal.numAuctions >= RADAR_MIN_AUCTIONS
       && signal.med7 - signal.minPrice >= RADAR_MIN_PROFIT
+      && signal.med7 - signal.minPrice >= signal.med7 * RADAR_MIN_PROFIT_RATIO
       && signal.minPrice <= signal.med7 * RADAR_DISCOUNT
       && signal.med7Distinct >= RADAR_MIN_MED7_DISTINCT
       && signal.minPrice >= signal.med7 * (1 - RADAR_MAX_DISCOUNT)) {

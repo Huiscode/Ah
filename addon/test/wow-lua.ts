@@ -147,6 +147,7 @@ export function loadAddon(options?: { locale?: string }) {
       exec(`WowTest.setSearchResults(${itemId}, ${toLua(rows)})`),
     scanned: (itemId: number) => Boolean(evaluate(`WowTest.scanned(${itemId})`)),
     scanMin: (itemId: number) => evaluate(`WowTest.scanMin(${itemId})`),
-    scanAuctions: (itemId: number) => evaluate(`WowTest.scanAuctions(${itemId})`)
+    scanAuctions: (itemId: number) => evaluate(`WowTest.scanAuctions(${itemId})`),
+    ahSearchText: () => String(evaluate("WowTest.ahSearchText()"))
   };
 }

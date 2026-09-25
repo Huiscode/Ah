@@ -16,13 +16,13 @@ import { loadAddon, type WowLua } from "./wow-lua";
 // produces a distinct order and no assertion passes by coincidence.
 const LINEN = { itemId: 2589, name: "Linen Cloth", minPrice: 800, vendorP: 1000, numAuctions: 5 };
 const MAGEWEAVE = { itemId: 4338, name: "Mageweave Cloth", minPrice: 8000, numAuctions: 6 };
-const GOLD_ORE = { itemId: 3577, name: "Gold Ore", minPrice: 40000, numAuctions: 9 };
+const GOLD_ORE = { itemId: 3577, name: "Gold Ore", minPrice: 34000, numAuctions: 9 };
 
 const SCAN = [LINEN, MAGEWEAVE, GOLD_ORE];
 const POINTS = [
   // med7 = 11000 (lower median of three), so 8000 is a 27% discount.
   { itemId: MAGEWEAVE.itemId, closes: [10000, 11000, 12000] },
-  // med7 = 52000, so 40000 is a 23% discount.
+  // med7 = 52000, so 34000 is a 35% discount.
   { itemId: GOLD_ORE.itemId, closes: [50000, 52000, 54000] }
 ];
 
@@ -57,10 +57,18 @@ describe("deal radar table", () => {
     expect([1, 2, 3, 4].map((slot) => lua.header(slot))).toEqual(["折扣", "利润", "最低价", "参考价"]);
     // Linen's reference is the NPC sell price, the others' is their med7 --
     // different sources, same meaning: what the min price is measured against.
-    expect(lua.column(1)).toEqual(["-20%", "-23%", "-27%"]);
-    expect(lua.column(2)).toEqual(["2银 00铜", "1金 20银", "30银 00铜"]);
-    expect(lua.column(3)).toEqual(["8银 00铜", "4金 00银", "80银 00铜"]);
+    expect(lua.column(1)).toEqual(["-20%", "-35%", "-27%"]);
+    expect(lua.column(2)).toEqual(["2银 00铜", "1金 80银", "30银 00铜"]);
+    expect(lua.column(3)).toEqual(["8银 00铜", "3金 40银", "80银 00铜"]);
     expect(lua.column(4)).toEqual(["10银 00铜", "5金 20银", "1金 10银"]);
+  });
+
+  it("fills both the WAH search box and the AH's own search box when 查找 is clicked", () => {
+    lua.buyRow(1);
+    // The client's search bar gets the name so the buy quantity can be typed
+    // in the AH's own UI; the WAH panel switches to its results list.
+    expect(lua.ahSearchText()).toBe("Linen Cloth");
+    expect(lua.names()).toEqual(["Linen Cloth"]);
   });
 });
 
@@ -72,7 +80,7 @@ describe("column sorting", () => {
 
   it("sorts by discount, ignoring the vendor grouping", () => {
     lua.clickHeader("折扣");
-    expect(lua.names()).toEqual(["Mageweave Cloth", "Gold Ore", "Linen Cloth [NPC必赚]"]);
+    expect(lua.names()).toEqual(["Gold Ore", "Mageweave Cloth", "Linen Cloth [NPC必赚]"]);
   });
 
   it("sorts by profit", () => {

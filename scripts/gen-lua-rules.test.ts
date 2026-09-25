@@ -18,9 +18,11 @@ describe("gen-lua-rules", () => {
   it("emits the pipeline version and every radar threshold the addon reads", () => {
     const lua = generateLuaRules();
     expect(lua).toContain("WAH.PIPELINE_VERSION = 3");
-    expect(lua).toContain("minProfit = 500");
+    expect(lua).toContain("minProfit = 30");
+    expect(lua).toContain("minProfitRatio = 0.25");
     expect(lua).toContain("discount = 0.85");
     expect(lua).toContain("minAuctions = 3");
     expect(lua).toContain("minHistory = 3");
+    expect(lua).toContain("maxDiscount = 0.75");
   });
 });

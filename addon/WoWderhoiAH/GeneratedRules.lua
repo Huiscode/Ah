@@ -7,10 +7,11 @@ local ADDON_NAME, WAH = ...
 WAH.PIPELINE_VERSION = 3
 
 WAH.RADAR = {
-  minProfit = 500,
+  minProfit = 30,
+  minProfitRatio = 0.25,
   discount = 0.85,
   minAuctions = 3,
   minHistory = 3,
   minMed7Distinct = 2,
-  maxDiscount = 0.6
+  maxDiscount = 0.75
 }

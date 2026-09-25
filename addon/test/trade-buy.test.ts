@@ -62,13 +62,13 @@ describe("a purchase corrects the scan the radar reads", () => {
     const lua = page();
     // Two survivors, so "the cheapest one left" and "one of the ones left"
     // are different answers.
-    buyCheapest(lua, [result(1, 80000), result(2, 90000), result(3, 85000)]);
-    expect(lua.scanMin(MAGEWEAVE)).toBe(85000);
-    // Still 22% under the reference, so it stays on the radar -- at the
+    buyCheapest(lua, [result(1, 80000), result(2, 90000), result(3, 82000)]);
+    expect(lua.scanMin(MAGEWEAVE)).toBe(82000);
+    // Still 25% under the reference, so it stays on the radar -- at the
     // price a player would actually pay now.
     lua.findDeals();
     expect(lua.names()).toEqual(["Mageweave Cloth"]);
-    expect(lua.cell(1, 3)).toBe("8金 50银");
+    expect(lua.cell(1, 3)).toBe("8金 20银");
   });
 
   it("drops the item once the surviving price no longer clears the gate", () => {
@@ -95,7 +95,7 @@ describe("a purchase corrects the scan the radar reads", () => {
     // Three auctions is exactly the liquidity floor, so buying one has to
     // take the item off the radar even though the price still qualifies.
     const lua = page({ numAuctions: 3 });
-    buyCheapest(lua, [result(1, 80000), result(2, 85000)]);
+    buyCheapest(lua, [result(1, 80000), result(2, 82000)]);
     expect(lua.scanAuctions(MAGEWEAVE)).toBe(2);
     lua.findDeals();
     expect(lua.names()).toEqual([]);

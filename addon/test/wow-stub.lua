@@ -108,12 +108,27 @@ AuctionFrame:Show()
 AuctionHouseFrame = newFrame("AuctionHouseFrame")
 AuctionHouseFrame:SetSize(800, 447)
 AuctionHouseFrame:Show()
+-- Screen-space edges: the addon aligns its panel to these (the AH's own
+-- TOPRIGHT anchor sits above its visible top edge on the real client).
+-- Top - Bottom = 447 keeps the row budget exactly what SetSize implies.
+function AuctionHouseFrame:GetTop() return 655 end
+function AuctionHouseFrame:GetBottom() return 208 end
+function AuctionHouseFrame:GetRight() return 1084 end
+-- The retail AH's own search bar; "查找" in the WAH panel must also fill
+-- this box so the buy quantity can be typed in the client's own UI.
+AuctionHouseFrame.SearchBar = newFrame("AuctionHouseFrameSearchBar", AuctionHouseFrame)
+AuctionHouseFrame.SearchBar.SearchBox = newFrame("AuctionHouseFrameSearchBox", AuctionHouseFrame.SearchBar)
+function bed.ahSearchText() return AuctionHouseFrame.SearchBar.SearchBox._text or "" end
 AuctionFrameBrowse = newFrame("AuctionFrameBrowse")
 AuctionFrameBid = newFrame("AuctionFrameBid")
 AuctionFrameAuctions = newFrame("AuctionFrameAuctions")
 BuyoutPrice = newFrame("BuyoutPrice")
 StartPrice = newFrame("StartPrice")
 UIParent = newFrame("UIParent")
+-- The anchor offsets are relative to UIParent's top edge, so it reports
+-- its screen-space top (origin bottom-left): 768px UI height with the AH
+-- top at 655 puts the panel 113px below the screen's top edge.
+function UIParent:GetTop() return 768 end
 GameTooltip = newFrame("GameTooltip")
 ItemRefTooltip = newFrame("ItemRefTooltip")
 

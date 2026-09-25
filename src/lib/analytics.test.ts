@@ -94,7 +94,8 @@ describe("buildDealRadar", () => {
   // Mirrors the in-game radar (addon/WoWderhoiAH/Trade.lua): vendor
   // arbitrage (any listing below NPC sell price, no profit floor — the
   // NPC always buys, so even a 1c spread is risk-free) plus median
-  // discount (gated on the 5s floor because reselling carries risk).
+  // discount (gated on the 30c dust floor + 25% relative floor because
+  // reselling carries risk).
   const liquid = { quantity: 100, numAuctions: 10 };
 
   function signals(items: Parameters<typeof buildMarketSignal>[0][]) {
@@ -121,29 +122,29 @@ describe("buildDealRadar", () => {
     expect(deals[0].profit).toBe(1);
   });
 
-  it("requires the 15% discount, 3-scan depth, 3-auction liquidity, and 5s floor together", () => {
+  it("requires the 25% relative discount, 3-scan depth, 3-auction liquidity, and 30c floor together", () => {
     // Closes vary scan to scan so every rejection below is attributable to
     // the gate under test, not to the flat-series guard.
     const base = [
       { daysAgo: 2, marketPrice: 9800, ...liquid },
       { daysAgo: 1, marketPrice: 10000, ...liquid }
     ];
-    const qualifying = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 8000, ...liquid }]);
+    const qualifying = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 7000, ...liquid }]);
     const thinDiscount = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 9000, ...liquid }], { itemId: 2 });
-    const shallowHistory = history([{ daysAgo: 0, marketPrice: 10200, minPrice: 8000, ...liquid }], { itemId: 3 });
-    const illiquid = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 8000, quantity: 2, numAuctions: 2 }], { itemId: 4 });
-    const subSilver = history(
+    const shallowHistory = history([{ daysAgo: 0, marketPrice: 10200, minPrice: 7000, ...liquid }], { itemId: 3 });
+    const illiquid = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 7000, quantity: 2, numAuctions: 2 }], { itemId: 4 });
+    const subFloor = history(
       [
         { daysAgo: 2, marketPrice: 98, ...liquid },
         { daysAgo: 1, marketPrice: 100, ...liquid },
-        { daysAgo: 0, marketPrice: 102, minPrice: 50, ...liquid }
+        { daysAgo: 0, marketPrice: 102, minPrice: 75, ...liquid }
       ],
       { itemId: 5 }
     );
-    const deals = buildDealRadar(signals([qualifying, thinDiscount, shallowHistory, illiquid, subSilver]));
+    const deals = buildDealRadar(signals([qualifying, thinDiscount, shallowHistory, illiquid, subFloor]));
     expect(deals.map((deal) => deal.itemId)).toEqual([2770]);
     expect(deals[0].vendor).toBe(false);
-    expect(deals[0].profit).toBe(2000);
+    expect(deals[0].profit).toBe(3000);
   });
 
   it("orders vendor deals first, then by absolute profit", () => {
@@ -187,11 +188,11 @@ describe("buildDealRadar", () => {
     const atCap = history([
       { daysAgo: 2, marketPrice: 9000, ...liquid },
       { daysAgo: 1, marketPrice: 10000, ...liquid },
-      { daysAgo: 0, marketPrice: 11000, minPrice: 4000, ...liquid }
+      { daysAgo: 0, marketPrice: 11000, minPrice: 2500, ...liquid }
     ]);
-    const deals = buildDealRadar(signals([atCap])); // med7 10000, min 4000 = 60% off
+    const deals = buildDealRadar(signals([atCap])); // med7 10000, min 2500 = 75% off
     expect(deals).toHaveLength(1);
-    expect(deals[0].discountPercent).toBeCloseTo(60, 5);
+    expect(deals[0].discountPercent).toBeCloseTo(75, 5);
   });
 
   it("exempts vendor arbitrage from the med7 guards — the NPC price is a fact", () => {

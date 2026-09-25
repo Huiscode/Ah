@@ -95,7 +95,7 @@ const REJECTED: Array<{ why: string; candidate: Candidate }> = [
   },
   {
     why: "a discount past the cap means the reference broke",
-    candidate: { itemId: 2, name: "Collapsed Reference", minPrice: 3000, numAuctions: 6, closes: [10000, 11000, 12000] }
+    candidate: { itemId: 2, name: "Collapsed Reference", minPrice: 2000, numAuctions: 6, closes: [10000, 11000, 12000] }
   },
   {
     why: "a two-listing book cannot support a median",
@@ -106,8 +106,8 @@ const REJECTED: Array<{ why: string; candidate: Candidate }> = [
     candidate: { itemId: 4, name: "Short History", minPrice: 8000, numAuctions: 6, closes: [10000, 11000] }
   },
   {
-    why: "a 3s spread is not worth a trip",
-    candidate: { itemId: 5, name: "Penny Spread", minPrice: 800, numAuctions: 6, closes: [1000, 1100, 1200] }
+    why: "a 25c spread is below the 30c dust floor",
+    candidate: { itemId: 5, name: "Penny Spread", minPrice: 75, numAuctions: 6, closes: [98, 100, 102] }
   },
   {
     why: "14% under is not a deal",
@@ -116,6 +116,10 @@ const REJECTED: Array<{ why: string; candidate: Candidate }> = [
   {
     why: "no history at all",
     candidate: { itemId: 7, name: "Never Scanned", minPrice: 8000, numAuctions: 6, closes: [] }
+  },
+  {
+    why: "18% under is short of the 25% relative floor",
+    candidate: { itemId: 8, name: "Shallow Discount", minPrice: 900, numAuctions: 6, closes: [1000, 1100, 1200] }
   }
 ];
 

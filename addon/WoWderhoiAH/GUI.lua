@@ -178,6 +178,7 @@ local function createChart()
   chart = CreateFrame("Frame", "WoWderhoiAHChart", UIParent, "BackdropTemplate")
   chart:SetSize(CHART_WIDTH, CHART_HEIGHT)
   chart:SetFrameStrata("TOOLTIP")
+  chart:SetClampedToScreen(true)
   chart:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
     edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
@@ -270,17 +271,26 @@ function WoWderhoiAH_UpdateChart(itemId)
     chart:Hide()
     return
   end
-  -- Follow the tooltip: anchored beside the AH when it is open,
+  -- Follow the tooltip: anchored under the WAH trade panel when it is
+  -- open (never over its rows), beside the AH when the panel is closed,
   -- beside the game tooltip otherwise.
   chart:ClearAllPoints()
-  if AuctionHouseFrame and AuctionHouseFrame:IsShown() then
+  if WoWderhoiAHTrade and WoWderhoiAHTrade:IsShown() then
+    chart:SetPoint("TOPLEFT", WoWderhoiAHTrade, "BOTTOMLEFT", 0, -6)
+  elseif AuctionHouseFrame and AuctionHouseFrame:IsShown() then
     chart:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPRIGHT", -2, -12)
   elseif GameTooltip:IsShown() then
     chart:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -4, 0)
   else
     chart:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
   end
-  local itemName = GetItemInfo(itemId)
+  -- The Forever beta client dropped the global GetItemInfo; probe before
+  -- calling, then fall back to the retail API (same pattern as the
+  -- GetCoinTextureString shim in WoWderhoiAH.lua).
+  local itemName
+  if GetItemInfo then
+    itemName = GetItemInfo(itemId)
+  end
   if not itemName and C_Item and C_Item.GetItemInfoByID then
     itemName = C_Item.GetItemInfoByID(itemId)
   end

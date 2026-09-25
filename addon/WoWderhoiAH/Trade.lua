@@ -22,6 +22,12 @@ local L = WAH.L
 local ROWS_VISIBLE = 12 -- replaced in createTradeFrame by what the panel actually fits
 local ROW_HEIGHT = 22
 local PAD = 8
+-- The panel exactly matches the auction house frame's height (set in
+-- createTradeFrame): top edge aligned to the AH's, and every pixel below
+-- the header is a row, so nothing at the bottom is left empty.
+-- The panel matches AuctionHouseFrame's height (set in createTradeFrame),
+-- so it sits exactly beside the AH with every pixel below the header
+-- filled by a row; only the scroll arrows and bottom padding stay empty.
 -- Deal-radar thresholds live in WAH.RADAR (GeneratedRules.lua, compiled from
 -- src/lib/market-rules.ts) so the in-game radar and the desktop terminal
 -- classify every scan identically.
@@ -36,6 +42,42 @@ local pendingBuyItemId = nil
 
 local function chatMessage(text)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WAH|r " .. text)
+end
+
+-- The Forever beta client dropped the global GetItemIcon; resolve the item
+-- icon texture through the retail API when present, with a safe fallback so
+-- the trade rows still render on either client.
+local function itemIcon(itemId)
+  if C_Item and C_Item.GetItemIconByID then
+    local texture = C_Item.GetItemIconByID(itemId)
+    if texture then return texture end
+  end
+  if GetItemIcon then
+    return GetItemIcon(itemId)
+  end
+  return ""
+end
+
+-- "查找" also fills the AH's own search box, so the buy quantity can be
+-- typed where the client wants it. Probe the retail SearchBar first, then
+-- the classic AuctionFrameBrowse search box; whichever exists gets the name.
+local function fillAhSearch(name)
+  if not name or name == "" then return end
+  local ah = AuctionHouseFrame
+  if ah and ah.SearchBar then
+    local box = ah.SearchBar.SearchBox or ah.SearchBar.name or ah.SearchBar.editBox
+    if box and box.SetText then
+      box:SetText(name)
+      return
+    end
+  end
+  local browse = AuctionFrameBrowse
+  if browse then
+    local box = browse.searchBox or _G.AuctionFrameBrowseSearchBox
+    if box and box.SetText then
+      box:SetText(name)
+    end
+  end
 end
 
 -- ============================ Table model =============================
@@ -144,12 +186,15 @@ local function refreshDeals()
         vendor = true,
         discountPercent = (1 - entry.minPrice / entry.vendorP) * 100
       }
-    -- Class 2: P10 median discount. Requires history depth (3+ scans) AND a
-    -- live market (3+ auctions) AND a worthwhile absolute spread.
+    -- Class 2: P10 median discount. Requires history depth (3+ scans), a
+    -- live market (3+ auctions), a worthwhile absolute spread (30c dust
+    -- floor), and a discount deep enough relative to med7 (25%) that the
+    -- trip is worth taking in the early-server economy.
     elseif history and #history.pts >= WAH.RADAR.minHistory and history.med7 and history.med7 > 0
       and entry.minPrice and entry.minPrice > 0
       and (entry.numAuctions or 0) >= WAH.RADAR.minAuctions
       and (history.med7 - entry.minPrice) >= WAH.RADAR.minProfit
+      and (history.med7 - entry.minPrice) >= history.med7 * WAH.RADAR.minProfitRatio
       and entry.minPrice <= history.med7 * WAH.RADAR.discount
       and (history.distinct or 0) >= WAH.RADAR.minMed7Distinct
       and entry.minPrice >= history.med7 * (1 - WAH.RADAR.maxDiscount) then
@@ -371,8 +416,27 @@ sellPoll:Hide()
 
 local function createTradeFrame()
   trade = CreateFrame("Frame", "WoWderhoiAHTrade", UIParent, "BackdropTemplate")
-  trade:SetSize(480, 320)
-  trade:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPRIGHT", 4, -12)
+  -- Match the auction house frame's height so the panel and the AH are
+  -- exactly side by side; fall back to a fixed height if it cannot be read.
+  -- GetTop/GetBottom/GetRight are screen coordinates (origin bottom-left of
+  -- the screen), so the anchor offset must be expressed relative to the
+  -- UIParent's top edge: yOffset = ahTop - UIParent:GetTop().
+  local ahFrame = AuctionHouseFrame
+  local ahTop = ahFrame and ahFrame:GetTop()
+  local ahBottom = ahFrame and ahFrame:GetBottom()
+  local ahRight = ahFrame and ahFrame:GetRight()
+  local uiTop = UIParent and UIParent:GetTop()
+  local PANEL_HEIGHT
+  if ahTop and ahBottom and ahRight and uiTop then
+    -- The panel is exactly as tall as the AH frame itself, so its top and
+    -- bottom edges line up with the AH's.
+    PANEL_HEIGHT = math.max(math.floor(ahTop - ahBottom), 320)
+    trade:SetPoint("TOPLEFT", UIParent, "TOPLEFT", ahRight + 4, ahTop - uiTop)
+  else
+    PANEL_HEIGHT = math.max(math.floor(ahFrame and ahFrame:GetHeight() or 520), 320)
+    trade:SetPoint("TOPLEFT", ahFrame, "TOPRIGHT", 4, -12)
+  end
+  trade:SetSize(480, PANEL_HEIGHT)
   -- Keep the panel on screen even if the AH anchors move.
   trade:SetClampedToScreen(true)
   trade:SetMovable(true)
@@ -477,7 +541,11 @@ local function createTradeFrame()
   headerLine:SetHeight(1)
 
   local ROWS_TOP = -72
-  ROWS_VISIBLE = math.max(math.floor((320 - 70 - 38 + ROWS_TOP - PAD) / ROW_HEIGHT), 1)
+  -- Row budget: rows run all the way down to the bottom padding. The
+  -- scroll arrows only occupy the 24px scroll-bar strip to the RIGHT of
+  -- the rows, so the last row can sit flush with the bottom edge without
+  -- colliding with them -- that frees a whole row of space.
+  ROWS_VISIBLE = math.max(math.floor((PANEL_HEIGHT + ROWS_TOP - PAD) / ROW_HEIGHT), 1)
 
   trade.scroll = CreateFrame("ScrollFrame", "WoWderhoiAHTradeScroll", trade, "FauxScrollFrameTemplate")
   trade.scroll:SetPoint("TOPLEFT", PAD, ROWS_TOP)
@@ -556,7 +624,7 @@ renderRows = function()
         rowFrame.cells[slot]:SetText(column and column.cell(row[column.key]) or "")
       end
       if mode == "deals" then
-        rowFrame.icon:SetTexture(GetItemIcon(row.itemId))
+        rowFrame.icon:SetTexture(itemIcon(row.itemId))
         rowFrame.showTooltip = function() GameTooltip:SetHyperlink("item:" .. row.itemId) end
         rowFrame.name:SetText(row.vendor
           and string.format("%s |cffffd100[%s]|r", row.name, L.VENDOR_TAG)
@@ -564,6 +632,7 @@ renderRows = function()
         rowFrame.buy:SetText(L.FIND)
         rowFrame.buy:SetScript("OnClick", function()
           trade.searchBox:SetText(row.name)
+          fillAhSearch(row.name)
           mode = "results"
           trade.lastQuery = row.name
           refreshResults(row.name)
@@ -571,7 +640,7 @@ renderRows = function()
           renderRows()
         end)
       else
-        rowFrame.icon:SetTexture(GetItemIcon(row.itemId))
+        rowFrame.icon:SetTexture(itemIcon(row.itemId))
         rowFrame.showTooltip = function() GameTooltip:SetHyperlink("item:" .. row.itemId) end
         rowFrame.name:SetText(row.name)
         rowFrame.buy:SetText(L.BUY)
