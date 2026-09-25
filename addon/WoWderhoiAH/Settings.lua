@@ -208,7 +208,12 @@ panel:SetScript("OnShow", function(self)
   for _, item in ipairs(RADAR_NUMERIC) do
     local label = self:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     label:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -16)
-    label:SetText(item.label)
+    -- Fixed label width: every input box anchors to the label's right edge,
+    -- so a fixed width keeps all boxes in one column (anchoring to the box
+    -- instead made each row drift right like a staircase).
+    label:SetWidth(200)
+    label:SetJustifyH("LEFT")
+    label:SetWordWrap(false)
     label.tooltipText = item.tip
     local box = CreateFrame("EditBox", "WoWderhoiAHRadarBox" .. item.key, self, "InputBoxTemplate")
     box:SetSize(110, 20)
@@ -223,7 +228,7 @@ panel:SetScript("OnShow", function(self)
       self2:SetText(formatRadarValue(WAH.settings.radar[self2.radarKey]))
     end)
     self.radarBoxes[#self.radarBoxes + 1] = box
-    anchor = box
+    anchor = label
   end
 end)
 
