@@ -61,7 +61,7 @@ export function DealRadarTable({ deals, prices, categories }: {
         </select>
         <span className="text-terminal-muted">{rows.length} / {deals.length} 条</span>
       </div>
-      <div className="max-h-[344px] overflow-y-auto">
+      <div className="max-h-[344px] overflow-y-auto [scrollbar-gutter:stable]">
       <table className="w-full min-w-[1000px] table-fixed border-collapse font-mono text-xs">
         <colgroup>
           <col className="w-11" />

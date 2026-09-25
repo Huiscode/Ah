@@ -112,7 +112,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
           </button>
         </span>
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto [scrollbar-gutter:stable]">
         <table className="w-full min-w-[1000px] table-fixed border-collapse font-mono text-xs">
           <colgroup>
             <col className="w-11" />
