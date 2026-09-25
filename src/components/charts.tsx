@@ -100,7 +100,7 @@ export function CandlestickChart({ data }: { data: CandlePoint[] }) {
         <Tooltip
           contentStyle={{ background: "#10141d", border: "1px solid #263042", color: "#dce3ef" }}
           formatter={(value, name) => {
-            if (name === "volume") return [String(value), "成交量"];
+            if (name === "volume") return [String(value), "在售量"];
             if (Array.isArray(value)) return [`${formatGold(Number(value[0]))} - ${formatGold(Number(value[1]))}`, "低-高"];
             return [formatGold(Number(value)), String(name)];
           }}
