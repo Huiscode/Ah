@@ -12,6 +12,7 @@ local L = WAH.L
 
 local DEFAULTS = {
   autoScan = false, -- rescan whenever the full-scan (ReplicateItems) cooldown elapses at the AH
+  autoSave = false, -- reload the UI 1 min after each scan so the data hits disk + terminal unattended
   tooltip = true, -- trader section on item tooltips
   chart = true, -- price chart panel beside the auction frame
   verboseScan = false -- per-page progress messages during paged scans
@@ -98,6 +99,7 @@ end
 
 local OPTIONS = {
   { key = "autoScan", label = L.OPT_AUTOSCAN, tip = L.OPT_AUTOSCAN_TIP },
+  { key = "autoSave", label = L.OPT_AUTOSAVE, tip = L.OPT_AUTOSAVE_TIP },
   { key = "tooltip", label = L.OPT_TOOLTIP, tip = L.OPT_TOOLTIP_TIP },
   { key = "chart", label = L.OPT_CHART, tip = L.OPT_CHART_TIP },
   { key = "verboseScan", label = L.OPT_VERBOSE, tip = L.OPT_VERBOSE_TIP }
