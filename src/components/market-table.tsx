@@ -113,17 +113,17 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
         </span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[940px] table-fixed border-collapse font-mono text-xs">
+        <table className="w-full min-w-[1000px] table-fixed border-collapse font-mono text-xs">
           <colgroup>
-            <col className="w-10" />
+            <col className="w-11" />
             <col />
-            <col className="w-[88px]" />
             <col className="w-[100px]" />
-            <col className="w-[128px]" />
-            <col className="w-[80px]" />
-            <col className="w-[80px]" />
-            <col className="w-[80px]" />
-            <col className="w-[80px]" />
+            <col className="w-[104px]" />
+            <col className="w-[120px]" />
+            <col className="w-[96px]" />
+            <col className="w-[96px]" />
+            <col className="w-[96px]" />
+            <col className="w-[96px]" />
           </colgroup>
           <thead className="bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
             <tr>
