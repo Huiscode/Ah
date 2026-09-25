@@ -18,6 +18,7 @@ import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
 import { MarketTable } from "@/components/market-table";
 import { WatchStar } from "@/components/watch-star";
+import { DealRadarTable } from "@/components/deal-radar-table";
 import { RadarParamsPanel } from "@/components/radar-params-panel";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import Link from "next/link";
@@ -80,28 +81,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <Panel>
             <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · NPC必赚 + 最低价 vs 7日P10中位</span>} />
             <div className="p-3 font-mono text-xs">
-              {deals.length === 0 && (
+              {deals.length === 0 ? (
                 <div className="text-terminal-muted">
                   {signals.length === 0 ? "暂无市场数据。进游戏 /wahscan 扫描。" : "当前没有满足流动性与利润门槛的捡漏挂单。"}
                 </div>
+              ) : (
+                <DealRadarTable deals={deals} />
               )}
-              <div className="max-h-[340px] divide-y divide-terminal-border overflow-y-auto">
-                {deals.map((deal) => (
-                  <div key={deal.itemId} className="flex items-center justify-between gap-2 py-1.5">
-                    <Link href={`/items/${deal.itemId}`} className={`inline-flex min-w-0 flex-1 items-center gap-2 ${qualityColorClass(deal.quality)}`}>
-                      <ItemIcon itemId={deal.itemId} size={16} />
-                      <span className="truncate">{deal.name}</span>
-                      {deal.vendor
-                        ? <span className="shrink-0 text-terminal-amber">NPC必赚 +<Coins copper={deal.profit} /></span>
-                        : <span className="shrink-0 text-terminal-green">-{deal.discountPercent.toFixed(0)}%</span>}
-                    </Link>
-                    <span className="flex shrink-0 items-center gap-3">
-                      <Coins copper={deal.minPrice} />
-                      <span className="text-terminal-muted">{deal.vendor ? "NPC价" : "P10中位"} <Coins copper={deal.reference} /></span>
-                    </span>
-                  </div>
-                ))}
-              </div>
             </div>
           </Panel>
           <Panel>
