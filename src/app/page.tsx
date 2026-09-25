@@ -48,7 +48,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // rules the addon used. Without a stored override the compiled defaults
   // apply.
   const radarRules = mergeRadarRules(storedRules);
-  const deals = buildDealRadar(signals, radarRules).slice(0, 12);
+  const deals = buildDealRadar(signals, radarRules);
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
   const craftRows = computeCraftProfits(craftRecipes, priceByItemId);
   const craftOk = craftRows.filter((row) => row.status === "ok");
@@ -78,7 +78,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">NPC必赚 + 最低价 vs 7日P10中位</span>} />
+            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · NPC必赚 + 最低价 vs 7日P10中位</span>} />
             <div className="space-y-2 p-3 font-mono text-xs">
               {deals.length === 0 && (
                 <div className="text-terminal-muted">
