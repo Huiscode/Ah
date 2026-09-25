@@ -62,17 +62,17 @@ export function DealRadarTable({ deals, prices, categories }: {
         <span className="text-terminal-muted">{rows.length} / {deals.length} 条</span>
       </div>
       <div className="max-h-[344px] overflow-y-auto">
-      <table className="w-full min-w-[880px] table-fixed border-collapse font-mono text-xs">
+      <table className="w-full min-w-[940px] table-fixed border-collapse font-mono text-xs">
         <colgroup>
-          <col className="w-8" />
+          <col className="w-10" />
           <col />
-          <col className="w-[72px]" />
-          <col className="w-[84px]" />
-          <col className="w-[112px]" />
-          <col className="w-[64px]" />
-          <col className="w-[64px]" />
-          <col className="w-[64px]" />
-          <col className="w-[64px]" />
+          <col className="w-[88px]" />
+          <col className="w-[100px]" />
+          <col className="w-[128px]" />
+          <col className="w-[80px]" />
+          <col className="w-[80px]" />
+          <col className="w-[80px]" />
+          <col className="w-[80px]" />
         </colgroup>
         <thead className="sticky top-0 z-10 bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
           <tr>
