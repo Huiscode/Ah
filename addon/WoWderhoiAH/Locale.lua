@@ -113,7 +113,8 @@ local L = {
   OPT_R_DISTINCT = "minMed7Distinct",
   OPT_R_DISTINCT_TIP = "Distinct 7d P10 values required: a flat series is one camper's ask, not a market. 2 = default.",
   OPT_R_HISTORY = "minHistory",
-  OPT_R_HISTORY_TIP = "Scans inside the 7d window before the median means anything. 3 = default."
+  OPT_R_HISTORY_TIP = "Scans inside the 7d window before the median means anything. 3 = default.",
+  SETTINGS_AH_RESTORED = "Settings closed - auction house restored. Run /wahscan to rescan."
 }
 
 if GetLocale() == "zhCN" then
@@ -219,6 +220,7 @@ if GetLocale() == "zhCN" then
   L.OPT_R_DISTINCT_TIP = "要求的 7 日 P10 去重样本数：完全平坦的序列是一个蹲守卖家的报价，不是市场。2=默认。"
   L.OPT_R_HISTORY = "minHistory"
   L.OPT_R_HISTORY_TIP = "7 日窗口内中位有效所需的最少扫描次数。3=默认。"
+  L.SETTINGS_AH_RESTORED = "设置已关闭，已恢复拍卖行。请运行 /wahscan 重新扫描。"
 end
 
 WAH.L = L

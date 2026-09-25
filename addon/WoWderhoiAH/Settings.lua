@@ -68,6 +68,29 @@ WAH.applyRadarSettings = applyRadarSettings
 local panel = CreateFrame("Frame", "WoWderhoiAHSettingsPanel")
 panel.name = "WoWderhoi AHelper"
 
+-- The AH frame closes whenever the game options open (client behavior),
+-- which aborts any running scan and hides the WAH panel. Remember that the
+-- AH was up before the settings opened, and when they close, re-open the AH
+-- frame and remind the user to scan again.
+local ahClosedBySettings = false
+
+local function rememberAhBeforeSettings()
+  if AuctionHouseFrame and AuctionHouseFrame:IsShown() then
+    ahClosedBySettings = true
+  end
+end
+
+local function restoreAhAfterSettings()
+  if not ahClosedBySettings then return end
+  ahClosedBySettings = false
+  if AuctionHouseFrame and not AuctionHouseFrame:IsShown() then
+    local ok = pcall(function() AuctionHouseFrame:Show() end)
+    if ok then
+      DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WAH|r " .. L.SETTINGS_AH_RESTORED)
+    end
+  end
+end
+
 local OPTIONS = {
   { key = "autoScan", label = L.OPT_AUTOSCAN, tip = L.OPT_AUTOSCAN_TIP },
   { key = "tooltip", label = L.OPT_TOOLTIP, tip = L.OPT_TOOLTIP_TIP },
@@ -207,12 +230,16 @@ end)
 if Settings and Settings.RegisterCanvasLayoutCategory then
   local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
   Settings.RegisterAddOnCategory(category)
-  WAH.openSettings = function() Settings.OpenToCategory(category:GetID()) end
+  WAH.openSettings = function()
+    rememberAhBeforeSettings()
+    Settings.OpenToCategory(category:GetID())
+  end
 else
   InterfaceOptions_AddCategory(panel)
   WAH.openSettings = function()
     -- Long-standing Blizzard bug: the first call only opens the window
     -- without navigating; calling twice lands on the category.
+    rememberAhBeforeSettings()
     InterfaceOptionsFrame_OpenToCategory(panel)
     InterfaceOptionsFrame_OpenToCategory(panel)
   end
@@ -220,3 +247,21 @@ end
 
 SLASH_WOWDERHOIAHOPTS1 = "/wahopt"
 SlashCmdList["WOWDERHOIAHOPTS"] = function() WAH.openSettings() end
+
+-- The retail Settings framework fires SETTINGS_OPENED/CLOSED; the classic
+-- InterfaceOptions panel has no event of its own, so hook its frame as a
+-- fallback. Both paths also work when the user opens Options via ESC.
+local settingsWatch = CreateFrame("Frame")
+pcall(settingsWatch.RegisterEvent, settingsWatch, "SETTINGS_OPENED")
+pcall(settingsWatch.RegisterEvent, settingsWatch, "SETTINGS_CLOSED")
+settingsWatch:SetScript("OnEvent", function(_, event)
+  if event == "SETTINGS_OPENED" then
+    rememberAhBeforeSettings()
+  elseif event == "SETTINGS_CLOSED" then
+    restoreAhAfterSettings()
+  end
+end)
+if InterfaceOptionsFrame then
+  InterfaceOptionsFrame:HookScript("OnShow", rememberAhBeforeSettings)
+  InterfaceOptionsFrame:HookScript("OnHide", restoreAhAfterSettings)
+end
