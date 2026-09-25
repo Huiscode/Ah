@@ -64,7 +64,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
           <h1 className="font-mono text-lg font-semibold uppercase text-terminal-amber">WoWderhoi AHelper</h1>
-          <p className="font-mono text-xs text-terminal-muted">周年服拍卖行情报与短线交易终端</p>
+          <p className="font-mono text-xs text-terminal-muted">无限拍卖行行情与短线交易终端</p>
         </div>
         <div className="flex items-center gap-3 font-mono text-xs text-terminal-muted">
           <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
@@ -116,6 +116,28 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </Panel>
         </div>
         <div className="space-y-3">
+          <Panel>
+            <PanelHeader title="制造利润" action={<Hammer size={13} className="text-terminal-muted" />} />
+            <div className="space-y-2 p-3 font-mono text-xs">
+              {craftOk.length === 0 && (
+                <div className="text-terminal-muted">扫描覆盖配方材料与成品后此处显示利润排行</div>
+              )}
+              {craftOk.slice(0, 8).map((row) => (
+                <div key={row.recipe.name} className="flex items-center justify-between gap-2">
+                  <span className="text-slate-100">{row.recipe.name}<span className="ml-1 text-[10px] text-terminal-muted">{row.recipe.profession}</span></span>
+                  <span className="flex items-center gap-3">
+                    <span className={row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}><Coins copper={row.profit} /></span>
+                    <span className={row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}>{formatPercent(row.marginPercent)}</span>
+                  </span>
+                </div>
+              ))}
+              {craftMissingCount > 0 && (
+                <div className="border-t border-terminal-border pt-2 text-[10px] text-terminal-muted">
+                  另有 {craftMissingCount} 个配方因缺少价格数据未计算
+                </div>
+              )}
+            </div>
+          </Panel>
           <Panel>
             <PanelHeader title="雷达参数" action={<span className="font-mono text-[10px] text-terminal-muted">游戏内权威 · 扫描后同步</span>} />
             <div className="space-y-2 p-3 font-mono text-xs">
@@ -199,28 +221,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   </span>
                 </div>
               ))}
-            </div>
-          </Panel>
-          <Panel>
-            <PanelHeader title="制造利润" action={<Hammer size={13} className="text-terminal-muted" />} />
-            <div className="space-y-2 p-3 font-mono text-xs">
-              {craftOk.length === 0 && (
-                <div className="text-terminal-muted">扫描覆盖配方材料与成品后此处显示利润排行</div>
-              )}
-              {craftOk.slice(0, 8).map((row) => (
-                <div key={row.recipe.name} className="flex items-center justify-between gap-2">
-                  <span className="text-slate-100">{row.recipe.name}<span className="ml-1 text-[10px] text-terminal-muted">{row.recipe.profession}</span></span>
-                  <span className="flex items-center gap-3">
-                    <span className={row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}><Coins copper={row.profit} /></span>
-                    <span className={row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}>{formatPercent(row.marginPercent)}</span>
-                  </span>
-                </div>
-              ))}
-              {craftMissingCount > 0 && (
-                <div className="border-t border-terminal-border pt-2 text-[10px] text-terminal-muted">
-                  另有 {craftMissingCount} 个配方因缺少价格数据未计算
-                </div>
-              )}
             </div>
           </Panel>
           <Panel>
