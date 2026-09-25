@@ -31,6 +31,8 @@ export function TimeSeriesChart({ data }: { data: TimePoint[] }) {
         <YAxis yAxisId="volume" orientation="right" tick={{ fill: "#8d96a8", fontSize: 11 }} width={54} />
         <Tooltip
           contentStyle={{ background: "#10141d", border: "1px solid #263042", color: "#dce3ef" }}
+          itemStyle={{ color: "#dce3ef" }}
+          labelStyle={{ color: "#dce3ef" }}
           labelFormatter={(value) => formatClock(Number(value))}
           formatter={(value, name) => (name === "volume" ? [String(value), "在售量"] : [formatGold(Number(value)), "P10"])}
         />
@@ -98,6 +100,8 @@ export function CandlestickChart({ data }: { data: CandlePoint[] }) {
         />
         <Tooltip
           contentStyle={{ background: "#10141d", border: "1px solid #263042", color: "#dce3ef" }}
+          itemStyle={{ color: "#dce3ef" }}
+          labelStyle={{ color: "#dce3ef" }}
           formatter={(value, name) => {
             if (Array.isArray(value)) return [`${formatGold(Number(value[0]))} - ${formatGold(Number(value[1]))}`, "低-高"];
             return [formatGold(Number(value)), String(name)];
