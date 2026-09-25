@@ -46,16 +46,22 @@ end
 
 -- The Forever beta client dropped the global GetItemIcon; resolve the item
 -- icon texture through the retail API when present, with a safe fallback so
--- the trade rows still render on either client.
+-- the trade rows still render on either client. Icons for items the client
+-- has never cached return nil — request the item info (async load) and fall
+-- back to a question-mark texture so the row never renders blank; the
+-- GET_ITEM_INFO_RECEIVED handler re-renders the list once the icon lands.
 local function itemIcon(itemId)
   if C_Item and C_Item.GetItemIconByID then
     local texture = C_Item.GetItemIconByID(itemId)
     if texture then return texture end
+    if C_Item.GetItemInfoByID then C_Item.GetItemInfoByID(itemId) end
   end
   if GetItemIcon then
-    return GetItemIcon(itemId)
+    local texture = GetItemIcon(itemId)
+    if texture then return texture end
+    if GetItemInfo then GetItemInfo(itemId) end
   end
-  return ""
+  return "Interface\\ICONS\\INV_Misc_QuestionMark"
 end
 
 -- "查找" also fills the AH's own search box, so the buy quantity can be
@@ -683,6 +689,7 @@ end
 local tradeEvents = CreateFrame("Frame")
 tradeEvents:RegisterEvent("AUCTION_HOUSE_SHOW")
 tradeEvents:RegisterEvent("AUCTION_HOUSE_CLOSED")
+tradeEvents:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 if C_AuctionHouse and C_AuctionHouse.GetNumItemSearchResults then
   tradeEvents:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
 end
@@ -698,6 +705,10 @@ tradeEvents:SetScript("OnEvent", function(_, event, itemKey)
   elseif event == "AUCTION_HOUSE_CLOSED" then
     if trade then trade:Hide() end
     sellPoll:Hide()
+  elseif event == "GET_ITEM_INFO_RECEIVED" then
+    -- An icon texture finished loading (itemIcon asked for it): repaint the
+    -- visible rows so the previously-blank icon slot fills in.
+    if trade and trade:IsShown() then renderRows() end
   elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
     finalizeBuy(itemKey)
   end
