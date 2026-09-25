@@ -148,7 +148,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 <span className="text-slate-100">绝对利润下限</span>
                 <Coins copper={radarRules.minProfit} />
               </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">利润低于此铜币数的价差视为噪音而非机会。开服初期 30 铜是合适的灰尘下限；物价起来后可适当上调。</p>
+              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">利润低于此铜币数的价差视为噪音而非机会。</p>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-slate-100">相对利润下限</span>
                 <span>{formatPercent(radarRules.minProfitRatio * 100)}</span>
