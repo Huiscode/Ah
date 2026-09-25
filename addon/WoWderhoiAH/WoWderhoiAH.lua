@@ -49,27 +49,6 @@ local function autoScanOn()
   return WAH.settings and WAH.settings.autoScan
 end
 
-local function autoSaveOn()
-  return WAH.settings and WAH.settings.autoSave
-end
-
--- Auto-save: one minute after a completed scan, reload the UI so the
--- client writes SavedVariables to disk and the desktop terminal imports
--- the scan. After the reload the boot hook reopens the auction house and
--- the auto-rescan ticker starts the next round, so an unattended session
--- (monitor off overnight) lands every scan in the database.
-local function tryAutoReload(attempts)
-  if UnitAffectingCombat and UnitAffectingCombat("player") then
-    if attempts and attempts < 30 then -- defer while fighting, give up after ~30 min
-      C_Timer.After(60, function() tryAutoReload(attempts + 1) end)
-      chatMessage(L.AUTOSAVE_COMBAT)
-      return
-    end
-  end
-  chatMessage(L.AUTOSAVE_RELOAD)
-  ReloadUI()
-end
-
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("REPLICATE_ITEM_LIST_UPDATE")
 frame:RegisterEvent("AUCTION_HOUSE_CLOSED")
@@ -311,14 +290,8 @@ local function finishScan(totalAuctions)
   scanState = nil
   WAH.scanRunning = false
   chatMessage(string.format(
-    L.SCAN_COMPLETE .. "%s%s",
-    totalAuctions or 0, itemCount,
-    autoScanOn() and L.SCAN_AUTO_ARMED or "",
-    autoSaveOn() and L.SCAN_AUTOSAVE_ARMED or ""))
-  -- Auto-save: schedule the UI reload that flushes this scan to disk.
-  if autoSaveOn() then
-    C_Timer.After(60, function() tryAutoReload(1) end)
-  end
+    L.SCAN_COMPLETE .. "%s",
+    totalAuctions or 0, itemCount, autoScanOn() and L.SCAN_AUTO_ARMED or ""))
 end
 
 local function processReplicateChunk()
@@ -454,31 +427,13 @@ end)
 
 -- Auto-rescan: while the AH stays open, restart a replicate scan whenever
 -- the ~15-minute cooldown elapses. Ticker is cheap; all real gating is
--- inside the check. Auto-save mode also arms the rescan so the overnight
--- loop (scan -> reload -> reopen AH -> scan) runs unattended.
+-- inside the check.
 C_Timer.NewTicker(20, function()
-  if not (autoScanOn() or autoSaveOn()) or scanState then return end
+  if not autoScanOn() or scanState then return end
   if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then return end
   if replicateSecondsLeft() > 0 then return end
   chatMessage(L.AUTO_TRIGGER)
   startScan()
-end)
-
--- Boot hook for auto-save mode: after the reload that flushed the previous
--- scan, reopen the auction house so the rescan ticker picks up the next
--- round. Runs a few seconds after load so every other addon's frame has
--- had time to exist.
-local bootFrame = CreateFrame("Frame")
-bootFrame:RegisterEvent("ADDON_LOADED")
-bootFrame:SetScript("OnEvent", function(_, _, name)
-  if name ~= ADDON_NAME then return end
-  if not autoSaveOn() then return end
-  C_Timer.After(5, function()
-    if AuctionHouseFrame and not AuctionHouseFrame:IsShown() then
-      local ok = pcall(function() AuctionHouseFrame:Show() end)
-      if ok then chatMessage(L.AUTOSAVE_CYCLE_RESUME) end
-    end
-  end)
 end)
 
 -- Single history authority: points accumulated across scans plus the

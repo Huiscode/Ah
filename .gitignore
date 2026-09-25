@@ -28,3 +28,4 @@ public/icons/
 .tmp-*
 dev.db
 WoWderhoiAH-*.zip
+.watch-state.json

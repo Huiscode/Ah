@@ -1,8 +1,11 @@
 // Watches the WoW SavedVariables file written by the WoWderhoiAH addon
 // and posts each new scan to the terminal import endpoint. In-game
-// history accumulates inside the addon itself (WoWderhoiAH_Points).
-// Run alongside the game client:  npm run addon:watch
-import { readFileSync, watchFile } from "node:fs";
+// history accumulates inside the addon itself (WoWderhoiAH_Points); the
+// whole 7-day point series rides along with each import so an overnight
+// auto-rescan session (monitor off, no reload) lands every round in the
+// terminal in one shot when the player next logs out. Run alongside the
+// game client:  npm run addon:watch
+import { readFileSync, writeFileSync, watchFile } from "node:fs";
 import { parseSavedVariables } from "@/lib/addon-scan";
 import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 
@@ -21,7 +24,23 @@ if (!savedVarsPath) {
 }
 const importUrl = process.env.AQT_IMPORT_URL ?? "http://localhost:3000/api/import/addon-scan";
 
-let lastImportedScanAt = 0;
+// Watcher restart bookkeeping: remember the last imported scan timestamp so
+// a fresh process does not re-import the whole 7-day point history. The
+// state file lives next to this script and is gitignored.
+const statePath = new URL("./.watch-state.json", import.meta.url);
+function readState(): { lastImportedScanAt: number } {
+  try {
+    return JSON.parse(readFileSync(statePath, "utf8")) as { lastImportedScanAt: number };
+  } catch {
+    return { lastImportedScanAt: 0 };
+  }
+}
+function writeState(state: { lastImportedScanAt: number }) {
+  writeFileSync(statePath, JSON.stringify(state), "utf8");
+}
+
+let state = readState();
+let lastImportedScanAt = state.lastImportedScanAt ?? 0;
 
 
 async function importLatestScan() {
@@ -48,21 +67,30 @@ async function importLatestScan() {
   const db = parsed.WoWderhoiAHDB as Record<string, unknown> | undefined;
   const settings = db?.settings as Record<string, unknown> | undefined;
   const radarRules = settings?.radar;
+  // In-game history points, one per item per completed scan (7-day window).
+  // Sent raw; the import route validates and de-duplicates them.
+  const points = db?.points;
 
   const response = await fetch(importUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...scan, ...(radarRules !== undefined ? { rules: radarRules } : {}) })
+    body: JSON.stringify({
+      ...scan,
+      ...(radarRules !== undefined ? { rules: radarRules } : {}),
+      ...(points !== undefined ? { points } : {}),
+      after: lastImportedScanAt
+    })
   });
   const body = await response.json();
   if (!response.ok && response.status !== 409) {
     throw new Error(`Import failed (${response.status}): ${JSON.stringify(body)}`);
   }
   lastImportedScanAt = scan.scannedAt;
+  writeState({ lastImportedScanAt });
   console.log(
     response.status === 409
       ? `Scan ${new Date(scan.scannedAt * 1000).toISOString()} already imported, skipping.`
-      : `Imported ${body.imported} items from scan ${body.scannedAt}.`
+      : `Imported ${body.imported} items + ${body.points ?? 0} history points from scan ${body.scannedAt}.`
   );
 }
 

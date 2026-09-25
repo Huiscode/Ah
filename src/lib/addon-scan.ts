@@ -44,6 +44,18 @@ export type AddonScan = {
   rules?: AddonRadarRules;
 };
 
+// One accumulated in-game history point: the P10 close (c) of a completed
+// scan and the listed quantity (q) at that scan. The addon appends a point
+// per item on every scan and keeps a rolling 7-day window, so a night of
+// auto-rescans carries the full per-round price series to the terminal in
+// one import — no per-round disk flush required.
+export type AddonPoint = {
+  itemId: number;
+  timestamp: Date; // seconds -> epoch ms at normalization
+  marketPrice: number; // P10 close, copper
+  quantity: number; // listed quantity at that scan; 0 when absent
+};
+
 type LuaValue = string | number | boolean | null | { [key: string]: LuaValue };
 
 // SavedVariables files are machine-written by the WoW client in a fixed shape:
@@ -270,4 +282,35 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
       ? { rules: normalizeRadarRules(scan.rules) }
       : {})
   };
+}
+
+// In-game price history is auxiliary to the scan snapshot: a malformed or
+// empty points table must never reject the import. Each item's points are
+// validated in isolation and dropped on failure; if nothing survives the
+// whole points payload is omitted. Points are appended by the addon on
+// every completed scan and pruned to the last 7 days (192 points max).
+export function normalizeAddonPoints(raw: unknown): AddonPoint[] | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const source = raw as Record<string, unknown>;
+  const points: AddonPoint[] = [];
+  for (const [key, value] of Object.entries(source)) {
+    const itemId = Number(key);
+    if (!Number.isInteger(itemId) || itemId <= 0) continue;
+    if (typeof value !== "object" || value === null) continue;
+    // Lua array of point tables -> parser keys them "1", "2", ...
+    for (const pointValue of Object.values(value as Record<string, unknown>)) {
+      if (typeof pointValue !== "object" || pointValue === null) continue;
+      const point = pointValue as Record<string, unknown>;
+      if (typeof point.t !== "number" || !Number.isFinite(point.t) || point.t <= 0) continue;
+      if (typeof point.c !== "number" || !Number.isFinite(point.c) || point.c <= 0) continue;
+      const quantity = typeof point.q === "number" && Number.isFinite(point.q) && point.q >= 0 ? Math.round(point.q) : 0;
+      points.push({
+        itemId,
+        timestamp: new Date(point.t * 1000),
+        marketPrice: Math.round(point.c),
+        quantity
+      });
+    }
+  }
+  return points.length > 0 ? points : undefined;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeAddonScan, normalizeRadarRules, parseSavedVariables } from "@/lib/addon-scan";
+import { normalizeAddonScan, normalizeAddonPoints, normalizeRadarRules, parseSavedVariables } from "@/lib/addon-scan";
 
 const savedVariablesFixture = `
 WoWderhoiAH_ScanData = {
@@ -166,6 +166,29 @@ describe("normalizeAddonScan", () => {
       rules: { minProfit: "no", supplyShrink: "yes" }
     });
     expect("rules" in scan).toBe(false);
+  });
+});
+
+describe("normalizeAddonPoints", () => {
+  it("normalizes per-item history points into rows", () => {
+    expect(normalizeAddonPoints({
+      2770: { "1": { t: 1721700000, c: 150, q: 240 }, "2": { t: 1721700900, c: 140 } },
+      13468: { "1": { t: 1721700000, c: 950000, q: 3 } }
+    })).toEqual([
+      { itemId: 2770, timestamp: new Date(1721700000 * 1000), marketPrice: 150, quantity: 240 },
+      { itemId: 2770, timestamp: new Date(1721700900 * 1000), marketPrice: 140, quantity: 0 },
+      { itemId: 13468, timestamp: new Date(1721700000 * 1000), marketPrice: 950000, quantity: 3 }
+    ]);
+  });
+
+  it("drops malformed entries and returns undefined when nothing survives", () => {
+    expect(normalizeAddonPoints({
+      2770: { "1": { t: "no", c: 150 } },
+      13468: { "1": { t: 1721700000, c: "bad" } }
+    })).toBeUndefined();
+    expect(normalizeAddonPoints(null)).toBeUndefined();
+    expect(normalizeAddonPoints("x")).toBeUndefined();
+    expect(normalizeAddonPoints(undefined)).toBeUndefined();
   });
 });
 
