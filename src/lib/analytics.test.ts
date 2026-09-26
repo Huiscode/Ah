@@ -207,21 +207,34 @@ describe("buildDealRadar", () => {
 });
 
 describe("buildWeekdaySeasonality", () => {
-  it("uses median closes so one spike day cannot skew a weekday", () => {
-    // Mondays: [100, 100, 999999] -> median 100; Tuesdays: [200]
+  it("measures day-over-day close change per weekday, matching the K-line rule", () => {
+    // Mon 07-06 100 (series start, no reference), Tue 07-07 200 (+100%),
+    // Wed 07-08 180 (-10%), Mon 07-13 110 (-38.9% vs Wed), Tue 07-14 220 (+100% vs Mon)
     const summaries = [
       { date: new Date("2026-07-06T00:00:00Z"), closePrice: 100, volume: 10 },
-      { date: new Date("2026-07-13T00:00:00Z"), closePrice: 100, volume: 10 },
-      { date: new Date("2026-07-20T00:00:00Z"), closePrice: 999999, volume: 10 },
-      { date: new Date("2026-07-07T00:00:00Z"), closePrice: 200, volume: 30 }
+      { date: new Date("2026-07-07T00:00:00Z"), closePrice: 200, volume: 10 },
+      { date: new Date("2026-07-08T00:00:00Z"), closePrice: 180, volume: 10 },
+      { date: new Date("2026-07-13T00:00:00Z"), closePrice: 110, volume: 10 },
+      { date: new Date("2026-07-14T00:00:00Z"), closePrice: 220, volume: 30 }
     ];
     const seasonality = buildWeekdaySeasonality(summaries);
     const monday = seasonality.find((day) => day.weekday === 1)!;
     const tuesday = seasonality.find((day) => day.weekday === 2)!;
-    // overall median = median of [100,100,999999,200] = 100
-    expect(monday.priceDeviation).toBeCloseTo(0, 5);
+    const wednesday = seasonality.find((day) => day.weekday === 3)!;
+    expect(monday.priceDeviation).toBeCloseTo(((110 - 180) / 180) * 100, 5);
     expect(tuesday.priceDeviation).toBeCloseTo(100, 5);
-    expect(monday.listedShare).toBeCloseTo(50, 5);
+    expect(wednesday.priceDeviation).toBeCloseTo(-10, 5);
+    expect(monday.listedShare).toBeCloseTo((20 / 70) * 100, 5);
+    expect(tuesday.listedShare).toBeCloseTo((40 / 70) * 100, 5);
     expect(seasonality.find((day) => day.weekday === 6)).toBeUndefined();
+  });
+
+  it("reports null deviation for a weekday with no previous-day reference", () => {
+    const seasonality = buildWeekdaySeasonality([
+      { date: new Date("2026-07-06T00:00:00Z"), closePrice: 100, volume: 5 }
+    ]);
+    expect(seasonality[0].priceDeviation).toBeNull();
+    expect(seasonality[0].sampleCount).toBe(1);
+    expect(seasonality[0].listedShare).toBeCloseTo(100, 5);
   });
 });
