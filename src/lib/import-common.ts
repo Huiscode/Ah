@@ -37,7 +37,8 @@ export type ImportPayload = {
   // addon-only: the accumulated in-game 7-day point series riding along
   // with the snapshot; ahledger imports have no history points.
   points?: ImportPoint[];
-  // addon-only: skip history points at or before this epoch (already imported).
+  // addon-only: deprecated — the watcher still sends it, but the import no
+  // longer trusts it as "already imported" (see the self-healing fence below).
   after?: number;
   // addon-only: replay of the in-game radar thresholds (route-2 authority).
   rules?: AddonRadarRules;
@@ -52,7 +53,6 @@ export type ImportResult = { imported: number; points: number; scannedAt: string
 export async function importSnapshot(payload: ImportPayload): Promise<ImportResult> {
   const { source, scannedAt, server, faction, rules } = payload;
   const items = payload.items;
-  const after = payload.after ?? 0;
   const points = payload.points ?? [];
 
   // Channel-scoped dedupe: the same wall-clock timestamp can legitimately
@@ -67,27 +67,27 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
   }
 
   // In-game history points (one per item per completed scan, 7-day window).
-  // The snapshot import is the anchor: points strictly older than the last
-  // imported scan (`after`) and strictly newer than this scan are dropped —
-  // the snapshot row itself covers the scan's own timestamp, and anything at
-  // or before `after` was already imported by an earlier file write. The
-  // database is probed as a second dedupe fence in case the watcher restarted
-  // with a stale `after`.
+  // The snapshot import is the anchor: points at or after this scan are
+  // dropped because the snapshot rows themselves cover the scan's timestamp.
+  // The old `after` fence (skip everything <= last imported scan) is
+  // deliberately NOT trusted: a watcher that was down, or an import that
+  // failed while the watcher advanced its state, leaves gaps that the fence
+  // would skip forever (observed: whole evening scans missing from the DB).
+  // Every point below the scan time is therefore probed against the database
+  // and only genuinely missing (itemId, timestamp) pairs are inserted — the
+  // import is self-healing and the next scan after downtime backfills
+  // everything the plugin's point series carries.
   const scannedAtSec = Math.floor(scannedAt.getTime() / 1000);
-  let fenced = points;
-  if (after > 0 || scannedAtSec > 0) {
-    fenced = fenced.filter(
-      (point) => Math.floor(point.timestamp.getTime() / 1000) > after && Math.floor(point.timestamp.getTime() / 1000) < scannedAtSec
-    );
-  }
-  let freshPoints = fenced;
-  if (fenced.length > 0) {
-    const existingAfter = await prisma.auctionSnapshot.findMany({
-      where: { server, faction, source, timestamp: { gt: new Date(after * 1000) } },
+  const candidates = points.filter((point) => Math.floor(point.timestamp.getTime() / 1000) < scannedAtSec);
+  let freshPoints = candidates;
+  if (candidates.length > 0) {
+    const minTs = new Date(Math.min(...candidates.map((point) => point.timestamp.getTime())));
+    const existing = await prisma.auctionSnapshot.findMany({
+      where: { server, faction, source, timestamp: { gte: minTs } },
       select: { itemId: true, timestamp: true }
     });
-    const seen = new Set(existingAfter.map((row) => `${row.itemId}|${row.timestamp.getTime()}`));
-    freshPoints = fenced.filter((point) => !seen.has(`${point.itemId}|${point.timestamp.getTime()}`));
+    const seen = new Set(existing.map((row) => `${row.itemId}|${row.timestamp.getTime()}`));
+    freshPoints = candidates.filter((point) => !seen.has(`${point.itemId}|${point.timestamp.getTime()}`));
   }
 
   // Full-table reads instead of `in` filters: the item table is small and

@@ -5,6 +5,7 @@ import { computeCraftProfits, craftRecipes } from "@/lib/crafting";
 import { mergeRadarRules } from "@/lib/market-rules";
 import {
   getAlertRules,
+  getLatestAddonRoundItemIds,
   getRadarRules,
   getUpcomingEvents,
   getWatchedItemIds
@@ -34,12 +35,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     quantity: "在售量"
   };
   const view = parseMarketView(await searchParams);
-  const [{ signals, latestSnapshotAt }, upcomingEvents, watchedIds, alertRules, storedRules] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, upcomingEvents, watchedIds, alertRules, storedRules, latestAddonRound] = await Promise.all([
     getMarketSignals(),
     getUpcomingEvents(),
     getWatchedItemIds(),
     getAlertRules(),
-    getRadarRules()
+    getRadarRules(),
+    getLatestAddonRoundItemIds()
   ]);
   const freshness = describeFreshness(latestSnapshotAt, new Date());
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
@@ -49,7 +51,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // rules the addon used. Without a stored override the compiled defaults
   // apply.
   const radarRules = mergeRadarRules(storedRules);
-  const deals = buildDealRadar(signals, radarRules);
+  const allDeals = buildDealRadar(signals, radarRules);
+  // The in-game scan round owns the radar's universe: the addon only ever
+  // iterates the items it just scanned, so the terminal must not offer deals
+  // for items the game is not currently listing — an ahledger-only or stale
+  // row cannot be bought in game. With no addon scan at all the website
+  // channel is the only data and its whole universe applies.
+  const deals = latestAddonRound === null ? allDeals : allDeals.filter((deal) => latestAddonRound.has(deal.itemId));
   const radarCategories = Array.from(new Set(deals.map((deal) => deal.category))).sort();
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
   const craftRows = computeCraftProfits(craftRecipes, priceByItemId);

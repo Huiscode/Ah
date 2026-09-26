@@ -45,6 +45,26 @@ export async function getLatestSnapshotTime() {
   return row?.timestamp ?? null;
 }
 
+// The item universe of the latest in-game scan round. The addon only ever
+// iterates the items it just scanned, so the terminal's deal radar must do
+// the same: an item the game is not currently listing cannot be bought, and
+// offering it as a deal would promise a trade that does not exist. Returns
+// null when no addon scan has ever been imported — the website channel is
+// then the only data and its whole universe applies.
+export async function getLatestAddonRoundItemIds(): Promise<Set<number> | null> {
+  const latest = await prisma.auctionSnapshot.findFirst({
+    where: { source: "addon" },
+    orderBy: { timestamp: "desc" },
+    select: { timestamp: true }
+  });
+  if (!latest) return null;
+  const rows = await prisma.auctionSnapshot.findMany({
+    where: { source: "addon", timestamp: latest.timestamp },
+    select: { itemId: true }
+  });
+  return new Set(rows.map((row) => row.itemId));
+}
+
 // Route-2 authority mirror: the in-game options panel owns the deal-radar
 // thresholds; the import route replays them into the single RadarRule row
 // (id=1). Returns null until the first scan with rules arrives — callers
