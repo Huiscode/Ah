@@ -187,41 +187,33 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
 
 export type WeekdaySeasonality = {
   weekday: number; // 0 = Sunday .. 6 = Saturday (UTC)
-  priceDeviation: number | null; // median day-over-day close change for that weekday (same rule as the K-line); null when the weekday has no previous-day reference (it is the series start)
+  priceDeviation: number; // weekday median close vs overall median, percent
   listedShare: number; // weekday share of total listed quantity, percent
   sampleCount: number;
 };
 
-// WoW trading has a weekly pulse (reset day, raid nights). Each weekday
-// shows the median DAY-OVER-DAY close change for that weekday — the same
-// up/down/flat rule the K-line uses — so "Friday fell" in the candles and
-// "Friday is down" here can never disagree. A weekday whose only sample is
-// the series start has no previous-day reference and reports null.
+// WoW trading has a weekly pulse (reset day, raid nights); weekday
+// medians make the cycle visible without one spike day skewing it.
 export function buildWeekdaySeasonality(
   summaries: Array<{ date: Date; closePrice: number; volume: number }>
 ): WeekdaySeasonality[] {
   if (summaries.length === 0) return [];
-  const sorted = [...summaries].sort((left, right) => left.date.getTime() - right.date.getTime());
-  const totalListed = sorted.reduce((sum, summary) => sum + summary.volume, 0);
-  const byWeekday = new Map<number, { changes: number[]; listed: number; count: number }>();
-  for (let i = 0; i < sorted.length; i++) {
-    const summary = sorted[i];
+  const overallMedian = median(summaries.map((summary) => summary.closePrice));
+  const totalListed = summaries.reduce((sum, summary) => sum + summary.volume, 0);
+  const byWeekday = new Map<number, { closes: number[]; listed: number }>();
+  for (const summary of summaries) {
     const weekday = summary.date.getUTCDay();
-    const bucket = byWeekday.get(weekday) ?? { changes: [], listed: 0, count: 0 };
-    if (i > 0) {
-      const prev = sorted[i - 1];
-      if (prev.closePrice > 0) bucket.changes.push(((summary.closePrice - prev.closePrice) / prev.closePrice) * 100);
-    }
+    const bucket = byWeekday.get(weekday) ?? { closes: [], listed: 0 };
+    bucket.closes.push(summary.closePrice);
     bucket.listed += summary.volume;
-    bucket.count += 1;
     byWeekday.set(weekday, bucket);
   }
   return Array.from(byWeekday.entries())
     .sort(([left], [right]) => left - right)
     .map(([weekday, bucket]) => ({
       weekday,
-      priceDeviation: bucket.changes.length > 0 ? median(bucket.changes) : null,
+      priceDeviation: overallMedian === 0 ? 0 : ((median(bucket.closes) - overallMedian) / overallMedian) * 100,
       listedShare: totalListed === 0 ? 0 : (bucket.listed / totalListed) * 100,
-      sampleCount: bucket.count
+      sampleCount: bucket.closes.length
     }));
 }

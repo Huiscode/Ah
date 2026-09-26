@@ -114,11 +114,9 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
               {seasonality.map((day) => (
                 <div key={day.weekday} className="bg-terminal-panel px-2 py-3 text-center">
                   <div className="uppercase text-terminal-muted">{weekdayNames[day.weekday]}</div>
-                  {day.priceDeviation === null ? (
-                    <div className="mt-1 text-terminal-red">首日</div>
-                  ) : (
-                    <div className={"mt-1 " + trendTextClass(day.priceDeviation)}>{formatTrendPercent(day.priceDeviation, 1)}</div>
-                  )}
+                  <div className={"mt-1 " + trendTextClass(day.priceDeviation)}>
+                    {formatTrendPercent(day.priceDeviation, 1)}
+                  </div>
                   <div className="mt-1 text-[10px] text-terminal-muted">在售 {day.listedShare.toFixed(0)}% · n={day.sampleCount}</div>
                 </div>
               ))}
