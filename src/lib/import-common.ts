@@ -52,7 +52,7 @@ export type ImportResult = { imported: number; points: number; scannedAt: string
 
 export async function importSnapshot(payload: ImportPayload): Promise<ImportResult> {
   const { source, scannedAt, server, faction, rules } = payload;
-  const items = payload.items;
+  let items = payload.items;
   const points = payload.points ?? [];
 
   // Channel-scoped dedupe: the same wall-clock timestamp can legitimately
@@ -64,6 +64,18 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
   });
   if (duplicate) {
     throw new ImportConflictError(`Scan at ${scannedAt.toISOString()} already imported`);
+  }
+
+  // P50-only policy: the website channel is only a reference for items the
+  // in-game scanner has actually seen. An item that exists solely on the
+  // website cannot be bought in game, so it is filtered out at the door -
+  // the terminal never prices something the game cannot list. Items that
+  // are scanned later automatically enter the P50 channel on the next
+  // ahledger round.
+  if (source === "ahledger") {
+    const addonItemIds = await prisma.auctionSnapshot.findMany({ where: { source: "addon" }, distinct: ["itemId"], select: { itemId: true } });
+    const known = new Set(addonItemIds.map((row) => row.itemId));
+    items = items.filter((item) => known.has(item.itemId));
   }
 
   // In-game history points (one per item per completed scan, 7-day window).
