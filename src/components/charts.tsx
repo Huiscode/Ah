@@ -95,7 +95,7 @@ export function TimeSeriesChart({ data, series, height = 280 }: {
 // Trend of a candle is judged against the PREVIOUS day's close, not the
 // intraday open/close: the first candle has no reference and always counts
 // as up (red). Up = red, down = green, flat (same close) = blue.
-type CandlePoint = { label: string; open: number; close: number; high: number; low: number; volume: number; trend?: "up" | "down" | "flat" };
+type CandlePoint = { label: string; open: number; close: number; high: number; low: number; volume: number; trend?: "up" | "down" | "flat"; change?: number | null };
 
 // Recharts has no candlestick primitive; each candle renders through a
 // custom Bar shape spanning [low, high] with the body at [open, close].
@@ -149,13 +149,13 @@ function CandleTooltip({ active, payload }: { active?: boolean; payload?: Array<
   if (!point) return null;
   const down = point.trend === "down";
   const up = point.trend === "up";
-  const change = point.open > 0 ? ((point.close - point.open) / point.open) * 100 : 0;
+  const change = point.change ?? null;
   return (
     <div style={{ ...tooltipPanelStyle, whiteSpace: "nowrap" }}>
       <div>
         {point.label}
         {down ? " ▼" : up ? " ▲" : ""}
-        {change !== 0 ? `  ${change > 0 ? "+" : ""}${change.toFixed(1)}%` : ""}
+        {change !== null && change !== 0 ? `  ${change > 0 ? "+" : ""}${change.toFixed(1)}%` : ""}
       </div>
       <div>
         {down ? "高-低" : "低-高"}：{formatHover(down ? point.high : point.low)} - {formatHover(down ? point.low : point.high)}
@@ -167,9 +167,10 @@ function CandleTooltip({ active, payload }: { active?: boolean; payload?: Array<
 
 export function CandlestickChart({ data }: { data: CandlePoint[] }) {
   const withRange = data.map((point, i) => {
-    const prev = i > 0 ? data[i - 1].close : null;
-    const trend = prev === null ? "up" : point.close < prev ? "down" : point.close > prev ? "up" : "flat";
-    return { ...point, lowHigh: [point.low, point.high] as [number, number], trend };
+    const prevClose = i > 0 ? data[i - 1].close : null;
+    const trend = prevClose === null ? "up" : point.close < prevClose ? "down" : point.close > prevClose ? "up" : "flat";
+    const change = prevClose !== null && prevClose > 0 ? ((point.close - prevClose) / prevClose) * 100 : null;
+    return { ...point, lowHigh: [point.low, point.high] as [number, number], trend, change };
   });
   const prices = data.flatMap((p) => [p.open, p.close, p.high, p.low]);
   const lo = Math.min(...prices);
