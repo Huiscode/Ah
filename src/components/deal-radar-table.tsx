@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ItemIcon } from "@/components/item-icon";
 import { Coins } from "@/components/coins";
+import { WatchStar } from "@/components/watch-star";
 import { qualityColorClass } from "@/lib/quality";
 import { formatPercent } from "@/lib/utils";
 import type { DealRadarRow } from "@/lib/analytics";
@@ -16,14 +17,16 @@ type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" |
 // Headers sort: first click high-to-low, second click low-to-high; without
 // any click the rows keep the radar's own ranking (NPC deals first, then
 // absolute profit).
-export function DealRadarTable({ deals, prices, categories }: {
+export function DealRadarTable({ deals, prices, categories, watchedItemIds }: {
   deals: DealRadarRow[];
   prices: Map<number, number>;
   categories: string[];
+  watchedItemIds: number[];
 }) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
   const [category, setCategory] = useState("");
+  const watched = new Set(watchedItemIds);
 
   const rows = category
     ? deals.filter((deal) => deal.category === category)
@@ -76,7 +79,7 @@ export function DealRadarTable({ deals, prices, categories }: {
         </colgroup>
         <thead className="sticky top-0 z-10 bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
           <tr>
-            <th className="border-b border-terminal-border px-2 py-2" />
+            <th className="border-b border-terminal-border px-2 py-2 text-center">★</th>
             <th onClick={() => toggle("name")} className={`${thClass} text-left`}>物品{mark("name")}</th>
             <th onClick={() => toggle("price")} className={`${thClass} text-right`}>最新价{mark("price")}</th>
             <th onClick={() => toggle("minPrice")} className={`${thClass} text-right`}>最低价{mark("minPrice")}</th>
@@ -90,7 +93,7 @@ export function DealRadarTable({ deals, prices, categories }: {
         <tbody>
           {rows.map((deal) => (
             <tr key={deal.itemId} className="border-b border-terminal-border/70 hover:bg-slate-800/35">
-              <td className="px-2 py-2" />
+              <td className="px-2 py-2 text-center"><WatchStar itemId={deal.itemId} watched={watched.has(deal.itemId)} /></td>
               <td className="px-3 py-2 text-left">
                 <Link href={`/items/${deal.itemId}`} className={`inline-flex items-center gap-2 ${qualityColorClass(deal.quality)}`}>
                   <ItemIcon itemId={deal.itemId} />
