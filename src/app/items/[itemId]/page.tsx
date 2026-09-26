@@ -100,7 +100,11 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             <div className="p-3">
               {candleData.length >= 2
                 ? <CandlestickChart data={candleData} />
-                : <div className="p-4 font-mono text-xs text-terminal-muted">K 线需要至少 2 天的扫描数据</div>}
+                : <div className="p-4 font-mono text-xs text-terminal-muted">
+                    {latestSource === "ahledger"
+                      ? "K 线需至少 2 天的网站数据（网站通道逐日积累）"
+                      : "K 线需要至少 2 天的扫描数据"}
+                  </div>}
             </div>
           </Panel>
           <Panel>

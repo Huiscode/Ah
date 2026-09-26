@@ -106,14 +106,19 @@ type CandleShapeProps = {
 
 function CandleShape(props: CandleShapeProps) {
   const { x = 0, width = 0, y = 0, height = 0, payload } = props;
-  if (!payload || height <= 0) return <g />;
+  if (!payload) return <g />;
   const { open, close, high, low } = payload;
+  const rising = close >= open;
+  const color = rising ? "#39d98a" : "#ff5c7a";
+  // Flat day (high == low, e.g. a fixed-price item): the low-high bar span is
+  // 0px, so draw a doji tick across the candle instead of rendering nothing.
+  if (height <= 0) {
+    return <line x1={x} x2={x + width} y1={y} y2={y} stroke={color} strokeWidth={2} />;
+  }
   const range = high - low || 1;
   // Recharts always passes the bar's x/y/width/height span to the shape; the
   // high-low wick runs the full height, the body sits between open/close.
   const pixelFor = (value: number) => y + ((high - value) / range) * height;
-  const rising = close >= open;
-  const color = rising ? "#39d98a" : "#ff5c7a";
   const bodyTop = pixelFor(Math.max(open, close));
   const bodyBottom = pixelFor(Math.min(open, close));
   const centerX = x + width / 2;
@@ -135,6 +140,14 @@ function CandleShape(props: CandleShapeProps) {
 
 export function CandlestickChart({ data }: { data: CandlePoint[] }) {
   const withRange = data.map((point) => ({ ...point, lowHigh: [point.low, point.high] as [number, number] }));
+  const prices = data.flatMap((p) => [p.open, p.close, p.high, p.low]);
+  const lo = Math.min(...prices);
+  const hi = Math.max(...prices);
+  // An all-flat series (fixed-price item) collapses ["dataMin","dataMax"] to a
+  // single point and every candle disappears; pad the domain by 5% instead.
+  const domain: [number, number] = lo === hi
+    ? [lo - Math.max(1, Math.floor(lo * 0.05)), hi + Math.max(1, Math.floor(hi * 0.05))]
+    : [lo, hi];
   return (
     <ResponsiveContainer width="100%" height={300}>
       <ComposedChart data={withRange} margin={{ top: 18, right: 20, bottom: 8, left: 8 }}>
@@ -142,7 +155,7 @@ export function CandlestickChart({ data }: { data: CandlePoint[] }) {
         <XAxis dataKey="label" tick={{ fill: "#8d96a8", fontSize: 11 }} />
         <YAxis
           yAxisId="price"
-          domain={["dataMin", "dataMax"]}
+          domain={domain}
           tick={{ fill: "#8d96a8", fontSize: 11 }}
           tickFormatter={formatGold}
           width={72}
