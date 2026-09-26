@@ -214,7 +214,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               {upcomingEvents.map((event) => (
                 <div key={event.id} className="flex items-center justify-between gap-2">
                   <span className="text-slate-200">{event.eventName}</span>
-                  <span className="text-terminal-muted">{event.startTime.toISOString().slice(0, 10)}</span>
+                  <span className="text-terminal-muted">{event.startTime.toLocaleString("en-CA", { timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit", day: "2-digit" })}</span>
                 </div>
               ))}
             </div>

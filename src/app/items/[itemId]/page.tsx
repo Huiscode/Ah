@@ -29,7 +29,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const latestSnapshot = item.snapshots[item.snapshots.length - 1];
   const freshness = describeFreshness(latestSnapshot?.timestamp ?? null, now);
   const candleData = item.dailySummaries.map((summary) => ({
-    label: summary.date.toISOString().slice(5, 10),
+    label: summary.date.toLocaleString("en-CA", { timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit", day: "2-digit" }).slice(5, 10),
     open: summary.openPrice,
     close: summary.closePrice,
     high: summary.highPrice,
