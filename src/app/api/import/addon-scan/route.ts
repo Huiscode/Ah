@@ -57,7 +57,9 @@ export async function POST(request: Request) {
   // per-round prices, possibly across midnight), then fold the snapshot so
   // the day's close/high/low/volume land on the latest scan and the day's
   // open stays the first observed round.
-  const affectedDates = new Set<number>([scan.scannedAt.getTime()]);
+  const affectedDates = new Set<number>([
+    new Date(Date.UTC(scan.scannedAt.getUTCFullYear(), scan.scannedAt.getUTCMonth(), scan.scannedAt.getUTCDate())).getTime()
+  ]);
   for (const point of freshPoints) {
     affectedDates.add(new Date(Date.UTC(point.timestamp.getUTCFullYear(), point.timestamp.getUTCMonth(), point.timestamp.getUTCDate())).getTime());
   }
