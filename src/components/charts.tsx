@@ -67,8 +67,8 @@ export function TimeSeriesChart({ data, series, height = 280 }: {
             labelStyle={{ color: "#8d96a8", fontSize: 10 }}
             labelFormatter={(value) => formatClock(Number(value))}
             formatter={(value, name) => {
-              const entry = series.find((s) => s.key === name);
-              if (entry) return [formatHover(Number(value)), entry.name];
+              const seriesEntry = series.find((s) => s.key === name);
+              if (seriesEntry) return [formatHover(Number(value)), seriesEntry.name];
               if (name === "volume") return [String(value), "在售量"];
               return [formatHover(Number(value)), String(name)];
             }}
@@ -92,7 +92,10 @@ export function TimeSeriesChart({ data, series, height = 280 }: {
   );
 }
 
-type CandlePoint = { label: string; open: number; close: number; high: number; low: number; volume: number };
+// Trend of a candle is judged against the PREVIOUS day's close, not the
+// intraday open/close: the first candle has no reference and always counts
+// as up (red). Up = red, down = green, flat (same close) = blue.
+type CandlePoint = { label: string; open: number; close: number; high: number; low: number; volume: number; trend?: "up" | "down" | "flat" };
 
 // Recharts has no candlestick primitive; each candle renders through a
 // custom Bar shape spanning [low, high] with the body at [open, close].
@@ -108,8 +111,7 @@ function CandleShape(props: CandleShapeProps) {
   const { x = 0, width = 0, y = 0, height = 0, payload } = props;
   if (!payload) return <g />;
   const { open, close, high, low } = payload;
-  const rising = close >= open;
-  const color = rising ? "#39d98a" : "#ff5c7a";
+  const color = payload.trend === "down" ? "#39d98a" : payload.trend === "flat" ? "#4d9fff" : "#ff5c7a";
   // Flat day (high == low, e.g. a fixed-price item): the low-high bar span is
   // 0px, so draw a doji tick across the candle instead of rendering nothing.
   if (height <= 0) {
@@ -139,7 +141,11 @@ function CandleShape(props: CandleShapeProps) {
 }
 
 export function CandlestickChart({ data }: { data: CandlePoint[] }) {
-  const withRange = data.map((point) => ({ ...point, lowHigh: [point.low, point.high] as [number, number] }));
+  const withRange = data.map((point, i) => {
+    const prev = i > 0 ? data[i - 1].close : null;
+    const trend = prev === null ? "up" : point.close < prev ? "down" : point.close > prev ? "up" : "flat";
+    return { ...point, lowHigh: [point.low, point.high] as [number, number], trend };
+  });
   const prices = data.flatMap((p) => [p.open, p.close, p.high, p.low]);
   const lo = Math.min(...prices);
   const hi = Math.max(...prices);
@@ -164,8 +170,13 @@ export function CandlestickChart({ data }: { data: CandlePoint[] }) {
           contentStyle={{ ...tooltipPanelStyle, whiteSpace: "nowrap" }}
           itemStyle={{ color: "#dce3ef", fontSize: 11 }}
           labelStyle={{ color: "#8d96a8", fontSize: 10 }}
-          formatter={(value, name) => {
-            if (Array.isArray(value)) return [`${formatHover(Number(value[0]))} - ${formatHover(Number(value[1]))}`, "低-高"];
+          formatter={(value, name, entry) => {
+            if (Array.isArray(value)) {
+              const trend = (entry as { payload?: { trend?: "up" | "down" | "flat" } } | undefined)?.payload?.trend ?? "up";
+              // Down candle reads high -> low; up/flat reads low -> high.
+              if (trend === "down") return [`${formatHover(Number(value[1]))} - ${formatHover(Number(value[0]))}`, "高-低"];
+              return [`${formatHover(Number(value[0]))} - ${formatHover(Number(value[1]))}`, "低-高"];
+            }
             return [formatHover(Number(value)), String(name)];
           }}
         />
