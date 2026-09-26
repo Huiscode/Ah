@@ -120,7 +120,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               {craftOk.length === 0 && (
                 <div className="text-terminal-muted">扫描覆盖配方材料与成品后此处显示利润排行</div>
               )}
-              {craftOk.slice(0, 8).map((row) => (
+              {craftOk.map((row) => (
                 <div key={row.recipe.name} className="flex items-center justify-between gap-2">
                   <span className="text-slate-100">{row.recipe.name}<span className="ml-1 text-[10px] text-terminal-muted">{row.recipe.profession}</span></span>
                   <span className="flex items-center gap-3">

@@ -1,6 +1,9 @@
-// Craft profit engine plus the curated TBC phase-2 recipe table.
-// Quantities are curated seed data (verify in-game before trusting large
-// positions); itemIds are authoritative, names are display labels.
+// Craft profit engine plus the curated classic (WoW: Forever / infinite 60)
+// recipe table. Quantities are curated seed data (verify in-game before
+// trusting large positions); itemIds are authoritative, names are display
+// labels. Recipes cover material processing that actually exists on the
+// infinite realm — bars and bolts — not TBC-exclusive crafts whose mats can
+// never appear in the market feed.
 
 export type CraftRecipe = {
   name: string;
@@ -23,13 +26,20 @@ export type CraftProfitRow = {
 const AH_CUT = 0.05; // neutral/faction AH cut on successful sales
 
 export const craftRecipes: CraftRecipe[] = [
-  // Classic-era staples — the leveling economy trades these, not TBC mats.
+  // Bars (mining) — ore -> bar smelting, the leveling economy staple.
   {
     name: "铜锭",
     productItemId: 2840,
     productQuantity: 1,
     profession: "采矿",
     materials: [{ itemId: 2770, name: "铜矿石", quantity: 1 }]
+  },
+  {
+    name: "锡锭",
+    productItemId: 3576,
+    productQuantity: 1,
+    profession: "采矿",
+    materials: [{ itemId: 2771, name: "锡矿石", quantity: 1 }]
   },
   {
     name: "青铜锭",
@@ -40,6 +50,50 @@ export const craftRecipes: CraftRecipe[] = [
       { itemId: 2840, name: "铜锭", quantity: 1 },
       { itemId: 3576, name: "锡锭", quantity: 1 }
     ]
+  },
+  {
+    name: "银锭",
+    productItemId: 2842,
+    productQuantity: 1,
+    profession: "采矿",
+    materials: [{ itemId: 2775, name: "银矿石", quantity: 1 }]
+  },
+  {
+    name: "铁锭",
+    productItemId: 3575,
+    productQuantity: 1,
+    profession: "采矿",
+    materials: [{ itemId: 2772, name: "铁矿石", quantity: 1 }]
+  },
+  {
+    name: "秘银锭",
+    productItemId: 3860,
+    productQuantity: 1,
+    profession: "采矿",
+    materials: [{ itemId: 3858, name: "秘银矿石", quantity: 1 }]
+  },
+  {
+    name: "真银锭",
+    productItemId: 6037,
+    productQuantity: 1,
+    profession: "采矿",
+    materials: [{ itemId: 7911, name: "真银矿石", quantity: 1 }]
+  },
+  {
+    name: "瑟银锭",
+    productItemId: 12359,
+    productQuantity: 1,
+    profession: "采矿",
+    materials: [{ itemId: 10620, name: "瑟银矿石", quantity: 1 }]
+  },
+
+  // Bolts (tailoring) — cloth -> bolt.
+  {
+    name: "亚麻布卷",
+    productItemId: 2996,
+    productQuantity: 1,
+    profession: "裁缝",
+    materials: [{ itemId: 2589, name: "亚麻布", quantity: 2 }]
   },
   {
     name: "毛料卷",
@@ -56,89 +110,18 @@ export const craftRecipes: CraftRecipe[] = [
     materials: [{ itemId: 4306, name: "丝绸", quantity: 4 }]
   },
   {
-    name: "魔铁锭",
-    productItemId: 23445,
-    productQuantity: 1,
-    profession: "采矿",
-    materials: [{ itemId: 23424, name: "魔铁矿石", quantity: 2 }]
-  },
-  {
-    name: "精金锭",
-    productItemId: 23446,
-    productQuantity: 1,
-    profession: "采矿",
-    materials: [{ itemId: 23425, name: "精金矿石", quantity: 2 }]
-  },
-  {
-    name: "灵纹布卷",
-    productItemId: 21840,
+    name: "魔纹布卷",
+    productItemId: 4339,
     productQuantity: 1,
     profession: "裁缝",
-    materials: [{ itemId: 21877, name: "灵纹布", quantity: 5 }]
+    materials: [{ itemId: 4338, name: "魔纹布", quantity: 3 }]
   },
   {
-    name: "恶魔皮",
-    productItemId: 21887,
+    name: "符文布卷",
+    productItemId: 14048,
     productQuantity: 1,
-    profession: "制皮",
-    materials: [{ itemId: 25649, name: "恶魔皮碎片", quantity: 5 }]
-  },
-  {
-    name: "原始法力精华",
-    productItemId: 23571,
-    productQuantity: 1,
-    profession: "炼金(转化)",
-    materials: [
-      { itemId: 21884, name: "火焰之髓", quantity: 1 },
-      { itemId: 21885, name: "水之髓", quantity: 1 },
-      { itemId: 22452, name: "土之髓", quantity: 1 },
-      { itemId: 22451, name: "空气之髓", quantity: 1 },
-      { itemId: 22457, name: "法力之髓", quantity: 1 }
-    ]
-  },
-  {
-    name: "特效法力药水",
-    productItemId: 22832,
-    productQuantity: 1,
-    profession: "炼金",
-    materials: [
-      { itemId: 22786, name: "梦露花", quantity: 2 },
-      { itemId: 22785, name: "梦叶草", quantity: 1 },
-      { itemId: 18256, name: "注魔之瓶", quantity: 1, vendorPriceCopper: 4000 }
-    ]
-  },
-  {
-    name: "特效治疗药水",
-    productItemId: 22829,
-    productQuantity: 1,
-    profession: "炼金",
-    materials: [
-      { itemId: 22791, name: "虚空花", quantity: 2 },
-      { itemId: 22785, name: "梦叶草", quantity: 1 },
-      { itemId: 18256, name: "注魔之瓶", quantity: 1, vendorPriceCopper: 4000 }
-    ]
-  },
-  {
-    name: "卓越巫师油",
-    productItemId: 22522,
-    productQuantity: 5,
-    profession: "炼金",
-    materials: [
-      { itemId: 22791, name: "虚空花", quantity: 3 },
-      { itemId: 18256, name: "注魔之瓶", quantity: 1, vendorPriceCopper: 4000 }
-    ]
-  },
-  {
-    name: "强化合剂",
-    productItemId: 22851,
-    productQuantity: 1,
-    profession: "炼金",
-    materials: [
-      { itemId: 22790, name: "古老地衣", quantity: 7 },
-      { itemId: 22785, name: "梦叶草", quantity: 3 },
-      { itemId: 22794, name: "魔莲花", quantity: 1 },
-      { itemId: 18256, name: "注魔之瓶", quantity: 1, vendorPriceCopper: 4000 }
-    ]
+    profession: "裁缝",
+    materials: [{ itemId: 14047, name: "符文布", quantity: 5 }]
   }
 ];
 
