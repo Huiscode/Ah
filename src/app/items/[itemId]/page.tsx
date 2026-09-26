@@ -65,12 +65,12 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     .map(([ts, entry]) => ({ ts, ...entry }));
   const intradaySeries = latestSource === "ahledger"
     ? [
-        { key: "price" as const, color: "#ffc46b", name: "网站 P50（中位）" },
-        { key: "alt" as const, color: "#56c7ff", name: "自扫 P10" }
+        { key: "price" as const, color: "#ffc46b", name: "P50" },
+        { key: "alt" as const, color: "#56c7ff", name: "P10" }
       ]
     : [
-        { key: "price" as const, color: "#56c7ff", name: "自扫 P10" },
-        { key: "alt" as const, color: "#ffc46b", name: "网站 P50（中位）" }
+        { key: "price" as const, color: "#56c7ff", name: "P10" },
+        { key: "alt" as const, color: "#ffc46b", name: "P50" }
       ];
 
   return (
@@ -129,12 +129,12 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
               {signal && (
                 <>
                   <div>
-                    <div className="text-xs uppercase text-terminal-muted">最新价{latestSource === "ahledger" ? " · 网站中位" : " · 自扫P10"}</div>
+                    <div className="text-xs uppercase text-terminal-muted">最新价{latestSource === "ahledger" ? " · P50" : " · P10"}</div>
                     <div className="text-2xl"><Coins copper={signal.price} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div><div className="text-terminal-muted">最低价</div><div><Coins copper={signal.minPrice} /></div></div>
-                    <div><div className="text-terminal-muted">7日参考{latestSource === "ahledger" ? "（中位）" : "（P10）"}</div><div><Coins copper={signal.med7} /></div></div>
+                    <div><div className="text-terminal-muted">7日参考{latestSource === "ahledger" ? "（P50）" : "（P10）"}</div><div><Coins copper={signal.med7} /></div></div>
                     <div><div className="text-terminal-muted">折扣</div><div className={signal.discountPercent >= 15 ? "text-terminal-green" : ""}>{signal.discountPercent.toFixed(0)}%</div></div>
                     <div><div className="text-terminal-muted">环比上次</div><div className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</div></div>
                     <div><div className="text-terminal-muted">在售量</div><div>{signal.quantity.toLocaleString("en-US")}</div></div>

@@ -49,9 +49,9 @@ export function TimeSeriesChart({ data, series, height = 280 }: {
           <YAxis yAxisId="price" domain={["auto", "auto"]} tick={{ fill: "#8d96a8", fontSize: 11 }} tickFormatter={formatGold} width={72} />
           <YAxis yAxisId="volume" orientation="right" tick={{ fill: "#8d96a8", fontSize: 11 }} width={54} />
           <Tooltip
-            contentStyle={{ background: "rgba(18, 22, 31, 0.88)", border: "1px solid #263042", color: "#dce3ef" }}
-            itemStyle={{ color: "#dce3ef" }}
-            labelStyle={{ color: "#dce3ef" }}
+            contentStyle={{ background: "rgba(18, 22, 31, 0.9)", border: "1px solid #263042", color: "#dce3ef", borderRadius: 4, padding: "5px 9px", fontSize: 11 }}
+            itemStyle={{ color: "#dce3ef", fontSize: 11 }}
+            labelStyle={{ color: "#8d96a8", fontSize: 10 }}
             labelFormatter={(value) => formatClock(Number(value))}
             formatter={(value, name) => {
               const entry = series.find((s) => s.key === name);
