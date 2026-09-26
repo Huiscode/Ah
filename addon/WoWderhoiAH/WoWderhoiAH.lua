@@ -103,6 +103,20 @@ local function printReplicateProbe()
   chatMessage(string.format(L.SCAN_PROBE, #probe0, table.concat(parts, " | ")))
 end
 
+-- Icon texture name (e.g. "inv_staff_13") for one itemId, resolved through
+-- the retail texture API with a safe fallback. nil means the client has no
+-- cache entry yet; GET_ITEM_INFO_RECEIVED backfills it once the info lands.
+local function itemIconName(itemId)
+  if C_Item and C_Item.GetItemIconByID then
+    local t = C_Item.GetItemIconByID(itemId)
+    if type(t) == "string" and t ~= "" then
+      local file = t:match("([^\\]+)$")
+      if file and file ~= "" then return file end
+    end
+  end
+  return nil
+end
+
 -- Class/subclass + vendor price for one itemId, cached for the scan's
 -- lifetime. Retail returns numeric classIDs; translate to localized names
 -- (the terminal stores category strings) with a safe fallback when the
@@ -146,6 +160,13 @@ WAH.refreshPendingCategories = function(itemId)
     entry.itemClass, entry.itemSubClass = itemClass, itemSubClass
     local cache = scanState.itemInfoCache[itemId]
     if cache then cache.class, cache.subClass = itemClass, itemSubClass end
+    if entry.icon == nil or entry.icon == "" then
+      local icon = itemIconName(itemId)
+      if icon then
+        entry.icon = icon
+        if cache then cache.icon = icon end
+      end
+    end
     scanState.pendingCategory[itemId] = nil
   end
 end
@@ -163,7 +184,7 @@ local function recordAuction(info)
     local cached = scanState.itemInfoCache[itemId]
     if cached == nil then
       local itemClass, itemSubClass, vendorPrice = itemCategoryAndVendor(itemId)
-      cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice }
+      cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice, icon = itemIconName(itemId) }
       scanState.itemInfoCache[itemId] = cached
     end
     -- The client may not have this item's info cached yet; flag it so
@@ -182,6 +203,7 @@ local function recordAuction(info)
       itemClass = cached.class,
       itemSubClass = cached.subClass,
       vendorP = cached.vendorP,
+      icon = cached.icon,
       minPrice = unitPrice,
       listings = {}, -- { price = unit price, count } for the weighted median
       quantity = 0,

@@ -12,6 +12,7 @@ export type AddonScanItem = {
   quality: string;
   category: string;
   subCategory: string;
+  icon?: string; // in-game icon texture name, e.g. "inv_staff_13"; absent when the client had no cache entry
   minPrice: number;
   marketPrice: number; // quantity-weighted P10 unit price, copper
   quantity: number;
@@ -261,6 +262,7 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
         quality: QUALITY_NAMES[qualityIndex] ?? "unknown",
         category: typeof entry.itemClass === "string" && entry.itemClass !== "" ? entry.itemClass : "unknown",
         subCategory: typeof entry.itemSubClass === "string" && entry.itemSubClass !== "" ? entry.itemSubClass : "unknown",
+        ...(typeof entry.icon === "string" && entry.icon !== "" ? { icon: entry.icon } : {}),
         minPrice: requirePositiveInt(entry.minPrice, "minPrice", key),
         marketPrice: requirePositiveInt(entry.marketPrice, "marketPrice", key),
         quantity: requirePositiveInt(entry.quantity, "quantity", key),

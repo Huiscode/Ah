@@ -166,7 +166,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                 <td className="px-2 py-2 text-center"><WatchStar itemId={signal.itemId} watched={watched.has(signal.itemId)} /></td>
                 <td className="px-3 py-2 text-left">
                   <Link href={`/items/${signal.itemId}`} className={`inline-flex items-center gap-2 ${qualityColorClass(signal.quality)}`}>
-                    <ItemIcon itemId={signal.itemId} />
+                    <ItemIcon itemId={signal.itemId} icon={signal.icon} />
                     {signal.name}
                   </Link>
                   {signal.source === "ahledger" && <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400">网站</span>}

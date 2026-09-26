@@ -12,6 +12,7 @@ export type ExistingItemRow = {
   category: string;
   subCategory: string;
   vendorPrice: number;
+  icon: string | null;
 };
 
 export type ItemUpdateData = {
@@ -20,11 +21,12 @@ export type ItemUpdateData = {
   category: string;
   subCategory: string;
   vendorPrice: number;
+  icon?: string;
 };
 
 export function diffScanItems(items: AddonScanItem[], existing: ExistingItemRow[]) {
   const existingByItemId = new Map(existing.map((row) => [row.itemId, row]));
-  const creates: Array<{ itemId: number; name: string; quality: string; category: string; subCategory: string; vendorPrice: number }> = [];
+  const creates: Array<{ itemId: number; name: string; quality: string; category: string; subCategory: string; vendorPrice: number; icon?: string }> = [];
   const updates: Array<{ itemId: number; data: ItemUpdateData }> = [];
   for (const item of items) {
     const current = existingByItemId.get(item.itemId);
@@ -35,7 +37,8 @@ export function diffScanItems(items: AddonScanItem[], existing: ExistingItemRow[
         quality: item.quality,
         category: item.category,
         subCategory: item.subCategory,
-        vendorPrice: item.vendorPrice
+        vendorPrice: item.vendorPrice,
+        icon: item.icon
       });
     } else {
       // The client only reports a category once the item's data is loaded;
@@ -45,12 +48,16 @@ export function diffScanItems(items: AddonScanItem[], existing: ExistingItemRow[
       // unknown is demoted to the stored value before comparing.
       const category = item.category === "unknown" && current.category !== "unknown" ? current.category : item.category;
       const subCategory = item.subCategory === "unknown" && current.subCategory !== "unknown" ? current.subCategory : item.subCategory;
+      // The icon only arrives from addon scans; never clear a stored icon
+      // with an empty incoming value (the client may not have cached it yet).
+      const icon = item.icon && item.icon !== current.icon ? item.icon : undefined;
       if (
         current.name !== item.name ||
         current.quality !== item.quality ||
         current.category !== category ||
         current.subCategory !== subCategory ||
-        current.vendorPrice !== item.vendorPrice
+        current.vendorPrice !== item.vendorPrice ||
+        icon !== undefined
       ) {
         updates.push({
           itemId: item.itemId,
@@ -59,7 +66,8 @@ export function diffScanItems(items: AddonScanItem[], existing: ExistingItemRow[
             quality: item.quality,
             category,
             subCategory,
-            vendorPrice: item.vendorPrice
+            vendorPrice: item.vendorPrice,
+            icon
           }
         });
       }

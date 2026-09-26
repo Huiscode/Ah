@@ -10,6 +10,7 @@ export type MarketSignal = {
   name: string;
   category: string;
   quality: string;
+  icon?: string | null; // in-game icon texture name, when known
   source?: SnapshotSource; // channel of the latest snapshot: "addon" (P10) | "ahledger" (median); absent = addon
   price: number; // latest snapshot's unit price (addon P10 / ahledger median), copper
   minPrice: number; // latest scan's minimum listed unit price
@@ -67,6 +68,7 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
     name: item.name,
     category: item.category,
     quality: item.quality,
+    icon: item.icon,
     source,
     price: latest.marketPrice,
     minPrice: latest.minPrice,
@@ -87,6 +89,7 @@ export type DealRadarRow = {
   name: string;
   quality: string;
   category: string;
+  icon?: string | null; // in-game icon texture name, when known
   source?: SnapshotSource; // channel backing this deal's reference (P10 or median); absent = addon
   minPrice: number;
   reference: number; // vendorPrice for vendor deals, med7 otherwise
@@ -131,6 +134,7 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         name: signal.name,
         quality: signal.quality,
         category: signal.category,
+        icon: signal.icon,
         source: "addon",
         minPrice: signal.minPrice,
         reference: signal.vendorPrice,
@@ -166,6 +170,7 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         name: signal.name,
         quality: signal.quality,
         category: signal.category,
+        icon: signal.icon,
         source: signal.source,
         minPrice: signal.minPrice,
         reference: signal.med7,

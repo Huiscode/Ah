@@ -98,7 +98,7 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds }: {
               <td className="px-2 py-2 text-center"><WatchStar itemId={deal.itemId} watched={watched.has(deal.itemId)} /></td>
               <td className="px-3 py-2 text-left">
                 <Link href={`/items/${deal.itemId}`} className={`inline-flex items-center gap-2 ${qualityColorClass(deal.quality)}`}>
-                  <ItemIcon itemId={deal.itemId} />
+                  <ItemIcon itemId={deal.itemId} icon={deal.icon} />
                   <span className="truncate">{deal.name}</span>
                 </Link>
                 {deal.source === "ahledger" && <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400">网站</span>}

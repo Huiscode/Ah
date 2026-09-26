@@ -66,6 +66,7 @@ function classifiedByWeb(candidates: Candidate[]) {
       quality: "common",
       category: "矿石",
       subCategory: "采矿",
+      icon: null,
       vendorPrice: candidate.vendorPrice ?? 0,
       snapshots: candidate.closes.map((price, index) => ({
         timestamp: new Date(NOW.getTime() - (last - index) * DAY),

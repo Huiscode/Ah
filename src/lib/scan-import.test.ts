@@ -24,6 +24,7 @@ function existingRow(itemId: number, name: string, overrides: Partial<{ quality:
     category: "Trade Goods",
     subCategory: "Herb",
     vendorPrice: 0,
+    icon: null,
     ...overrides
   };
 }

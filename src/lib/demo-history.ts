@@ -53,6 +53,6 @@ export function generateDemoHistory(days = 21): MarketHistory[] {
         numAuctions: Math.max(5, Math.round(latest.volume / 18 + Math.cos(offset) * 9))
       };
     });
-    return { ...item, vendorPrice: 0, snapshots, dailySummaries };
+    return { ...item, vendorPrice: 0, icon: null, snapshots, dailySummaries };
   });
 }

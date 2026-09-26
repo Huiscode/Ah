@@ -61,6 +61,7 @@ function webWith(candidates: Candidate[], rules: Partial<DealRadarRules>): strin
       quality: "common",
       category: "商品",
       subCategory: "其他",
+      icon: null,
       vendorPrice: 0,
       snapshots: candidate.closes.map((price, index) => ({
         timestamp: new Date(NOW.getTime() - (last - index) * DAY),

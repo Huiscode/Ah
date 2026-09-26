@@ -14,6 +14,7 @@ model Item {
   quality          String
   category         String
   subCategory      String            @map("sub_category")
+  icon             String?           // in-game icon texture name (e.g. "inv_staff_13"); set from addon scans
   vendorPrice      Int               @default(0) @map("vendor_price") // NPC sell price in copper; 0 = unsellable
   snapshots        AuctionSnapshot[]
   dailySummaries   DailySummary[]
