@@ -101,9 +101,7 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds }: {
                   <ItemIcon itemId={deal.itemId} />
                   <span className="truncate">{deal.name}</span>
                 </Link>
-                {deal.source === "ahledger"
-                  ? <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400">网站</span>
-                  : <span className="ml-1.5 rounded bg-cyan-500/15 px-1 py-0.5 align-middle text-[9px] text-cyan-400">自扫</span>}
+                {deal.source === "ahledger" && <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400">网站</span>}
               </td>
               <td className="px-3 py-2 text-right"><Coins copper={prices.get(deal.itemId) ?? 0} /></td>
               <td className="px-3 py-2 text-right"><Coins copper={deal.minPrice} /></td>

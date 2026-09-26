@@ -169,9 +169,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                     <ItemIcon itemId={signal.itemId} />
                     {signal.name}
                   </Link>
-                  {signal.source === "ahledger"
-                    ? <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400">网站</span>
-                    : <span className="ml-1.5 rounded bg-cyan-500/15 px-1 py-0.5 align-middle text-[9px] text-cyan-400">自扫</span>}
+                  {signal.source === "ahledger" && <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400">网站</span>}
                 </td>
                 <td className="px-3 py-2 text-right"><Coins copper={signal.price} /></td>
                 <td className="px-3 py-2 text-right"><Coins copper={signal.minPrice} /></td>
