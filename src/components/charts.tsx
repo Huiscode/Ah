@@ -77,7 +77,7 @@ export function TimeSeriesChart({ data, series, height = 280 }: {
               return [formatHover(Number(value)), String(name)];
             }}
           />
-          <Bar yAxisId="volume" dataKey="volume" fill="#263f5c" opacity={0.7} />
+          <Bar yAxisId="volume" dataKey="volume" fill="#4d7cc0" opacity={0.9} />
           {series.map((entry) => (
             <Line
               key={entry.key}
