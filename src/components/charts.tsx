@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatWowMoney } from "@/lib/wow-money";
 
@@ -7,6 +8,18 @@ const formatGold = (copper: number) => formatWowMoney(copper, { compact: true })
 // Hover values must stay readable at sub-silver prices: compact mode folds
 // 1s00c-1s99c into "1s", so the tooltip uses full precision to the copper.
 const formatHover = (copper: number) => formatWowMoney(copper);
+
+// One hover panel spec for every chart: the K-line and the intraday chart
+// must look identical. The candlestick panel adds whiteSpace nowrap so a
+// long low-high range stretches the panel wider instead of wrapping.
+const tooltipPanelStyle: CSSProperties = {
+  background: "rgba(18, 22, 31, 0.9)",
+  border: "1px solid #263042",
+  color: "#dce3ef",
+  borderRadius: 4,
+  padding: "5px 9px",
+  fontSize: 11,
+};
 
 type IntradayPoint = { ts: number; price?: number; alt?: number; volume?: number };
 
@@ -49,7 +62,7 @@ export function TimeSeriesChart({ data, series, height = 280 }: {
           <YAxis yAxisId="price" domain={["auto", "auto"]} tick={{ fill: "#8d96a8", fontSize: 11 }} tickFormatter={formatGold} width={72} />
           <YAxis yAxisId="volume" orientation="right" tick={{ fill: "#8d96a8", fontSize: 11 }} width={54} />
           <Tooltip
-            contentStyle={{ background: "rgba(18, 22, 31, 0.9)", border: "1px solid #263042", color: "#dce3ef", borderRadius: 4, padding: "5px 9px", fontSize: 11 }}
+            contentStyle={tooltipPanelStyle}
             itemStyle={{ color: "#dce3ef", fontSize: 11 }}
             labelStyle={{ color: "#8d96a8", fontSize: 10 }}
             labelFormatter={(value) => formatClock(Number(value))}
@@ -135,9 +148,9 @@ export function CandlestickChart({ data }: { data: CandlePoint[] }) {
           width={72}
         />
         <Tooltip
-          contentStyle={{ background: "rgba(18, 22, 31, 0.88)", border: "1px solid #263042", color: "#dce3ef" }}
-          itemStyle={{ color: "#dce3ef" }}
-          labelStyle={{ color: "#dce3ef" }}
+          contentStyle={{ ...tooltipPanelStyle, whiteSpace: "nowrap" }}
+          itemStyle={{ color: "#dce3ef", fontSize: 11 }}
+          labelStyle={{ color: "#8d96a8", fontSize: 10 }}
           formatter={(value, name) => {
             if (Array.isArray(value)) return [`${formatHover(Number(value[0]))} - ${formatHover(Number(value[1]))}`, "低-高"];
             return [formatHover(Number(value)), String(name)];
