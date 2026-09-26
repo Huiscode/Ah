@@ -7,6 +7,7 @@ import { Coins } from "@/components/coins";
 import { WatchStar } from "@/components/watch-star";
 import { qualityColorClass } from "@/lib/quality";
 import { formatPercent } from "@/lib/utils";
+import { categoryLabel } from "@/lib/category-zh";
 import type { DealRadarRow } from "@/lib/analytics";
 
 type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" | "changePercent" | "quantity" | "numAuctions";
@@ -59,7 +60,7 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds }: {
         <select value={category} onChange={(event) => setCategory(event.target.value)} className={inputClass}>
           <option value="">全部品类</option>
           {categories.map((value) => (
-            <option key={value} value={value}>{value}</option>
+            <option key={value} value={value}>{categoryLabel(value)}</option>
           ))}
         </select>
         <span className="text-terminal-muted">{rows.length} / {deals.length} 条</span>

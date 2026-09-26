@@ -9,6 +9,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { MarketSignal } from "@/lib/analytics";
 import type { MarketView, SignalSortKey } from "@/lib/market-filter";
 import { formatPercent } from "@/lib/utils";
+import { categoryLabel } from "@/lib/category-zh";
 import { qualityColorClass } from "@/lib/quality";
 import { Coins } from "@/components/coins";
 import { WatchStar } from "@/components/watch-star";
@@ -90,7 +91,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
         >
           <option value="">全部品类</option>
           {categories.map((value) => (
-            <option key={value} value={value}>{value}</option>
+            <option key={value} value={value}>{categoryLabel(value)}</option>
           ))}
         </select>
         <span className="text-terminal-muted">{filteredCount} / {totalCount} 项</span>
