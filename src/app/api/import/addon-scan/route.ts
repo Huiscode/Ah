@@ -53,6 +53,26 @@ export async function POST(request: Request) {
   const existingItems = await prisma.item.findMany({ select: { itemId: true, name: true, quality: true, vendorPrice: true } });
   const itemDiff = diffScanItems(scan.items, existingItems);
 
+  // History points can reference items that were listed in an earlier round
+  // but had expired before this scan and are unknown to the store. Their
+  // AuctionSnapshot rows would violate the Item FK, so create placeholder
+  // Item rows for exactly those ids; the next scan that lists the item
+  // backfills the real name/quality via diffScanItems.
+  const existingItemIdSet = new Set(existingItems.map((row) => row.itemId));
+  const scanItemIdSet = new Set(scan.items.map((item) => item.itemId));
+  const pointOnlyItemIds = [...new Set(freshPoints.map((point) => point.itemId))]
+    .filter((itemId) => !existingItemIdSet.has(itemId) && !scanItemIdSet.has(itemId));
+  if (pointOnlyItemIds.length > 0) {
+    itemDiff.creates.push(...pointOnlyItemIds.map((itemId) => ({
+      itemId,
+      name: `Item ${itemId}`,
+      quality: "unknown",
+      category: "unknown",
+      subCategory: "unknown",
+      vendorPrice: 0
+    })));
+  }
+
   // Daily OHLCV: fold history points first (they carry the whole night's
   // per-round prices, possibly across midnight), then fold the snapshot so
   // the day's close/high/low/volume land on the latest scan and the day's

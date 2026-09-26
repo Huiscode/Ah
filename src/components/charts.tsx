@@ -4,6 +4,9 @@ import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, 
 import { formatWowMoney } from "@/lib/wow-money";
 
 const formatGold = (copper: number) => formatWowMoney(copper, { compact: true });
+// Hover values must stay readable at sub-silver prices: compact mode folds
+// 1s00c-1s99c into "1s", so the tooltip uses full precision to the copper.
+const formatHover = (copper: number) => formatWowMoney(copper);
 
 type TimePoint = { ts: number; price: number; volume?: number };
 
@@ -34,7 +37,7 @@ export function TimeSeriesChart({ data }: { data: TimePoint[] }) {
           itemStyle={{ color: "#dce3ef" }}
           labelStyle={{ color: "#dce3ef" }}
           labelFormatter={(value) => formatClock(Number(value))}
-          formatter={(value, name) => (name === "volume" ? [String(value), "在售量"] : [formatGold(Number(value)), "P10"])}
+          formatter={(value, name) => (name === "volume" ? [String(value), "在售量"] : [formatHover(Number(value)), "P10"])}
         />
         <Bar yAxisId="volume" dataKey="volume" fill="#263f5c" opacity={0.7} />
         <Line yAxisId="price" type="monotone" dataKey="price" dot={{ r: 2 }} stroke="#56c7ff" strokeWidth={2} />
@@ -103,8 +106,8 @@ export function CandlestickChart({ data }: { data: CandlePoint[] }) {
           itemStyle={{ color: "#dce3ef" }}
           labelStyle={{ color: "#dce3ef" }}
           formatter={(value, name) => {
-            if (Array.isArray(value)) return [`${formatGold(Number(value[0]))} - ${formatGold(Number(value[1]))}`, "低-高"];
-            return [formatGold(Number(value)), String(name)];
+            if (Array.isArray(value)) return [`${formatHover(Number(value[0]))} - ${formatHover(Number(value[1]))}`, "低-高"];
+            return [formatHover(Number(value)), String(name)];
           }}
         />
         <Bar yAxisId="price" dataKey="lowHigh" shape={<CandleShape />} isAnimationActive={false} />
