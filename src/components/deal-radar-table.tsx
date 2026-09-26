@@ -78,9 +78,9 @@ export function DealRadarTable({ deals, prices, categories }: {
           <tr>
             <th className="border-b border-terminal-border px-2 py-2" />
             <th onClick={() => toggle("name")} className={`${thClass} text-left`}>物品{mark("name")}</th>
-            <th onClick={() => toggle("price")} className={`${thClass} text-right`}>P10{mark("price")}</th>
+            <th onClick={() => toggle("price")} className={`${thClass} text-right`}>最新价{mark("price")}</th>
             <th onClick={() => toggle("minPrice")} className={`${thClass} text-right`}>最低价{mark("minPrice")}</th>
-            <th onClick={() => toggle("reference")} className={`${thClass} text-right`}>7日P10中位{mark("reference")}</th>
+            <th onClick={() => toggle("reference")} className={`${thClass} text-right`}>7日参考{mark("reference")}</th>
             <th onClick={() => toggle("discountPercent")} className={`${thClass} text-right`}>折扣%{mark("discountPercent")}</th>
             <th onClick={() => toggle("changePercent")} className={`${thClass} text-right`}>环比%{mark("changePercent")}</th>
             <th onClick={() => toggle("quantity")} className={`${thClass} text-right`}>在售量{mark("quantity")}</th>
@@ -96,6 +96,9 @@ export function DealRadarTable({ deals, prices, categories }: {
                   <ItemIcon itemId={deal.itemId} />
                   <span className="truncate">{deal.name}</span>
                 </Link>
+                {deal.source === "ahledger"
+                  ? <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400">网站</span>
+                  : <span className="ml-1.5 rounded bg-cyan-500/15 px-1 py-0.5 align-middle text-[9px] text-cyan-400">自扫</span>}
               </td>
               <td className="px-3 py-2 text-right"><Coins copper={prices.get(deal.itemId) ?? 0} /></td>
               <td className="px-3 py-2 text-right"><Coins copper={deal.minPrice} /></td>

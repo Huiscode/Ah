@@ -15,9 +15,9 @@ import { WatchStar } from "@/components/watch-star";
 import { ItemIcon } from "@/components/item-icon";
 
 const sortableColumns: Array<{ key: SignalSortKey; heading: string }> = [
-  { key: "price", heading: "P10" },
+  { key: "price", heading: "最新价" },
   { key: "minPrice", heading: "最低价" },
-  { key: "med7", heading: "7日P10中位" },
+  { key: "med7", heading: "7日参考" },
   { key: "discountPercent", heading: "折扣%" },
   { key: "changePercent", heading: "环比%" },
   { key: "quantity", heading: "在售量" },
@@ -94,6 +94,10 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
           ))}
         </select>
         <span className="text-terminal-muted">{filteredCount} / {totalCount} 项</span>
+        <span className="ml-auto hidden items-center gap-3 text-[10px] text-terminal-muted sm:flex">
+          <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-cyan-400" />自扫 P10</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-amber-400" />网站 P50</span>
+        </span>
         <span className="ml-auto flex items-center gap-2">
           <button
             onClick={() => apply({ page: page - 1 })}
@@ -149,6 +153,9 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                     <ItemIcon itemId={signal.itemId} />
                     {signal.name}
                   </Link>
+                  {signal.source === "ahledger"
+                    ? <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400">网站</span>
+                    : <span className="ml-1.5 rounded bg-cyan-500/15 px-1 py-0.5 align-middle text-[9px] text-cyan-400">自扫</span>}
                 </td>
                 <td className="px-3 py-2 text-right"><Coins copper={signal.price} /></td>
                 <td className="px-3 py-2 text-right"><Coins copper={signal.minPrice} /></td>

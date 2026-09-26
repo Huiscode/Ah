@@ -13,8 +13,18 @@ describe("mergeScanIntoDailySummaries", () => {
     expect(date).toEqual(new Date("2026-07-23T00:00:00Z"));
     expect(updates).toHaveLength(0);
     expect(creates).toEqual([
-      { itemId: 2770, date, openPrice: 210, closePrice: 210, highPrice: 210, lowPrice: 210, volume: 240 }
+      { itemId: 2770, date, source: "addon", openPrice: 210, closePrice: 210, highPrice: 210, lowPrice: 210, volume: 240 }
     ]);
+  });
+
+  it("stamps the channel source onto created OHLCV rows", () => {
+    const { creates } = mergeScanIntoDailySummaries(
+      [{ itemId: 2770, marketPrice: 125, quantity: 5000 }],
+      scannedAt,
+      [],
+      "ahledger"
+    );
+    expect(creates[0].source).toBe("ahledger");
   });
 
   it("updates close and stretches high/low for repeat scans in a day", () => {
@@ -53,6 +63,7 @@ describe("mergePointsIntoDailySummaries", () => {
       {
         itemId: 2770,
         date: new Date("2026-07-23T00:00:00Z"),
+        source: "addon",
         openPrice: 210,
         closePrice: 205,
         highPrice: 210,
@@ -62,6 +73,7 @@ describe("mergePointsIntoDailySummaries", () => {
       {
         itemId: 13468,
         date: new Date("2026-07-23T00:00:00Z"),
+        source: "addon",
         openPrice: 950000,
         closePrice: 950000,
         highPrice: 950000,

@@ -27,9 +27,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // Chinese labels for the alert metrics surfaced on the dashboard; kept in
   // sync with components/trader-panels.tsx.
   const alertMetricLabels: Record<string, string> = {
-    price: "P10 市价",
+    price: "最新价",
     minPrice: "最低价",
-    med7: "7日P10中位",
+    med7: "7日参考",
     discountPercent: "折扣%",
     quantity: "在售量"
   };
@@ -80,7 +80,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · NPC必赚 + 最低价 vs 7日P10中位</span>} />
+            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · NPC必赚 + 最低价 vs 7日参考价（自扫P10/网站P50，按最新来源自动选口径）</span>} />
             <div className="p-3 font-mono text-xs">
               {deals.length === 0 ? (
                 <div className="text-terminal-muted">
@@ -131,7 +131,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <RadarParamsPanel note="游戏内权威 · 扫描后同步">
             <div className="space-y-2 font-mono text-xs">
               <p className="text-[10px] leading-relaxed text-terminal-muted">
-                这些阈值在游戏内修改（拍卖行面板「设置」按钮或 /wahopt），改动立即生效并随下次扫描同步回这里。此处为只读跟随。捡漏雷达同时受 NPC 必赚（无门槛）与以下第二档门槛约束。
+                这些阈值在游戏内修改（拍卖行面板「设置」按钮或 /wahopt），改动立即生效并随下次扫描同步回这里。此处为只读跟随。捡漏雷达同时受 NPC 必赚（无门槛）与以下第二档门槛约束。网站数据（AHledger）按 7 日中位口径计算、跟随最新来源，与自扫 P10 口径互不混算。
               </p>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-slate-100">绝对利润下限</span>
@@ -142,7 +142,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 <span className="text-slate-100">相对利润下限</span>
                 <span>{formatPercent(radarRules.minProfitRatio * 100).replace(/^\+/, "")}</span>
               </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">利润还须达到 7 日 P10 中位的该比例，让下限随物价缩放。0.25 = 利润不低于中位的 25%。</p>
+              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">利润还须达到 7 日参考价（自扫P10/网站P50）的该比例，让下限随物价缩放。0.25 = 利润不低于参考价的 25%。</p>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-slate-100">最大折扣</span>
                 <span>{formatPercent(radarRules.maxDiscount * 100).replace(/^\+/, "")}</span>
@@ -162,7 +162,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 <span className="text-slate-100">中位去重样本</span>
                 <span>{radarRules.minMed7Distinct}</span>
               </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">要求的 7 日 P10 去重样本数。完全平坦的序列是一个蹲守卖家的报价，不是市场，雷达拒绝按它折扣。</p>
+              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">要求的 7 日参考价（自扫P10/网站P50）去重样本数。完全平坦的序列是一个蹲守卖家的报价，不是市场，雷达拒绝按它折扣。</p>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-slate-100">供给收缩</span>
                 <span className={radarRules.supplyShrink ? "text-terminal-green" : "text-terminal-muted"}>{radarRules.supplyShrink ? `开（≤${formatPercent(Math.abs(radarRules.supplyShrinkMax) * 100)}）` : "关"}</span>
@@ -221,6 +221,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </Panel>
         </div>
       </div>
+      <footer className="mt-3 border border-terminal-border bg-terminal-panel px-4 py-2 font-mono text-[10px] leading-relaxed text-terminal-muted">
+        数据来源：游戏内插件扫描（自扫 · 7日P10 口径）与 <a href="https://ahledger.com" target="_blank" rel="noopener noreferrer" className="text-terminal-amber underline">AHledger</a> 公开 API（网站 · 7日P50 口径，免费使用按授权条款标注来源）。两通道独立运行互不影响，参考价按数据来源分别计算、绝不混算。
+      </footer>
     </main>
   );
 }

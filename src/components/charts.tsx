@@ -8,7 +8,7 @@ const formatGold = (copper: number) => formatWowMoney(copper, { compact: true })
 // 1s00c-1s99c into "1s", so the tooltip uses full precision to the copper.
 const formatHover = (copper: number) => formatWowMoney(copper);
 
-type TimePoint = { ts: number; price: number; volume?: number };
+type IntradayPoint = { ts: number; price?: number; alt?: number; volume?: number };
 
 const formatClock = (ts: number) => {
   const date = new Date(ts);
@@ -16,33 +16,66 @@ const formatClock = (ts: number) => {
 };
 
 // Time-proportional X axis: gaps in scanning render as real gaps, so
-// the trend shape is honest about when data actually exists.
-export function TimeSeriesChart({ data }: { data: TimePoint[] }) {
+// the trend shape is honest about when data actually exists. `series`
+// defines one price line per data channel ("price" = primary/latest source,
+// "alt" = the other channel), so the addon P10 and the website median can
+// sit on the same chart without blending.
+export function TimeSeriesChart({ data, series, height = 280 }: {
+  data: IntradayPoint[];
+  series: Array<{ key: "price" | "alt"; color: string; name: string }>;
+  height?: number;
+}) {
   return (
-    <ResponsiveContainer width="100%" height={280}>
-      <ComposedChart data={data} margin={{ top: 18, right: 20, bottom: 8, left: 8 }}>
-        <CartesianGrid stroke="#263042" strokeDasharray="3 3" />
-        <XAxis
-          dataKey="ts"
-          type="number"
-          scale="time"
-          domain={["dataMin", "dataMax"]}
-          tickFormatter={formatClock}
-          tick={{ fill: "#8d96a8", fontSize: 11 }}
-        />
-        <YAxis yAxisId="price" domain={["auto", "auto"]} tick={{ fill: "#8d96a8", fontSize: 11 }} tickFormatter={formatGold} width={72} />
-        <YAxis yAxisId="volume" orientation="right" tick={{ fill: "#8d96a8", fontSize: 11 }} width={54} />
-        <Tooltip
-          contentStyle={{ background: "rgba(18, 22, 31, 0.88)", border: "1px solid #263042", color: "#dce3ef" }}
-          itemStyle={{ color: "#dce3ef" }}
-          labelStyle={{ color: "#dce3ef" }}
-          labelFormatter={(value) => formatClock(Number(value))}
-          formatter={(value, name) => (name === "volume" ? [String(value), "在售量"] : [formatHover(Number(value)), "P10"])}
-        />
-        <Bar yAxisId="volume" dataKey="volume" fill="#263f5c" opacity={0.7} />
-        <Line yAxisId="price" type="monotone" dataKey="price" dot={{ r: 2 }} stroke="#56c7ff" strokeWidth={2} />
-      </ComposedChart>
-    </ResponsiveContainer>
+    <div>
+      <div className="mb-1 flex flex-wrap items-center gap-3 font-mono text-[10px] text-terminal-muted">
+        {series.map((entry) => (
+          <span key={entry.key} className="inline-flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-full" style={{ background: entry.color }} />
+            {entry.name}
+          </span>
+        ))}
+      </div>
+      <ResponsiveContainer width="100%" height={height}>
+        <ComposedChart data={data} margin={{ top: 18, right: 20, bottom: 8, left: 8 }}>
+          <CartesianGrid stroke="#263042" strokeDasharray="3 3" />
+          <XAxis
+            dataKey="ts"
+            type="number"
+            scale="time"
+            domain={["dataMin", "dataMax"]}
+            tickFormatter={formatClock}
+            tick={{ fill: "#8d96a8", fontSize: 11 }}
+          />
+          <YAxis yAxisId="price" domain={["auto", "auto"]} tick={{ fill: "#8d96a8", fontSize: 11 }} tickFormatter={formatGold} width={72} />
+          <YAxis yAxisId="volume" orientation="right" tick={{ fill: "#8d96a8", fontSize: 11 }} width={54} />
+          <Tooltip
+            contentStyle={{ background: "rgba(18, 22, 31, 0.88)", border: "1px solid #263042", color: "#dce3ef" }}
+            itemStyle={{ color: "#dce3ef" }}
+            labelStyle={{ color: "#dce3ef" }}
+            labelFormatter={(value) => formatClock(Number(value))}
+            formatter={(value, name) => {
+              const entry = series.find((s) => s.key === name);
+              if (entry) return [formatHover(Number(value)), entry.name];
+              if (name === "volume") return [String(value), "在售量"];
+              return [formatHover(Number(value)), String(name)];
+            }}
+          />
+          <Bar yAxisId="volume" dataKey="volume" fill="#263f5c" opacity={0.7} />
+          {series.map((entry) => (
+            <Line
+              key={entry.key}
+              yAxisId="price"
+              type="monotone"
+              dataKey={entry.key}
+              connectNulls
+              dot={{ r: 2 }}
+              stroke={entry.color}
+              strokeWidth={2}
+            />
+          ))}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 

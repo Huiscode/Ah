@@ -30,3 +30,5 @@ dev.db
 WoWderhoiAH-*.zip
 .watch-state.json
 scripts/.watch-state.json
+.ahledger-state.json
+scripts/.ahledger-state.json

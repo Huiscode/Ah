@@ -1,14 +1,16 @@
-// Folds one addon scan into the day's OHLCV rows. The import route is the
-// single caller and writer; DailySummary feeds every chart, moving average,
+// Folds one addon scan into the day's OHLCV rows. The import routes are the
+// single callers and writers; DailySummary feeds every chart, moving average,
 // and seasonality view, so scans must land here or the terminal stays empty.
+// `source` keeps the two data channels in separate OHLCV rows: a day's row
+// is always one price metric (addon P10 or ahledger median), never a blend.
 
 type ScanPriceRow = { itemId: number; marketPrice: number; quantity: number };
 type ExistingDayRow = { itemId: number; highPrice: number; lowPrice: number };
 
-export function mergeScanIntoDailySummaries(items: ScanPriceRow[], scannedAt: Date, existing: ExistingDayRow[]) {
+export function mergeScanIntoDailySummaries(items: ScanPriceRow[], scannedAt: Date, existing: ExistingDayRow[], source = "addon") {
   const date = new Date(Date.UTC(scannedAt.getUTCFullYear(), scannedAt.getUTCMonth(), scannedAt.getUTCDate()));
   const existingByItemId = new Map(existing.map((row) => [row.itemId, row]));
-  const creates: Array<{ itemId: number; date: Date; openPrice: number; closePrice: number; highPrice: number; lowPrice: number; volume: number }> = [];
+  const creates: Array<{ itemId: number; date: Date; source: string; openPrice: number; closePrice: number; highPrice: number; lowPrice: number; volume: number }> = [];
   const updates: Array<{ itemId: number; data: { closePrice: number; highPrice: number; lowPrice: number; volume: number } }> = [];
   for (const item of items) {
     const current = existingByItemId.get(item.itemId);
@@ -16,6 +18,7 @@ export function mergeScanIntoDailySummaries(items: ScanPriceRow[], scannedAt: Da
       creates.push({
         itemId: item.itemId,
         date,
+        source,
         openPrice: item.marketPrice,
         closePrice: item.marketPrice,
         highPrice: item.marketPrice,
@@ -47,7 +50,8 @@ export function mergeScanIntoDailySummaries(items: ScanPriceRow[], scannedAt: Da
 // while close/high/low/volume are merged with the latest points.
 export function mergePointsIntoDailySummaries(
   points: Array<{ itemId: number; timestamp: Date; marketPrice: number; quantity: number }>,
-  existing: Array<{ itemId: number; date: Date; highPrice: number; lowPrice: number }>
+  existing: Array<{ itemId: number; date: Date; highPrice: number; lowPrice: number }>,
+  source = "addon"
 ) {
   // Group point prices per (itemId, UTC date), preserving time order.
   const groups = new Map<string, Array<{ t: number; price: number; q: number }>>();
@@ -64,7 +68,7 @@ export function mergePointsIntoDailySummaries(
     bucket.push({ t: point.timestamp.getTime(), price: point.marketPrice, q: point.quantity });
   }
   const existingByKey = new Map(existing.map((row) => [`${row.itemId}|${row.date.getTime()}`, row]));
-  const creates: Array<{ itemId: number; date: Date; openPrice: number; closePrice: number; highPrice: number; lowPrice: number; volume: number }> = [];
+  const creates: Array<{ itemId: number; date: Date; source: string; openPrice: number; closePrice: number; highPrice: number; lowPrice: number; volume: number }> = [];
   const updates: Array<{ itemId: number; date: Date; data: { closePrice: number; highPrice: number; lowPrice: number; volume: number } }> = [];
   for (const [key, bucket] of groups) {
     bucket.sort((left, right) => left.t - right.t);
@@ -79,7 +83,7 @@ export function mergePointsIntoDailySummaries(
     const volume = bucket[bucket.length - 1].q;
     const current = existingByKey.get(key);
     if (!current) {
-      creates.push({ itemId: Number(key.split("|")[0]), date: dayByKey.get(key)!, openPrice: open, closePrice: close, highPrice: high, lowPrice: low, volume });
+      creates.push({ itemId: Number(key.split("|")[0]), date: dayByKey.get(key)!, source, openPrice: open, closePrice: close, highPrice: high, lowPrice: low, volume });
     } else {
       updates.push({
         itemId: current.itemId,

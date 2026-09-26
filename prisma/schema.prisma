@@ -31,6 +31,7 @@ model AuctionSnapshot {
   timestamp   DateTime
   server      String
   faction     String
+  source      String   @default("addon") // data channel: "addon" (game scan) | "ahledger" (AHledger API)
   minPrice    Int      @map("min_price")
   marketPrice Int      @map("market_price")
   quantity    Int
@@ -39,13 +40,14 @@ model AuctionSnapshot {
   item        Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
 
   @@index([itemId, timestamp])
-  @@index([server, faction, timestamp])
+  @@index([server, faction, timestamp, source])
 }
 
 model DailySummary {
   id         String   @id @default(cuid())
   itemId     Int      @map("item_id")
   date       DateTime
+  source     String   @default("addon") // data channel, mirrors AuctionSnapshot.source
   openPrice  Int      @map("open_price")
   closePrice Int      @map("close_price")
   highPrice  Int      @map("high_price")
@@ -53,7 +55,7 @@ model DailySummary {
   volume     Int
   item       Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
 
-  @@unique([itemId, date])
+  @@unique([itemId, date, source])
   @@index([date])
 }
 
