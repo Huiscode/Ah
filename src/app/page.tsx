@@ -11,6 +11,7 @@ import {
   getWatchedItemIds
 } from "@/lib/repositories";
 import { getMarketSignals } from "@/lib/market-signals";
+import { getAppState } from "@/lib/app-state";
 import { describeFreshness } from "@/lib/freshness";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
 import { formatPercent } from "@/lib/utils";
@@ -33,6 +34,7 @@ import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
 import { MarketTable } from "@/components/market-table";
 import { WatchStar } from "@/components/watch-star";
+import { AhledgerToggle } from "@/components/ahledger-toggle";
 import { DealRadarTable } from "@/components/deal-radar-table";
 import { RadarParamsPanel } from "@/components/radar-params-panel";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -49,13 +51,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     quantity: "在售量"
   };
   const view = parseMarketView(await searchParams);
-  const [{ signals, latestSnapshotAt }, upcomingEvents, watchedIds, alertRules, storedRules, latestAddonRound] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, upcomingEvents, watchedIds, alertRules, storedRules, latestAddonRound, ahledgerEnabled] = await Promise.all([
     getMarketSignals(),
     getUpcomingEvents(),
     getWatchedItemIds(),
     getAlertRules(),
     getRadarRules(),
-    getLatestAddonRoundItemIds()
+    getLatestAddonRoundItemIds(),
+    getAppState("ahledgerEnabled")
   ]);
   const freshness = describeFreshness(latestSnapshotAt, new Date());
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
@@ -95,6 +98,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
             <RadioTower size={14} /> 数据更新于 {freshness.label}
           </span>
+          <AhledgerToggle initialEnabled={ahledgerEnabled !== "0"} />
           <span className="flex items-center gap-1"><Bell size={14} /> 预警就绪</span>
         </div>
       </div>

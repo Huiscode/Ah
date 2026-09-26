@@ -98,3 +98,11 @@ model RadarRule {
   rules     Json
   updatedAt DateTime @updatedAt @map("updated_at")
 }
+
+// Terminal-level settings (key-value). Keys: "ahledgerEnabled" ("1"|"0").
+// The web UI toggles website scanning here; the importer process polls it.
+model AppState {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+}

@@ -24,6 +24,27 @@ const faction = process.env.AHL_FACTION ?? "Alliance";         // matches the ad
 const importUrl = process.env.AHL_IMPORT_URL ?? "http://localhost:3000/api/import/ahledger";
 const pollSeconds = Number(process.env.AHL_POLL_SECONDS ?? 900) || 900;
 const pollMs = pollSeconds * 1000;
+// Terminal switch: the web UI toggles this; while disabled the importer
+// pauses (checking again every 60s so it resumes promptly after re-enable)
+// without touching the addon channel. Fail-open: if the toggle API is
+// unreachable the importer keeps polling.
+const toggleUrl = new URL("/api/ahledger/toggle", importUrl).toString();
+const pausedCheckMs = 60_000;
+
+async function isScanningEnabled(): Promise<boolean> {
+  try {
+    const res = await fetch(toggleUrl);
+    if (!res.ok) return true;
+    const json = (await res.json()) as { enabled?: boolean };
+    return json.enabled !== false;
+  } catch {
+    return true;
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // Importer restart bookkeeping: remember the last observedAt round so a
 // fresh process does not re-POST the same pricetable. The route also
@@ -119,10 +140,15 @@ async function syncOnce(): Promise<void> {
 
 async function main() {
   console.log(`${new Date().toISOString()} AHledger importer started: market=${market} poll=${pollSeconds}s -> ${importUrl}`);
-  await syncOnce().catch((error) => console.error(`${new Date().toISOString()} ${error instanceof Error ? error.message : String(error)}`));
-  setInterval(() => {
-    void syncOnce().catch((error) => console.error(`${new Date().toISOString()} ${error instanceof Error ? error.message : String(error)}`));
-  }, pollMs);
+  while (true) {
+    if (!(await isScanningEnabled())) {
+      console.log(`${new Date().toISOString()} website scanning disabled via terminal switch; pausing, re-check in 60s.`);
+      await sleep(pausedCheckMs);
+      continue;
+    }
+    await syncOnce().catch((error) => console.error(`${new Date().toISOString()} ${error instanceof Error ? error.message : String(error)}`));
+    await sleep(pollMs);
+  }
 }
 
 void main();
