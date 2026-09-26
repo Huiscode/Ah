@@ -14,7 +14,9 @@ export function RadarParamsPanel({
   note: string;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(true);
+  // Default collapsed: the radar params are read-only mirror of the in-game
+  // panel, so a slim row keeps the card out of the way until asked for.
+  const [open, setOpen] = useState(false);
 
   if (!open) {
     return (
