@@ -15,6 +15,20 @@ import { describeFreshness } from "@/lib/freshness";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
 import { formatPercent } from "@/lib/utils";
 import { Coins } from "@/components/coins";
+
+// Unambiguous copper formatting for compact tooltips: 193 -> "1g93c",
+// 3700 -> "37s", 179 -> "1g79c". Coins is prettier but its silver/gold
+// shorthand reads ambiguously in a dense text block.
+function fmtCopper(copper: number): string {
+  const g = Math.floor(copper / 10000);
+  const s = Math.floor((copper % 10000) / 100);
+  const c = copper % 100;
+  const parts: string[] = [];
+  if (g > 0) parts.push(`${g}g`);
+  if (s > 0) parts.push(`${s}s`);
+  if (c > 0 || parts.length === 0) parts.push(`${c}c`);
+  return parts.join("");
+}
 import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
 import { MarketTable } from "@/components/market-table";
@@ -121,12 +135,34 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 <div className="text-terminal-muted">扫描覆盖配方材料与成品后此处显示利润排行</div>
               )}
               {craftOk.map((row) => (
-                <div key={row.recipe.name} className="flex items-center justify-between gap-2">
-                  <span className="text-slate-100">{row.recipe.name}<span className="ml-1 text-[10px] text-terminal-muted">{row.recipe.profession}</span></span>
+                <div key={row.recipe.name} className="group relative flex items-center justify-between gap-2">
+                  <span className="text-slate-100">{row.recipe.name}</span>
                   <span className="flex items-center gap-3">
                     <span className={row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}><Coins copper={row.profit} /></span>
                     <span className={row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}>{formatPercent(row.marginPercent)}</span>
                   </span>
+                  {/* Hover: how the profit was computed — per-material cost, AH-cut revenue, margin */}
+                  <div className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-80 whitespace-normal border border-terminal-border bg-terminal-panel p-2 font-mono text-[10px] leading-relaxed text-slate-200 shadow-lg group-hover:block">
+                    {row.recipe.materials.map((material) => {
+                      const unit = priceByItemId.get(material.itemId) ?? material.vendorPriceCopper;
+                      const subtotal = unit === undefined ? undefined : unit * material.quantity;
+                      return (
+                        <div key={material.itemId} className="flex items-center justify-between gap-2">
+                          <span className="text-terminal-muted">{material.name} ×{material.quantity}</span>
+                          <span>{unit === undefined ? "无价" : `@${fmtCopper(unit)}`}{subtotal !== undefined && <span className="ml-1 text-terminal-muted">={fmtCopper(subtotal)}</span>}</span>
+                        </div>
+                      );
+                    })}
+                    <div className="my-1 border-t border-terminal-border" />
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-terminal-muted">{row.recipe.name} ×{row.recipe.productQuantity}</span>
+                      <span>{fmtCopper(row.revenue)} <span className="text-terminal-muted">(含5%税)</span></span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-100">利润</span>
+                      <span className={row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}>{fmtCopper(row.profit)} {formatPercent(row.marginPercent)}</span>
+                    </div>
+                  </div>
                 </div>
               ))}
               {craftMissingCount > 0 && (
