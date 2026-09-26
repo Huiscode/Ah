@@ -45,6 +45,14 @@ export async function getLatestSnapshotTime() {
   return row?.timestamp ?? null;
 }
 
+// Metadata version of the item universe (MAX updated_at). The market-signal
+// cache keys on (latest snapshot, this) so backfills of name/quality/category
+// invalidate the in-memory signals without waiting for the next scan.
+export async function getItemMetaVersion(): Promise<number> {
+  const row = await prisma.item.aggregate({ _max: { updatedAt: true } });
+  return row._max.updatedAt?.getTime() ?? 0;
+}
+
 // The item universe of the latest in-game scan round. The addon only ever
 // iterates the items it just scanned, so the terminal's deal radar must do
 // the same: an item the game is not currently listing cannot be bought, and

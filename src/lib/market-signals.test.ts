@@ -21,6 +21,7 @@ describe("createMarketSignalSource", () => {
     let universeFetches = 0;
     const source = createMarketSignalSource({
       getLatestSnapshotTime: async () => new Date("2026-07-20T10:00:00Z"),
+      getItemMetaVersion: async () => 1,
       getMarketUniverse: async () => {
         universeFetches += 1;
         return [historyItem(1, 100)];
@@ -39,6 +40,7 @@ describe("createMarketSignalSource", () => {
     let price = 100;
     const source = createMarketSignalSource({
       getLatestSnapshotTime: async () => generation,
+      getItemMetaVersion: async () => 1,
       getMarketUniverse: async () => [historyItem(1, price)]
     });
     const first = await source.getMarketSignals();
@@ -49,10 +51,29 @@ describe("createMarketSignalSource", () => {
     expect(second.signals[0].price).toBe(200);
   });
 
+  it("recomputes when item metadata changes (e.g. category backfill)", async () => {
+    let universeFetches = 0;
+    let metaVersion = 1;
+    const source = createMarketSignalSource({
+      getLatestSnapshotTime: async () => new Date("2026-07-20T10:00:00Z"),
+      getItemMetaVersion: async () => metaVersion,
+      getMarketUniverse: async () => {
+        universeFetches += 1;
+        return [historyItem(1, 100)];
+      }
+    });
+    const first = await source.getMarketSignals();
+    metaVersion = 2;
+    const second = await source.getMarketSignals();
+    expect(universeFetches).toBe(2);
+    expect(second.signals).not.toBe(first.signals);
+  });
+
   it("returns empty signals without caching when the store has no snapshots", async () => {
     let universeFetches = 0;
     const source = createMarketSignalSource({
       getLatestSnapshotTime: async () => null,
+      getItemMetaVersion: async () => 0,
       getMarketUniverse: async () => {
         universeFetches += 1;
         return [];
