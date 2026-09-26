@@ -16,6 +16,18 @@ function scanItem(partial: Partial<AddonScanItem> & Pick<AddonScanItem, "itemId"
   };
 }
 
+function existingRow(itemId: number, name: string, overrides: Partial<{ quality: string; category: string; subCategory: string; vendorPrice: number }> = {}) {
+  return {
+    itemId,
+    name,
+    quality: "common",
+    category: "Trade Goods",
+    subCategory: "Herb",
+    vendorPrice: 0,
+    ...overrides
+  };
+}
+
 describe("diffScanItems", () => {
   it("creates every item when the store is empty", () => {
     const items = [scanItem({ itemId: 1, name: "梦叶草" }), scanItem({ itemId: 2, name: "魔铁矿石" })];
@@ -26,29 +38,32 @@ describe("diffScanItems", () => {
 
   it("emits neither create nor update for unchanged known items", () => {
     const items = [scanItem({ itemId: 1, name: "梦叶草", quality: "uncommon" })];
-    const diff = diffScanItems(items, [{ itemId: 1, name: "梦叶草", quality: "uncommon", vendorPrice: 0 }]);
+    const diff = diffScanItems(items, [existingRow(1, "梦叶草", { quality: "uncommon" })]);
     expect(diff.creates).toEqual([]);
     expect(diff.updates).toEqual([]);
   });
 
-  it("updates only items whose name, quality, or vendor price changed", () => {
+  it("updates only items whose name, quality, category, subcategory, or vendor price changed", () => {
     const items = [
       scanItem({ itemId: 1, name: "梦叶草" }),
       scanItem({ itemId: 2, name: "魔铁矿石·新译名" }),
       scanItem({ itemId: 3, name: "碎骨头", quality: "poor" }),
-      scanItem({ itemId: 4, name: "厚皮", vendorPrice: 120 })
+      scanItem({ itemId: 4, name: "厚皮", vendorPrice: 120 }),
+      scanItem({ itemId: 5, name: "瘤背战斗法杖", category: "Weapon", subCategory: "Staves" })
     ];
     const diff = diffScanItems(items, [
-      { itemId: 1, name: "梦叶草", quality: "common", vendorPrice: 0 },
-      { itemId: 2, name: "魔铁矿石", quality: "common", vendorPrice: 0 },
-      { itemId: 3, name: "碎骨头", quality: "common", vendorPrice: 0 },
-      { itemId: 4, name: "厚皮", quality: "common", vendorPrice: 0 }
+      existingRow(1, "梦叶草"),
+      existingRow(2, "魔铁矿石"),
+      existingRow(3, "碎骨头"),
+      existingRow(4, "厚皮"),
+      existingRow(5, "瘤背战斗法杖", { category: "unknown", subCategory: "unknown" })
     ]);
     expect(diff.creates).toEqual([]);
-    expect(diff.updates.map((update) => update.itemId)).toEqual([2, 3, 4]);
-    expect(diff.updates[0].data).toEqual({ name: "魔铁矿石·新译名", quality: "common", vendorPrice: 0 });
-    expect(diff.updates[1].data).toEqual({ name: "碎骨头", quality: "poor", vendorPrice: 0 });
-    expect(diff.updates[2].data).toEqual({ name: "厚皮", quality: "common", vendorPrice: 120 });
+    expect(diff.updates.map((update) => update.itemId)).toEqual([2, 3, 4, 5]);
+    expect(diff.updates[0].data).toEqual({ name: "魔铁矿石·新译名", quality: "common", category: "Trade Goods", subCategory: "Herb", vendorPrice: 0 });
+    expect(diff.updates[1].data).toEqual({ name: "碎骨头", quality: "poor", category: "Trade Goods", subCategory: "Herb", vendorPrice: 0 });
+    expect(diff.updates[2].data).toEqual({ name: "厚皮", quality: "common", category: "Trade Goods", subCategory: "Herb", vendorPrice: 120 });
+    expect(diff.updates[3].data).toEqual({ name: "瘤背战斗法杖", quality: "common", category: "Weapon", subCategory: "Staves", vendorPrice: 0 });
   });
 
   it("carries the full column set on creates", () => {

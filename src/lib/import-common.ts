@@ -5,7 +5,7 @@
 // can never pollute each other's med7 window or OHLCV row. Dedupe, item-row
 // backfill, history-point fencing and the daily fold are identical for both.
 import { prisma } from "@/lib/prisma";
-import { diffScanItems, type ExistingItemRow } from "@/lib/scan-import";
+import { diffScanItems, type ExistingItemRow, type ItemUpdateData } from "@/lib/scan-import";
 import { mergePointsIntoDailySummaries, mergeScanIntoDailySummaries } from "@/lib/daily-summary";
 import type { AddonRadarRules } from "@/lib/addon-scan";
 import type { SnapshotSource } from "@/lib/market-data";
@@ -93,7 +93,7 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
   // Full-table reads instead of `in` filters: the item table is small and
   // this keeps the statements clear of SQLite's bound-parameter limit even
   // at 100x-scale scans.
-  const existingItems = await prisma.item.findMany({ select: { itemId: true, name: true, quality: true, vendorPrice: true } });
+  const existingItems = await prisma.item.findMany({ select: { itemId: true, name: true, quality: true, category: true, subCategory: true, vendorPrice: true } });
   const existingItemIdSet = new Set(existingItems.map((row) => row.itemId));
 
   // Item-table policy differs by channel:
@@ -104,7 +104,7 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
   //   never seen; they must never overwrite a real name the addon recorded.
   //   The next addon scan backfills placeholders via diffScanItems.
   const creates: Array<{ itemId: number; name: string; quality: string; category: string; subCategory: string; vendorPrice: number }> = [];
-  const updates: Array<{ itemId: number; data: { name: string; quality: string; vendorPrice: number } }> = [];
+  const updates: Array<{ itemId: number; data: ItemUpdateData }> = [];
   if (source === "addon") {
     const diff = diffScanItems(items as Parameters<typeof diffScanItems>[0], existingItems as ExistingItemRow[]);
     creates.push(...diff.creates);

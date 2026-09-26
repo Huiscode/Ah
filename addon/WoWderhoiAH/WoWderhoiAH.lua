@@ -167,9 +167,14 @@ local function recordAuction(info)
       scanState.itemInfoCache[itemId] = cached
     end
     -- The client may not have this item's info cached yet; flag it so
-    -- GET_ITEM_INFO_RECEIVED can backfill the category in place.
+    -- GET_ITEM_INFO_RECEIVED can backfill the category in place. The
+    -- replicate stream never loads item info by itself, so ask the client
+    -- to fetch it -- otherwise the flag would sit until the next scan.
     if cached.class == "unknown" or cached.subClass == "unknown" then
       scanState.pendingCategory[itemId] = true
+      if C_Item and C_Item.RequestLoadItemDataByID then
+        C_Item.RequestLoadItemDataByID(itemId)
+      end
     end
     entry = {
       name = name,
