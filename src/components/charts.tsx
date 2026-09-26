@@ -140,6 +140,31 @@ function CandleShape(props: CandleShapeProps) {
   );
 }
 
+// Stock-style OHLC hover: the down-candle keeps the user's 高-低 direction
+// row (high value first), the up/flat candle reads 低-高; below it the panel
+// adds the day's open and close — the close being the LAST scan of the day.
+function CandleTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload?: CandlePoint }> }) {
+  if (!active || !payload || payload.length === 0) return null;
+  const point = payload[0].payload;
+  if (!point) return null;
+  const down = point.trend === "down";
+  const up = point.trend === "up";
+  const change = point.open > 0 ? ((point.close - point.open) / point.open) * 100 : 0;
+  return (
+    <div style={{ ...tooltipPanelStyle, whiteSpace: "nowrap" }}>
+      <div>
+        {point.label}
+        {down ? " ▼" : up ? " ▲" : ""}
+        {change !== 0 ? `  ${change > 0 ? "+" : ""}${change.toFixed(1)}%` : ""}
+      </div>
+      <div>
+        {down ? "高-低" : "低-高"}：{formatHover(down ? point.high : point.low)} - {formatHover(down ? point.low : point.high)}
+      </div>
+      <div>开盘 {formatHover(point.open)}　收盘 {formatHover(point.close)}</div>
+    </div>
+  );
+}
+
 export function CandlestickChart({ data }: { data: CandlePoint[] }) {
   const withRange = data.map((point, i) => {
     const prev = i > 0 ? data[i - 1].close : null;
@@ -166,20 +191,7 @@ export function CandlestickChart({ data }: { data: CandlePoint[] }) {
           tickFormatter={formatGold}
           width={72}
         />
-        <Tooltip
-          contentStyle={{ ...tooltipPanelStyle, whiteSpace: "nowrap" }}
-          itemStyle={{ color: "#dce3ef", fontSize: 11 }}
-          labelStyle={{ color: "#8d96a8", fontSize: 10 }}
-          formatter={(value, name, entry) => {
-            if (Array.isArray(value)) {
-              const trend = (entry as { payload?: { trend?: "up" | "down" | "flat" } } | undefined)?.payload?.trend ?? "up";
-              // Down candle reads high -> low; up/flat reads low -> high.
-              if (trend === "down") return [`${formatHover(Number(value[1]))} - ${formatHover(Number(value[0]))}`, "高-低"];
-              return [`${formatHover(Number(value[0]))} - ${formatHover(Number(value[1]))}`, "低-高"];
-            }
-            return [formatHover(Number(value)), String(name)];
-          }}
-        />
+        <Tooltip content={<CandleTooltip />} cursor={{ fill: "rgba(38, 63, 92, 0.15)" }} />
         <Bar yAxisId="price" dataKey="lowHigh" shape={<CandleShape />} isAnimationActive={false} />
       </ComposedChart>
     </ResponsiveContainer>
