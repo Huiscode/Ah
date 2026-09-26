@@ -47,6 +47,10 @@ export function TimeSeriesChart({ data, series, height = 280 }: {
             {entry.name}
           </span>
         ))}
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#3f6aa8" }} />
+          在售量
+        </span>
       </div>
       <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={data} margin={{ top: 18, right: 20, bottom: 8, left: 8 }}>
@@ -73,7 +77,7 @@ export function TimeSeriesChart({ data, series, height = 280 }: {
               return [formatHover(Number(value)), String(name)];
             }}
           />
-          <Bar yAxisId="volume" dataKey="volume" fill="#263f5c" opacity={0.7} />
+          <Line yAxisId="volume" dataKey="volume" type="monotone" connectNulls stroke="#3f6aa8" strokeWidth={1.5} dot={false} />
           {series.map((entry) => (
             <Line
               key={entry.key}
