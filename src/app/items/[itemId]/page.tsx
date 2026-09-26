@@ -109,7 +109,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             </div>
           </Panel>
           <Panel>
-            <PanelHeader title={`星期几季节性 (${latestSource === "ahledger" ? "中位收盘" : "P10收盘"})`} />
+            <PanelHeader title={`星期几季节性 (${latestSource === "ahledger" ? "中位收盘" : "P10收盘"} · 相对全部天数中位数的偏差)`} />
             <div className="grid grid-cols-7 gap-px bg-terminal-border font-mono text-xs">
               {seasonality.map((day) => (
                 <div key={day.weekday} className="bg-terminal-panel px-2 py-3 text-center">
