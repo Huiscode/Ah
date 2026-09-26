@@ -15,6 +15,7 @@ import { getAppState } from "@/lib/app-state";
 import { describeFreshness } from "@/lib/freshness";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
 import { formatPercent } from "@/lib/utils";
+import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import { Coins } from "@/components/coins";
 
 // Unambiguous copper formatting for compact tooltips: 193 -> "1g93c",
@@ -249,7 +250,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   </span>
                   <span className="flex items-center gap-3">
                     <Coins copper={signal.price} />
-                    <span className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</span>
+                    <span className={trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</span>
                   </span>
                 </div>
               ))}

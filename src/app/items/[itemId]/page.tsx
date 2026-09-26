@@ -3,6 +3,7 @@ import { buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
 import { getItemDetail, getWatchedItemIds } from "@/lib/repositories";
 import { prisma } from "@/lib/prisma";
 import { formatPercent } from "@/lib/utils";
+import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import { Coins } from "@/components/coins";
 import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
@@ -113,8 +114,8 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
               {seasonality.map((day) => (
                 <div key={day.weekday} className="bg-terminal-panel px-2 py-3 text-center">
                   <div className="uppercase text-terminal-muted">{weekdayNames[day.weekday]}</div>
-                  <div className={day.priceDeviation > 0 ? "mt-1 text-terminal-red" : day.priceDeviation < 0 ? "mt-1 text-terminal-green" : "mt-1 text-terminal-cyan"}>
-                    {day.priceDeviation >= 0 ? "+" : ""}{day.priceDeviation.toFixed(1)}%
+                  <div className={"mt-1 " + trendTextClass(day.priceDeviation)}>
+                    {formatTrendPercent(day.priceDeviation, 1)}
                   </div>
                   <div className="mt-1 text-[10px] text-terminal-muted">在售 {day.listedShare.toFixed(0)}% · n={day.sampleCount}</div>
                 </div>
@@ -140,7 +141,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                     <div><div className="text-terminal-muted">最低价</div><div><Coins copper={signal.minPrice} /></div></div>
                     <div><div className="text-terminal-muted">7日参考{latestSource === "ahledger" ? "（P50）" : "（P10）"}</div><div><Coins copper={signal.med7} /></div></div>
                     <div><div className="text-terminal-muted">折扣</div><div className={signal.discountPercent >= 15 ? "text-terminal-green" : ""}>{signal.discountPercent.toFixed(0)}%</div></div>
-                    <div><div className="text-terminal-muted">环比上次</div><div className={signal.changePercent >= 0 ? "text-terminal-red" : "text-terminal-green"}>{formatPercent(signal.changePercent)}</div></div>
+                    <div><div className="text-terminal-muted">环比上次</div><div className={trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</div></div>
                     <div><div className="text-terminal-muted">在售量</div><div>{signal.quantity.toLocaleString("en-US")}</div></div>
                     <div><div className="text-terminal-muted">挂单数</div><div>{signal.numAuctions.toLocaleString("en-US")}</div></div>
                   </div>

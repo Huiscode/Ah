@@ -9,6 +9,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { MarketSignal } from "@/lib/analytics";
 import type { MarketView, SignalSortKey } from "@/lib/market-filter";
 import { formatPercent } from "@/lib/utils";
+import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import { categoryLabel } from "@/lib/category-zh";
 import { qualityColorClass } from "@/lib/quality";
 import { Coins } from "@/components/coins";
@@ -162,7 +163,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                 <td className="px-3 py-2 text-right"><Coins copper={signal.minPrice} /></td>
                 <td className="px-3 py-2 text-right"><Coins copper={signal.med7} /></td>
                 <td className={signal.discountPercent >= 15 ? "px-3 py-2 text-right text-terminal-green" : "px-3 py-2 text-right text-slate-300"}>{signal.discountPercent.toFixed(0)}%</td>
-                <td className={signal.changePercent >= 0 ? "px-3 py-2 text-right text-terminal-red" : "px-3 py-2 text-right text-terminal-green"}>{formatPercent(signal.changePercent)}</td>
+                <td className={"px-3 py-2 text-right " + trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</td>
                 <td className="px-3 py-2 text-right text-slate-300">{signal.quantity.toLocaleString("en-US")}</td>
                 <td className="px-3 py-2 text-right text-slate-300">{signal.numAuctions.toLocaleString("en-US")}</td>
               </tr>
