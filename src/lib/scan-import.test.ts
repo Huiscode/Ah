@@ -77,4 +77,33 @@ describe("diffScanItems", () => {
       vendorPrice: 50
     });
   });
+
+  it("never overwrites a stored real category with an incoming unknown", () => {
+    // Same name/quality/vendor, category already real in DB, client says unknown -> no update at all.
+    const same = diffScanItems([scanItem({ itemId: 9, name: "秘银锭", category: "unknown", subCategory: "unknown" })], [
+      existingRow(9, "秘银锭", { category: "Trade Goods", subCategory: "Metal & Stone" })
+    ]);
+    expect(same.updates).toEqual([]);
+    // Name changed but category unknown -> update keeps the stored category.
+    const renamed = diffScanItems([scanItem({ itemId: 10, name: "秘银锭·新译名", category: "unknown", subCategory: "unknown" })], [
+      existingRow(10, "秘银锭", { category: "Trade Goods", subCategory: "Metal & Stone" })
+    ]);
+    expect(renamed.updates).toHaveLength(1);
+    expect(renamed.updates[0].data).toEqual({
+      name: "秘银锭·新译名",
+      quality: "common",
+      category: "Trade Goods",
+      subCategory: "Metal & Stone",
+      vendorPrice: 0
+    });
+  });
+
+  it("promotes a stored unknown to a real incoming category", () => {
+    const diff = diffScanItems([scanItem({ itemId: 11, name: "瘤背战斗法杖", category: "Weapon", subCategory: "Staves" })], [
+      existingRow(11, "瘤背战斗法杖", { category: "unknown", subCategory: "unknown" })
+    ]);
+    expect(diff.updates).toHaveLength(1);
+    expect(diff.updates[0].data.category).toBe("Weapon");
+    expect(diff.updates[0].data.subCategory).toBe("Staves");
+  });
 });
