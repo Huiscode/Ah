@@ -3,7 +3,7 @@
 // View-state shell for the server-filtered market table: every control
 // writes URL search params and the server re-renders just the visible
 // page, so the client never receives the full signal universe.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { MarketSignal } from "@/lib/analytics";
@@ -39,7 +39,21 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
   const router = useRouter();
   const pathname = usePathname();
   const watched = new Set(watchedItemIds);
-  const [query, setQuery] = useState(view.query);
+
+  // A hard refresh (full page load) must not keep a stale column sort: the
+  // URL sort/dir params are in-session view state for client navigation, not
+  // for a reload. Clearing them on mount falls back to the default ordering;
+  // clicking a header (client-side replace, no remount) still sorts normally.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("sort") || params.has("dir")) {
+      params.delete("sort");
+      params.delete("dir");
+      const search = params.toString();
+      router.replace(`${pathname}${search ? `?${search}` : ""}` as Parameters<typeof router.replace>[0], { scroll: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);  const [query, setQuery] = useState(view.query);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Rebuild params from the server-provided view so the URL stays the
