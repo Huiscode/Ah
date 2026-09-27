@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { type MarketHistory } from "@/lib/market-data";
+import type { DbRecipe, RecipeMaterial } from "@/lib/recipe-profits";
 
 export async function getMarketUniverse(): Promise<MarketHistory[]> {
   return prisma.item.findMany({
@@ -80,4 +81,39 @@ export async function getLatestAddonRoundItemIds(): Promise<Set<number> | null> 
 export async function getRadarRules(): Promise<unknown> {
   const row = await prisma.radarRule.findFirst({ orderBy: { updatedAt: "desc" } });
   return row?.rules ?? null;
+}
+
+// P0-B: the recipe library. category filters "craft" (professional crafts,
+// from /wahrecipes dumps and the wx-wow seed) or "merchant" (merchant-favor
+// exchanges); omit for everything. reagents/outputs are JSON columns that
+// mirror the addon's field names (itemId/name/quantity/vendorPrice), so the
+// profit engine consumes them without reshaping.
+export async function getRecipes(category?: "craft" | "merchant"): Promise<DbRecipe[]> {
+  const rows = await prisma.recipe.findMany({
+    where: category ? { category } : undefined,
+    orderBy: { name: "asc" }
+  });
+  return rows.map((row) => ({
+    name: row.name,
+    profession: row.profession,
+    skillLevel: row.skillLevel,
+    category: row.category as "craft" | "merchant",
+    favorCost: row.favorCost,
+    difficulty: row.difficulty ? (row.difficulty as unknown as number[]) : undefined,
+    categoryName: row.categoryName ?? undefined,
+    spellId: row.spellId ?? undefined,
+    reagents: (row.reagents as unknown as RecipeMaterial[]) ?? [],
+    outputs: (row.outputs as unknown as RecipeMaterial[]) ?? []
+  }));
+}
+
+// Vendor floors the import pipeline picked up from the addon scan channel
+// (Item.vendorPrice, currently populated from classic-era vendor data); the
+// profit engine merges them under the addon-dumped recipe vendorP.
+export async function getItemVendorPrices(): Promise<Map<number, number>> {
+  const rows = await prisma.item.findMany({
+    where: { vendorPrice: { gt: 0 } },
+    select: { itemId: true, vendorPrice: true }
+  });
+  return new Map(rows.map((row) => [row.itemId, row.vendorPrice]));
 }

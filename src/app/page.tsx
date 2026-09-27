@@ -1,12 +1,14 @@
 import { Bell, CalendarClock, Hammer, RadioTower, Star } from "lucide-react";
 import { buildDealRadar } from "@/lib/analytics";
 import { evaluateAlertRules } from "@/lib/alerts";
-import { computeCraftProfits, craftRecipes } from "@/lib/crafting";
+import { buildFloorPriceIndex, computeRecipeProfits } from "@/lib/recipe-profits";
 import { mergeRadarRules } from "@/lib/market-rules";
 import {
   getAlertRules,
+  getItemVendorPrices,
   getLatestAddonRoundItemIds,
   getRadarRules,
+  getRecipes,
   getUpcomingEvents,
   getWatchedItemIds
 } from "@/lib/repositories";
@@ -14,30 +16,19 @@ import { getMarketSignals } from "@/lib/market-signals";
 import { getAppState } from "@/lib/app-state";
 import { describeFreshness } from "@/lib/freshness";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
+import { groupedCategoryOptions } from "@/lib/category-zh";
 import { formatPercent } from "@/lib/utils";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import { Coins } from "@/components/coins";
-
-// Unambiguous copper formatting for compact tooltips: 193 -> "1g93c",
-// 3700 -> "37s", 179 -> "1g79c". Coins is prettier but its silver/gold
-// shorthand reads ambiguously in a dense text block.
-function fmtCopper(copper: number): string {
-  const g = Math.floor(copper / 10000);
-  const s = Math.floor((copper % 10000) / 100);
-  const c = copper % 100;
-  const parts: string[] = [];
-  if (g > 0) parts.push(`${g}g`);
-  if (s > 0) parts.push(`${s}s`);
-  if (c > 0 || parts.length === 0) parts.push(`${c}c`);
-  return parts.join("");
-}
 import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
 import { MarketTable } from "@/components/market-table";
 import { WatchStar } from "@/components/watch-star";
 import { AhledgerToggle } from "@/components/ahledger-toggle";
 import { DealRadarTable } from "@/components/deal-radar-table";
+import { getLatestLadders } from "@/lib/ladders";
 import { RadarParamsPanel } from "@/components/radar-params-panel";
+import { RecipeProfitPanel } from "@/components/recipe-profit-panel";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import Link from "next/link";
 
@@ -52,14 +43,19 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     quantity: "在售量"
   };
   const view = parseMarketView(await searchParams);
-  const [{ signals, latestSnapshotAt }, upcomingEvents, watchedIds, alertRules, storedRules, latestAddonRound, ahledgerEnabled] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, upcomingEvents, watchedIds, alertRules, storedRules, latestAddonRound, ahledgerEnabled, recipes, vendorPrices, ladders] = await Promise.all([
     getMarketSignals(),
     getUpcomingEvents(),
     getWatchedItemIds(),
     getAlertRules(),
     getRadarRules(),
     getLatestAddonRoundItemIds(),
-    getAppState("ahledgerEnabled")
+    getAppState("ahledgerEnabled"),
+    // 首页制造利润面板只展示专业配方（craft）；商人青睐兑换（merchant）
+    // 在 /recipes 配方库页独立呈现。
+    getRecipes("craft"),
+    getItemVendorPrices(),
+    getLatestLadders()
   ]);
   const freshness = describeFreshness(latestSnapshotAt, new Date());
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
@@ -76,16 +72,25 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // row cannot be bought in game. With no addon scan at all the website
   // channel is the only data and its whole universe applies.
   const deals = latestAddonRound === null ? allDeals : allDeals.filter((deal) => latestAddonRound.has(deal.itemId));
-  const radarCategories = Array.from(new Set(deals.map((deal) => deal.category))).sort();
+  const radarCategories = groupedCategoryOptions(Array.from(new Set(deals.map((deal) => deal.category))));
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
-  const craftRows = computeCraftProfits(craftRecipes, priceByItemId);
-  const craftOk = craftRows.filter((row) => row.status === "ok");
-  const craftMissingCount = craftRows.length - craftOk.length;
+  // P0-B: full-recipe profit library. Revenue side = live AH price (自扫P10
+  // → 网站P50 per signal) or the vendor floor when the market has no listing;
+  // the floor index merges the curated dictionary, DB Item.vendorPrice and
+  // the vendorP the addon dumped with each recipe (freshest, and the only
+  // source for Forever-only items).
+  const floorPriceIndex = buildFloorPriceIndex(recipes, vendorPrices);
+  const recipeRows = computeRecipeProfits(recipes, priceByItemId, floorPriceIndex);
+  // 首页制造利润面板只看"基础加工"利润：矿石→锭（熔炼锭）、布料→卷（裁缝材料）、
+  // 皮→熟化皮（制皮材料）、石头→砂轮（锻造材料）、草药/鱼→染料油剂（炼金材料）、
+  // 元素/锭转化（炼金次级/强效转化）。端装装备、药水、烹饪等不在此列。
+  const CONVERSION_CATEGORIES = new Set(["熔炼锭", "材料", "次级转化", "强效转化"]);
+  const conversionRows = recipeRows.filter((row) => CONVERSION_CATEGORIES.has(row.recipe.categoryName ?? ""));
   // The client table only ever receives the visible page; filtering and
   // sorting run here against the URL-provided view.
   const filtered = filterSortSignals(signals, view);
   const marketPage = paginate(filtered, view.page, MARKET_PAGE_SIZE);
-  const categories = Array.from(new Set(signals.map((signal) => signal.category))).sort();
+  const categories = groupedCategoryOptions(Array.from(new Set(signals.map((signal) => signal.category))));
   const pageWatchedIds = marketPage.rows.filter((signal) => watchedIds.has(signal.itemId)).map((signal) => signal.itemId);
 
   return (
@@ -100,6 +105,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             <RadioTower size={14} /> 数据更新于 {freshness.label}
           </span>
           <AhledgerToggle initialEnabled={ahledgerEnabled !== "0"} />
+          <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><Hammer size={14} /> 配方库</Link>
           <span className="flex items-center gap-1"><Bell size={14} /> 预警就绪</span>
         </div>
       </div>
@@ -114,7 +120,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   {signals.length === 0 ? "暂无市场数据。进游戏 /wahscan 扫描。" : "当前没有满足流动性与利润门槛的捡漏挂单。"}
                 </div>
               ) : (
-                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} />
+                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} ladders={ladders} />
               )}
             </div>
           </Panel>
@@ -133,50 +139,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </Panel>
         </div>
         <div className="space-y-3">
-          <Panel>
-            <PanelHeader title="制造利润" action={<Hammer size={13} className="text-terminal-muted" />} />
-            <div className="space-y-2 p-3 font-mono text-xs">
-              {craftOk.length === 0 && (
-                <div className="text-terminal-muted">扫描覆盖配方材料与成品后此处显示利润排行</div>
-              )}
-              {craftOk.map((row) => (
-                <div key={row.recipe.name} className="group relative flex items-center justify-between gap-2">
-                  <span className="text-slate-100">{row.recipe.name}</span>
-                  <span className="flex items-center gap-3">
-                    <span className={row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}><Coins copper={row.profit} /></span>
-                    <span className={row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}>{formatPercent(row.marginPercent)}</span>
-                  </span>
-                  {/* Hover: how the profit was computed — per-material cost, AH-cut revenue, margin */}
-                  <div className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-80 whitespace-normal border border-terminal-border bg-terminal-panel p-2 font-mono text-[10px] leading-relaxed text-slate-200 shadow-lg group-hover:block">
-                    {row.recipe.materials.map((material) => {
-                      const unit = priceByItemId.get(material.itemId) ?? material.vendorPriceCopper;
-                      const subtotal = unit === undefined ? undefined : unit * material.quantity;
-                      return (
-                        <div key={material.itemId} className="flex items-center justify-between gap-2">
-                          <span className="text-terminal-muted">{material.name} ×{material.quantity}</span>
-                          <span>{unit === undefined ? "无价" : `@${fmtCopper(unit)}`}{subtotal !== undefined && <span className="ml-1 text-terminal-muted">={fmtCopper(subtotal)}</span>}</span>
-                        </div>
-                      );
-                    })}
-                    <div className="my-1 border-t border-terminal-border" />
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-terminal-muted">{row.recipe.name} ×{row.recipe.productQuantity}</span>
-                      <span>{fmtCopper(row.revenue)} <span className="text-terminal-muted">(含5%税)</span></span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-slate-100">利润</span>
-                      <span className={row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}>{fmtCopper(row.profit)} {formatPercent(row.marginPercent)}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {craftMissingCount > 0 && (
-                <div className="border-t border-terminal-border pt-2 text-[10px] text-terminal-muted">
-                  另有 {craftMissingCount} 个配方因缺少价格数据未计算
-                </div>
-              )}
-            </div>
-          </Panel>
+          <RecipeProfitPanel rows={conversionRows} prices={priceByItemId} floorPrices={floorPriceIndex} limitPerProfession={8} />
           <RadarParamsPanel note="游戏内权威 · 扫描后同步">
             <div className="space-y-2 font-mono text-xs">
               <p className="text-[10px] leading-relaxed text-terminal-muted">

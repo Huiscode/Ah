@@ -107,3 +107,33 @@ model AppState {
   value     String
   updatedAt DateTime @updatedAt @map("updated_at")
 }
+
+// Crafting recipes dumped by the in-game /wahrecipes command (P0-B). The
+// client never exposes a spell id from the trade-skill window, so the
+// composite (name, profession) is the identity: re-scans upsert over the
+// same key (idempotent, "重复扫描覆盖同名配方"). reagents/outputs keep the
+// addon's field names (itemId/name/quantity/vendorP) so the terminal's
+// profit engine can price every craft from the live market with the vendor
+// floor as fallback. skillLevel is the character's current skill rank at
+// dump time (display only; recipes are not filtered by learnability).
+model Recipe {
+  id         String   @id @default(cuid())
+  name       String
+  profession String
+  skillLevel Int      @default(0) @map("skill_level")
+  // 来源分类："craft" = 专业配方（/wahrecipes 扫描 + wx-wow 种子），
+  // "merchant" = 商人青睐兑换（集市商人，材料+青睐货币 → 成品）。
+  category   String   @default("craft")
+  // 商人兑换的青睐货币成本（currency id 3402）；专业配方为 0。
+  favorCost  Int      @default(0) @map("favor_cost")
+  // wx-wow 种子附加信息（扫描配方无）：技能四档难度 [学,黄,绿,灰]、
+  // 分类名（如"药水""药剂"）、配方/兑换法术 ID。
+  difficulty Json?
+  categoryName String? @map("category_name")
+  spellId    Int?     @map("spell_id")
+  reagents   Json
+  outputs    Json
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([name, profession, category])
+}

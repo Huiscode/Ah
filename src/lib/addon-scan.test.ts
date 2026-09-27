@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeAddonScan, normalizeAddonPoints, normalizeRadarRules, parseSavedVariables } from "@/lib/addon-scan";
+import { normalizeAddonRecipes, normalizeAddonScan, normalizeAddonPoints, normalizeRadarRules, parseSavedVariables } from "@/lib/addon-scan";
 
 const savedVariablesFixture = `
 WoWderhoiAH_ScanData = {
@@ -223,5 +223,50 @@ describe("normalizeRadarRules", () => {
     expect(normalizeRadarRules(null)).toBeUndefined();
     expect(normalizeRadarRules("x")).toBeUndefined();
     expect(normalizeRadarRules(undefined)).toBeUndefined();
+  });
+});
+
+describe("normalizeAddonRecipes", () => {
+  it("normalizes a /wahrecipes dump, mapping locale profession names to canonical English", () => {
+    const dump = {
+      "164|锻造铜锭": {
+        name: "锻造铜锭",
+        profession: "锻造",
+        skillLevel: 1,
+        reagents: [{ itemId: 2770, name: "铜矿石", quantity: 1, vendorP: 5 }],
+        outputs: [{ itemId: 2840, name: "铜锭", quantity: 1, vendorP: 10 }]
+      }
+    };
+    expect(normalizeAddonRecipes(dump)).toEqual([
+      {
+        name: "锻造铜锭",
+        profession: "Blacksmithing",
+        skillLevel: 1,
+        reagents: [{ itemId: 2770, name: "铜矿石", quantity: 1, vendorPrice: 5 }],
+        outputs: [{ itemId: 2840, name: "铜锭", quantity: 1, vendorPrice: 10 }]
+      }
+    ]);
+  });
+
+  it("keeps already-canonical English professions unchanged", () => {
+    const dump = {
+      "k|Mining Cooldown": {
+        name: "Mining Cooldown",
+        profession: "Mining",
+        skillLevel: 125,
+        reagents: [{ itemId: 2771, name: "Iron Ore", quantity: 1 }],
+        outputs: [{ itemId: 2841, name: "Steel Bar", quantity: 1 }]
+      }
+    };
+    expect(normalizeAddonRecipes(dump)?.[0].profession).toBe("Mining");
+  });
+
+  it("drops recipes without products and returns undefined when nothing survives", () => {
+    expect(normalizeAddonRecipes({
+      "x|无产出": { name: "无产出", profession: "锻造", skillLevel: 1, reagents: [], outputs: [] }
+    })).toBeUndefined();
+    expect(normalizeAddonRecipes(null)).toBeUndefined();
+    expect(normalizeAddonRecipes("x")).toBeUndefined();
+    expect(normalizeAddonRecipes(undefined)).toBeUndefined();
   });
 });

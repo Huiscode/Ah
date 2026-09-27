@@ -15,6 +15,7 @@ import { qualityColorClass } from "@/lib/quality";
 import { Coins } from "@/components/coins";
 import { WatchStar } from "@/components/watch-star";
 import { ItemIcon } from "@/components/item-icon";
+import { usePersistedState } from "@/lib/use-persisted-state";
 
 const sortableColumns: Array<{ key: SignalSortKey; heading: string }> = [
   { key: "price", heading: "最新价" },
@@ -44,16 +45,32 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
   // URL sort/dir params are in-session view state for client navigation, not
   // for a reload. Clearing them on mount falls back to the default ordering;
   // clicking a header (client-side replace, no remount) still sorts normally.
+  // Also: restore the last category/query from localStorage so a refresh
+  // keeps the user's filter instead of resetting to 全部.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    let changed = false;
     if (params.has("sort") || params.has("dir")) {
       params.delete("sort");
       params.delete("dir");
+      changed = true;
+    }
+    if (!params.has("cat")) {
+      const savedCat = localStorage.getItem("wah:market:category");
+      if (savedCat) { params.set("cat", savedCat); changed = true; }
+    }
+    if (!params.has("q")) {
+      const savedQ = localStorage.getItem("wah:market:query");
+      if (savedQ) { params.set("q", savedQ); changed = true; }
+    }
+    if (changed) {
       const search = params.toString();
       router.replace(`${pathname}${search ? `?${search}` : ""}` as Parameters<typeof router.replace>[0], { scroll: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);  const [query, setQuery] = useState(view.query);
+  }, []);
+
+  const [query, setQuery] = useState(view.query);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Rebuild params from the server-provided view so the URL stays the
@@ -62,7 +79,12 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
     const next = { ...view, page: 1, ...patch };
     const params = new URLSearchParams();
     if (next.query) params.set("q", next.query);
-    if (next.category) params.set("cat", next.category);
+    if (next.category) {
+      params.set("cat", next.category);
+      localStorage.setItem("wah:market:category", next.category);
+    } else {
+      localStorage.removeItem("wah:market:category");
+    }
     if (next.sortKey !== "quantity") params.set("sort", next.sortKey);
     if (next.sortAsc) params.set("dir", "asc");
     if (next.page > 1) params.set("page", String(next.page));
@@ -73,7 +95,11 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
   const onQueryChange = (value: string) => {
     setQuery(value);
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => apply({ query: value }), 300);
+    debounceRef.current = setTimeout(() => {
+      if (value) localStorage.setItem("wah:market:query", value);
+      else localStorage.removeItem("wah:market:query");
+      apply({ query: value });
+    }, 300);
   };
 
   const toggleSort = (key: SignalSortKey) => {

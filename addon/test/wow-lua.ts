@@ -103,6 +103,11 @@ export function loadAddon(options?: { locale?: string }) {
 
     setScan: (items: unknown[]) => exec(`WowTest.setScan(${toLua(items)})`),
     setPoints: (entries: unknown[]) => exec(`WowTest.setPoints(${toLua(entries)})`),
+    setTradeSkills: (entries: unknown[]) => exec(`WowTest.setTradeSkills(${toLua(entries)})`),
+    // Runs the /wahrecipes slash handler exactly as a player's chat input
+    // would: through the SlashCmdList table the addon registered into.
+    dumpRecipes: () => exec('SlashCmdList["WOWDERHOIAHRECIPES"]()'),
+    recipeCount: () => Number(evaluate("WowTest.recipeCount()")),
     openTab: () => exec("WowTest.openTab()"),
     findDeals: () => exec("WowTest.clickButton(WowTest.ns.L.FIND_DEALS)"),
     search: (query: string, listings?: unknown[]) =>

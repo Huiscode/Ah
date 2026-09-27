@@ -41,10 +41,41 @@ function writeState(state: { lastImportedScanAt: number }) {
 
 let state = readState();
 let lastImportedScanAt = state.lastImportedScanAt ?? 0;
+let lastSentRulesJson = "";
+
+const rulesUrl = importUrl.replace(/\/addon-scan\/?$/, "/rules");
+
+// Push radar rules to the lightweight endpoint when the in-game options panel
+// changes them between scans, so the web thresholds never lag a user tweak.
+async function syncRulesIfChanged(parsed: Record<string, unknown>) {
+  const db = parsed.WoWderhoiAHDB as Record<string, unknown> | undefined;
+  const settings = db?.settings as Record<string, unknown> | undefined;
+  const radarRules = settings?.radar;
+  if (radarRules === undefined) return;
+  const json = JSON.stringify(radarRules);
+  if (json === lastSentRulesJson) return;
+  try {
+    const res = await fetch(rulesUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: json
+    });
+    if (res.ok) {
+      lastSentRulesJson = json;
+      console.log("Radar rules synced (settings changed between scans).");
+    } else {
+      console.error(`Rules sync failed (${res.status}): ${await res.text()}`);
+    }
+  } catch (error) {
+    console.error("Rules sync error:", error);
+  }
+}
 
 
 async function importLatestScan() {
   const parsed = parseSavedVariables(readFileSync(savedVarsPath!, "utf8"));
+  // Sync radar settings even when there's no new scan (user tweaked options).
+  await syncRulesIfChanged(parsed);
   // v0.3.1+ persists everything under the single WoWderhoiAHDB variable
   // (the Forever beta refuses multi-variable TOC declarations); older scans
   // used the standalone WoWderhoiAH_ScanData global. Accept both.
@@ -70,6 +101,10 @@ async function importLatestScan() {
   // In-game history points, one per item per completed scan (7-day window).
   // Sent raw; the import route validates and de-duplicates them.
   const points = db?.points;
+  // P0-B: recipes dumped by /wahrecipes ride along with the next scan.
+  // Keyed by profession|name in SavedVariables; the import route normalizes
+  // and upserts them on (name, profession).
+  const recipes = db?.recipes;
 
   const response = await fetch(importUrl, {
     method: "POST",
@@ -78,6 +113,7 @@ async function importLatestScan() {
       ...scan,
       ...(radarRules !== undefined ? { rules: radarRules } : {}),
       ...(points !== undefined ? { points } : {}),
+      ...(recipes !== undefined ? { recipes } : {}),
       after: lastImportedScanAt
     })
   });
@@ -87,10 +123,11 @@ async function importLatestScan() {
   }
   lastImportedScanAt = scan.scannedAt;
   writeState({ lastImportedScanAt });
+  if (radarRules !== undefined) lastSentRulesJson = JSON.stringify(radarRules);
   console.log(
     response.status === 409
       ? `Scan ${new Date(scan.scannedAt * 1000).toISOString()} already imported, skipping.`
-      : `Imported ${body.imported} items + ${body.points ?? 0} history points from scan ${body.scannedAt}.`
+      : `Imported ${body.imported} items + ${body.points ?? 0} history points + ${body.recipes ?? 0} recipes from scan ${body.scannedAt}.`
   );
 }
 

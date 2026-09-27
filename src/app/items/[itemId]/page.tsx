@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
 import { getItemDetail, getWatchedItemIds } from "@/lib/repositories";
 import { prisma } from "@/lib/prisma";
@@ -28,10 +29,19 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const latestSnapshot = item.snapshots[item.snapshots.length - 1];
   const latestSource = (latestSnapshot?.source ?? "addon") as "addon" | "ahledger";
   const freshness = describeFreshness(latestSnapshot?.timestamp ?? null, now);
-  // Daily candles and seasonality are scoped to the latest data channel:
-  // the two channels carry different price metrics (addon P10 vs ahledger
-  // median) and their OHLCV rows must not be blended.
-  const sameSourceSummaries = item.dailySummaries.filter((summary) => (summary.source ?? "addon") === latestSource);
+  // Daily candles and seasonality follow the channel with MORE history, not
+  // merely the latest snapshot's channel: when the website channel (ahledger)
+  // has only just started, its single day of OHLCV would silently blank the
+  // K-line that the addon channel already built over several days. The two
+  // channels carry different price metrics (addon P10 vs ahledger median) and
+  // their rows are still never blended — this only picks which one to show.
+  const summaryCounts = { addon: 0, ahledger: 0 };
+  for (const summary of item.dailySummaries) {
+    const src = (summary.source ?? "addon") === "ahledger" ? "ahledger" : "addon";
+    summaryCounts[src] += 1;
+  }
+  const chartSource: "addon" | "ahledger" = summaryCounts.ahledger > summaryCounts.addon ? "ahledger" : "addon";
+  const sameSourceSummaries = item.dailySummaries.filter((summary) => (summary.source ?? "addon") === chartSource);
   const seasonality = buildWeekdaySeasonality(sameSourceSummaries);
   const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
   const candleData = sameSourceSummaries.map((summary) => ({
@@ -84,7 +94,10 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             数据更新于 {freshness.label}
           </div>
         </div>
-        <span className="text-xl"><WatchStar itemId={item.itemId} watched={watchedIds.has(item.itemId)} /></span>
+        <div className="flex items-center gap-3">
+          <Link href="/" className="font-mono text-xs text-terminal-amber hover:underline">← 返回主页</Link>
+          <span className="text-xl"><WatchStar itemId={item.itemId} watched={watchedIds.has(item.itemId)} /></span>
+        </div>
       </div>
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
@@ -102,14 +115,14 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
               {candleData.length >= 2
                 ? <CandlestickChart data={candleData} />
                 : <div className="p-4 font-mono text-xs text-terminal-muted">
-                    {latestSource === "ahledger"
+                    {chartSource === "ahledger"
                       ? "K 线需至少 2 天的网站数据（网站通道逐日积累）"
                       : "K 线需要至少 2 天的扫描数据"}
                   </div>}
             </div>
           </Panel>
           <Panel>
-            <PanelHeader title={`星期几季节性 (${latestSource === "ahledger" ? "中位收盘" : "P10收盘"} · 相对全部天数中位数的偏差)`} />
+            <PanelHeader title={`星期几季节性 (${chartSource === "ahledger" ? "中位收盘" : "P10收盘"} · 相对全部天数中位数的偏差)`} />
             <div className="grid grid-cols-7 gap-px bg-terminal-border font-mono text-xs">
               {seasonality.map((day) => (
                 <div key={day.weekday} className="bg-terminal-panel px-2 py-3 text-center">
@@ -147,6 +160,35 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                   </div>
                 </>
               )}
+            </div>
+          </Panel>
+          <Panel>
+            <PanelHeader title="价格档位" />
+            <div className="p-4 font-mono text-xs">
+              {(() => {
+                const rp = latestSnapshot?.rawPayload as { ladder?: Array<{ price: number; count: number }> } | null;
+                const ladder = rp?.ladder;
+                if (!ladder || ladder.length === 0) return <div className="text-terminal-muted">最近一次扫描未记录价格档位（下次 /wahscan 后自动出现）</div>;
+                return (
+                  <table className="w-full">
+                    <thead className="text-terminal-muted">
+                      <tr><td className="py-1">价格</td><td className="text-right">数量</td><td className="text-right">累计</td></tr>
+                    </thead>
+                    <tbody>
+                      {ladder.map((row, i) => {
+                        const cum = ladder.slice(0, i + 1).reduce((s, r) => s + r.count, 0);
+                        return (
+                          <tr key={i} className={i === 0 ? "text-terminal-amber" : ""}>
+                            <td className="py-1"><Coins copper={row.price} /></td>
+                            <td className="text-right">{row.count}</td>
+                            <td className="text-right text-terminal-muted">{cum}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                );
+              })()}
             </div>
           </Panel>
           <Panel>

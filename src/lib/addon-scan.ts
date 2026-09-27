@@ -18,6 +18,7 @@ export type AddonScanItem = {
   quantity: number;
   numAuctions: number;
   vendorPrice: number; // NPC sell price in copper; 0 = unsellable to vendors
+  ladder?: Array<{ price: number; count: number }>; // bottom-5 price tiers
 };
 
 // Route-2 authority mirror: the in-game options panel owns these values and
@@ -55,6 +56,45 @@ export type AddonPoint = {
   timestamp: Date; // seconds -> epoch ms at normalization
   marketPrice: number; // P10 close, copper
   quantity: number; // listed quantity at that scan; 0 when absent
+};
+
+// One recipe dumped by /wahrecipes (P0-B). The client never exposes a spell
+// id, so (name, profession) is the identity — re-scans upsert over it. Each
+// material/product carries the vendor floor the addon dumped alongside, the
+// side effect that completes the Forever-only floor-price dictionary.
+export type AddonRecipeMaterial = {
+  itemId: number;
+  name: string;
+  quantity: number;
+  vendorPrice?: number; // NPC SellPrice in copper, dumped by /wahrecipes
+};
+
+export type AddonRecipe = {
+  name: string;
+  profession: string;
+  skillLevel: number; // skill level required to learn/use the recipe
+  reagents: AddonRecipeMaterial[];
+  outputs: AddonRecipeMaterial[];
+};
+
+// The client localizes profession names (zhCN: 锻造/制皮/…). Recipe rows —
+// both the classic seed (English canonical names) and in-game dumps — must
+// share one namespace for the (name, profession) key and the panel's
+// profession filter, so dump professions are normalized to the canonical
+// English names. Unknown names pass through untouched.
+export const PROFESSION_ZH_TO_EN: Record<string, string> = {
+  "锻造": "Blacksmithing",
+  "制皮": "Leatherworking",
+  "裁缝": "Tailoring",
+  "炼金术": "Alchemy",
+  "工程学": "Engineering",
+  "烹饪": "Cooking",
+  "急救": "First Aid",
+  "采矿": "Mining",
+  "附魔": "Enchanting",
+  "钓鱼": "Fishing",
+  "草药学": "Herbalism",
+  "剥皮": "Skinning"
 };
 
 type LuaValue = string | number | boolean | null | { [key: string]: LuaValue };
@@ -267,13 +307,17 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
         marketPrice: requirePositiveInt(entry.marketPrice, "marketPrice", key),
         quantity: requirePositiveInt(entry.quantity, "quantity", key),
         numAuctions: requirePositiveInt(entry.numAuctions, "numAuctions", key),
-        vendorPrice: normalizeVendorPrice(entry.vendorP, key)
+        vendorPrice: normalizeVendorPrice(entry.vendorP, key),
+        ...(() => {
+          const raw = entry.ladder as any;
+          if (!raw || typeof raw !== 'object') return {};
+          const arr = Array.isArray(raw) ? raw : Object.values(raw);
+          const ladder = arr.filter((l: any) => l && typeof l.price === 'number' && typeof l.count === 'number');
+          return ladder.length > 0 ? { ladder } : {};
+        })()
       };
     })
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-  if (items.length === 0) {
-    throw new Error("Addon scan items contained no usable entries after filtering empty names");
-  }
 
   return {
     scannedAt: new Date(scan.scannedAt * 1000),
@@ -284,6 +328,58 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
       ? { rules: normalizeRadarRules(scan.rules) }
       : {})
   };
+}
+
+// In-game recipe dumps are auxiliary to the scan snapshot: a malformed or
+// empty payload must never reject the good scan it rides with. Each recipe
+// is validated in isolation and dropped on failure; entries without any
+// product are useless to the profit engine and are dropped too. If nothing
+// survives, the whole payload is omitted and the terminal keeps its stored
+// recipes. Field names mirror the addon's Lua output (vendorP, not
+// vendorPrice).
+function normalizeMaterialList(raw: unknown): AddonRecipeMaterial[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AddonRecipeMaterial[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const entry = item as Record<string, unknown>;
+    const itemId = typeof entry.itemId === "number" && Number.isInteger(entry.itemId) && entry.itemId > 0 ? entry.itemId : NaN;
+    if (!Number.isFinite(itemId)) continue;
+    const name = typeof entry.name === "string" && entry.name !== "" ? entry.name : `Item ${itemId}`;
+    const quantity = typeof entry.quantity === "number" && Number.isFinite(entry.quantity) && entry.quantity > 0 ? Math.round(entry.quantity) : 1;
+    const material: AddonRecipeMaterial = { itemId, name, quantity };
+    if (typeof entry.vendorP === "number" && Number.isFinite(entry.vendorP) && entry.vendorP > 0) {
+      material.vendorPrice = Math.round(entry.vendorP);
+    }
+    out.push(material);
+  }
+  return out;
+}
+
+export function normalizeAddonRecipes(raw: unknown): AddonRecipe[] | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const source = raw as Record<string, unknown>;
+  const recipes: AddonRecipe[] = [];
+  for (const [key, value] of Object.entries(source)) {
+    if (typeof value !== "object" || value === null) continue;
+    const entry = value as Record<string, unknown>;
+    if (typeof entry.name !== "string" || entry.name === "") continue;
+    const reagents = normalizeMaterialList(entry.reagents);
+    const outputs = normalizeMaterialList(entry.outputs);
+    if (outputs.length === 0) continue;
+    recipes.push({
+      name: entry.name,
+      profession: typeof entry.profession === "string"
+        ? PROFESSION_ZH_TO_EN[entry.profession] ?? entry.profession
+        : "",
+      skillLevel: typeof entry.skillLevel === "number" && Number.isFinite(entry.skillLevel)
+        ? Math.max(0, Math.round(entry.skillLevel))
+        : 0,
+      reagents,
+      outputs
+    });
+  }
+  return recipes.length > 0 ? recipes : undefined;
 }
 
 // In-game price history is auxiliary to the scan snapshot: a malformed or

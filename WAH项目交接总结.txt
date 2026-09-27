@@ -1,0 +1,155 @@
+================================================================
+WoWderhoiAH（魔兽世界拍卖行助手）项目交接总结
+================================================================
+生成时间：2026-09-26 约 07:00（丹麦本地，UTC+2）
+用途：本文件给下一个工作对话读取，接续开发/维护。
+作者侧状态：dev server 与 watcher 均在运行，功能全部验证通过。
+
+================================================================
+一、项目是什么
+================================================================
+项目根目录：C:\Users\Hz\Documents\Workspace\Ah
+用户玩的服：魔兽世界 无限服 测试服阶段（周年服类）——版本日历功能暂无用。
+性质：拍卖行行情数据采集 + 短线交易决策终端。
+组成：
+  1) 游戏内 Lua 插件（AddOn）：自动扫描拍卖行，内存积累行情与历史点。
+  2) 网页端（Next.js，:3000）：行情总览、捡漏雷达、制造利润、市场监控、
+     单物品详情（盘中走势/K线/季节性/预警）、雷达参数只读跟随、版本日历。
+  3) 监控进程（scripts/watch-savedvars.ts）：检测 SavedVariables 文件变化，
+     自动 POST 到网页导入接口。
+
+================================================================
+二、架构与数据链路（重要，别理解错）
+================================================================
+插件每轮扫描 → 内存构造数据（当前轮快照 + 每物品历史点 points）→
+仅在小退 / /reload 时写盘 SavedVariables（单变量 WoWderhoiAHDB）→
+watch-savedvars 检测文件 mtime 变化 → POST /api/import/addon-scan → 入库。
+
+关键点：
+- 插件内存 points 每轮对每个物品追加 {t,c,q}（t=epoch秒, c=P10收盘, q=在售量），
+  保留 7 日 / 每物品最多 192 点。插件不会把 points 常驻磁盘，只在写盘瞬间落盘。
+- 游戏内 8 小时夜间挂机：自动扫描（/wahauto，约 15 分钟一轮）在内存积累
+  points，早上小退一次写盘 → 导入器一次性把整夜全部轮次批量入库（多天日线聚合）。
+  注意：插件 ADDON_LOADED 时不会从文件读回 points（内存从零开始），
+  所以"早上先小退（触发导入）再重新登录"是关键流程，否则新写盘会覆盖旧点。
+- 客户端禁用插件文件 IO（/wahtestio → io=nil），插件无法自读文件。
+- reload 后 AuctionHouseFrame 不存在，插件无法自动重开拍卖行
+  （"自动重载闭环"方案已实测证死并回滚）。
+
+================================================================
+三、关键路径与环境
+================================================================
+- 游戏插件运行副本：
+  C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\WoWderhoiAH
+  （addon\WoWderhoiAH\ 下的 Lua 改完必须 Copy-Item 同步过去）
+- SavedVariables：
+  C:\Program Files (x86)\World of Warcraft\_classic_beta_\WTF\Account\1120133458#1\SavedVariables\WoWderhoiAH.lua
+- .env：AQT_SAVEDVARS_PATH 指上面，AQT_IMPORT_URL=http://localhost:3000/api/import/addon-scan，
+  DATABASE_URL="file:./dev.db"（真实库 prisma/dev.db）
+- dev server：:3000（日志 WAH-web.log）；watcher：scripts/watch-savedvars.ts
+  （日志 WAH-watch.log / WAH-watch.err.log，当前由 Start-Process 后台启动）
+- watcher 断点持久化：scripts/.watch-state.json（已加入 .gitignore）
+- Git：remote https://github.com/Huiscode/Ah.git main。
+  【重要】本地有多笔 commit 未 push（最近：8a78b8f points导入 / 3ff121a P2002修复 /
+  bf10d40 时区 / ff23276 gitignore），需要用户确认后再 push。
+- SQLite 存储格式：Prisma DateTime 存 epoch 毫秒数字（非 ISO 字符串），
+  查询/删除务必用毫秒数字。
+
+================================================================
+四、已完成功能（按时间线）
+================================================================
+1. 基础扫描导入、市场监控表（分类/排序/分页/搜索）。
+2. 单物品详情页：盘中走势（逐次扫描曲线）、日K线（OHLCV）、星期几季节性、
+   行情概要（P10市价/最低价/7日P10中位/折扣/环比/在售量/挂单数）、价格预警。
+3. 捡漏雷达（NPC必赚 + 利润/折扣/流动性门槛），雷达表格：12行窗口+滚动+
+   分隔线+可点击表头排序+与市场监控列对齐（P10起左移5mm等视觉细节均已调）。
+4. 制造利润（配方成本/利润排行）。
+5. 雷达参数：游戏内设置面板为权威（中文参数名，参数整块可隐藏开关），
+   每次扫描回传网页（RadarParamsPanel 只读跟随，制造利润置顶）。
+   参数：绝对利润下限(默认30铜)/相对利润下限(0.25)/最大折扣(0.85)/信任深度上限(0.75)/
+   最低挂单数(3)/历史样本数(3)/中位去重样本(2)/供给收缩(关)/供给量上限(0)。
+6. 历史点批量入库（夜间挂机记录）：normalizeAddonPoints → mergePointsIntoDailySummaries
+   （多天OHLCV聚合）→ 导入路由 points 过滤去重（after 语义）→ 同一事务写库。
+7. 修复 P2025/P2002：跨午夜 points 归各自日；扫描时刻归一为当天零点后查询
+   当日已有日线（否则真实时刻扫描必 P2002）。已端到端验证。
+8. 网页端时间统一为丹麦时区（Europe/Copenhagen）：K线日期标签、版本日历；
+   走势图本就是浏览器本地时间。
+9. 已撤销功能：autoSave 自动重载方案（技术死路）、悬停物品属性（用户要求还原）、
+   流动性下限（用户要求删除）、5S 高利润门槛（被否，用 30 铜默认）。
+
+================================================================
+五、最近修复与验证（本窗口最后工作）
+================================================================
+- P2002 根因：affectedDates 里 scannedAt.getTime() 是完整毫秒，与库中"当天零点"
+  不匹配 → existingDayRows 查不到 → createMany 撞唯一约束。修复为 UTC 当天零点归一，
+  用"非零点扫描+已有日线行"场景验证：正确 update（open 保留、close/高低/量更新）。
+- 测试门禁：npm run test = 147/147；npm run typecheck 干净。
+- 当前数据状态：今早 06:37（丹麦）= 04:37 UTC 有一轮 1862 物品导入成功，
+  含铜矿石(2770)；9/26 日线 1862 行。夜里游戏掉线（"等待重新连接"），
+  23:00-06:00 无扫描轮次属正常，不是数据丢失。
+- 旧版 watcher（昨日 15:13 启动，不带 points）已替换为新版并验证：
+  启动即跳过已导入扫描（409），状态写入 scripts/.watch-state.json。
+
+================================================================
+六、当前运行状态（2026-09-26 07:00）
+================================================================
+- dev server（:3000）：运行中，GET / 200。
+- watcher（新版，带 points + after + watch-state）：运行中，
+  WAH-watch.log 显示 "Watching ... / Posting new scans to ..."。
+- 游戏：用户侧状态未知（早上掉线重连过，已 reload）。
+- 数据库：prisma/dev.db，Item 2045 行（category 全 unknown，等重扫回填）。
+
+================================================================
+七、待办与未决事项
+================================================================
+1. 【未 push】本地 commit 待用户确认后 git push origin main（4 笔左右）。
+2. K线"一天"按 UTC 日分组：丹麦凌晨 00:00~02:00 的扫描会归到前一天蜡烛。
+   用户若在意可改为丹麦日分组（改动较大，涉及 daily-summary/route 归一逻辑，
+   且历史行已聚合不可逆，需谨慎）。
+3. 游戏存档 WoWderhoiAHDB.settings 残留 autoSave=true 键（旧功能回滚后未清，
+   DEFAULTS 合并不清旧键；无害，但下次改 Settings.lua 时可顺手清）。
+4. K线 Y 轴价格用 compact 格式吞精度（高低都显示 1s 类），
+   曾提议改精确到铜，用户未拍板。
+5. 无限服测试服阶段：版本日历无实际用途（当前为空即可）。
+6. 插件 Item 表 category 全 'unknown'，需完整重扫回填（自动，无需干预）。
+
+================================================================
+八、操作手册
+================================================================
+- 启动/重启 watcher（新版）：
+    Set-Location "C:\Users\Hz\Documents\Workspace\Ah"
+    $p = Start-Process npm.cmd -ArgumentList "run","addon:watch" `
+      -RedirectStandardOutput ".\WAH-watch.log" -RedirectStandardError ".\WAH-watch.err.log" `
+      -WindowStyle Hidden -PassThru
+  检查：Get-CimInstance Win32_Process -Filter "Name='node.exe'" | ? { $_.CommandLine -match "watch-savedvars" }
+- 游戏目录同步（改 Lua 后必做）：
+    Copy-Item addon\WoWderhoiAH\*.lua "C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\WoWderhoiAH\" -Force
+- 测试/类型检查：npm run test（147/147）、npm run typecheck。
+- 查库（毫秒数字）：node -e 脚本连 prisma/dev.db（sqlite3 node:sqlite）。
+- dev server 日志：WAH-web.log；watcher 日志：WAH-watch.log。
+- 游戏内命令：/wahscan 手动扫描、/wahauto 自动扫描、/wahopt 设置、/wahtestio 诊断IO。
+
+================================================================
+九、用户偏好与已确认决策（避免重做）
+================================================================
+- 全程简体中文沟通；参数/界面文案用中文。
+- 雷达参数：游戏内设置面板为唯一权威，网页只读跟随；参数整块可隐藏。
+- 雷达表格 12 行窗口、可滚动、可排序、分隔线、与市场监控列对齐。
+- 网页端时间显示统一丹麦时区。
+- 已否决策：autoSave 自动重载（技术死路）、悬停物品属性、流动性下限、
+  5S 高利润门槛、改每行尺寸/窗口尺寸、版本日历内容。
+- 用户玩"无限服 测试服"，开服初期，价格以铜为单位波动大。
+
+================================================================
+十、已知坑与注意事项
+================================================================
+- 不要用 ISO 字符串查 SQLite DateTime，用 epoch 毫秒数字。
+- Prisma 数组事务在 SQLite 可用（createMany→update 同键 OK），
+  但 route 里 effectiveExisting 只允许"快照当天"的 points 行参与快照折叠。
+- DailySummary 主键是 TEXT id（Prisma 生成），手动 SQL 插入必须带 id。
+- 游戏时区与用户本地不一致（美服时区），时间展示一律以欧洲/哥本哈根为准。
+- watcher 进程重启后 after 从 watch-state 续读；首次 after=0 由服务端
+  existingAfter 全表探针去重兜底。
+- 夜间记录正确流程（务必告知用户）：挂机 → 早上先小退（触发写盘导入）
+  → 再重新登录玩；确认游戏不掉线。
+================================================================

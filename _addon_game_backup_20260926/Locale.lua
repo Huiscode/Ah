@@ -21,6 +21,10 @@ local L = {
   AUTO_ON = "Auto-rescan ON: rescans every ~15 min while the AH is open. (persisted)",
   AUTO_OFF = "Auto-rescan OFF. (persisted)",
   AUTO_TRIGGER = "Auto-rescan: full-scan cooldown elapsed.",
+  SCAN_AUTOSAVE_ARMED = " Auto-save in 1 min (UI reload, data to disk + terminal).",
+  AUTOSAVE_RELOAD = "Auto-save: reloading the UI to write the scan to disk.",
+  AUTOSAVE_COMBAT = "In combat — auto-save deferred 1 min.",
+  AUTOSAVE_CYCLE_RESUME = "Auto-save cycle: reopened the auction house — rescanning when the cooldown ends.",
   -- tooltip
   TT_SCAN_HEADER = "This scan (%d min ago)",
   TT_SCAN_STALE = "Scan data outdated — run /wahscan to refresh",
@@ -85,6 +89,8 @@ local L = {
   OPT_SUBTITLE = "/wahscan scan now | /wahauto toggle auto-rescan | /wah status",
   OPT_AUTOSCAN = "Auto-rescan at the auction house",
   OPT_AUTOSCAN_TIP = "Rescan automatically every ~15 minutes (full-scan cooldown) while the AH window stays open.",
+  OPT_AUTOSAVE = "Auto-save after each scan",
+  OPT_AUTOSAVE_TIP = "One minute after each completed scan, reload the UI so the data is written to disk and synced to the desktop terminal; the AH reopens and the next scan starts on its own. Leave this on overnight with the monitor off; turn it off while you are actively playing.",
   OPT_TOOLTIP = "Price info on item tooltips",
   OPT_TOOLTIP_TIP = "Market/min price, averages, trend, range, supply and volatility on every item tooltip.",
   OPT_CHART = "Price chart beside the auction frame",
@@ -112,12 +118,7 @@ local L = {
   OPT_R_DISTINCT_TIP = "Distinct 7d P10 values required: a flat series is one camper's ask, not a market. 2 = default.",
   OPT_R_HISTORY = "minHistory",
   OPT_R_HISTORY_TIP = "Scans inside the 7d window before the median means anything. 3 = default.",
-  SETTINGS_AH_RESTORED = "Settings closed - auction house restored. Run /wahscan to rescan.",
-  -- recipes (P0-B /wahrecipes)
-  RECIPES_API_MISSING = "This client has no trade-skill window API (GetNumTradeSkills/GetTradeSkillInfo). Open the profession window (K) and run /wahrecipes again, or check /console scriptErrors 1.",
-  RECIPES_EMPTY = "No recipes read — the profession window shows no learnable recipes right now. Open it (K), select the profession, then run /wahrecipes again.",
-  RECIPES_DONE = "%d recipes dumped (%d total stored, profession: %s). Logout or /reload to land them on disk.",
-  RECIPES_NO_PROFESSION = "unknown"
+  SETTINGS_AH_RESTORED = "Settings closed - auction house restored. Run /wahscan to rescan."
 }
 
 if GetLocale() == "zhCN" then
@@ -137,6 +138,10 @@ if GetLocale() == "zhCN" then
   L.AUTO_ON = "自动重扫已开启：拍卖行开着时每约 15 分钟重扫一次。（已保存）"
   L.AUTO_OFF = "自动重扫已关闭。（已保存）"
   L.AUTO_TRIGGER = "自动重扫：全量扫描冷却结束。"
+  L.SCAN_AUTOSAVE_ARMED = " 将于 1 分钟后自动重载保存（数据写入磁盘并同步网页终端）。"
+  L.AUTOSAVE_RELOAD = "自动保存：正在重载界面，将本次扫描写入磁盘。"
+  L.AUTOSAVE_COMBAT = "战斗中 — 自动保存推迟 1 分钟。"
+  L.AUTOSAVE_CYCLE_RESUME = "自动保存循环：已重新打开拍卖行 — 冷却结束后自动重扫。"
   L.TT_SCAN_HEADER = "本次扫描（%d 分钟前）"
   L.TT_SCAN_STALE = "扫描数据已过期 — 请 /wahscan 重新扫描"
   L.TT_MIN = "最低价"
@@ -195,6 +200,8 @@ if GetLocale() == "zhCN" then
   L.OPT_SUBTITLE = "/wahscan 立即扫描 | /wahauto 切换自动重扫 | /wah 查看状态"
   L.OPT_AUTOSCAN = "拍卖行自动重扫"
   L.OPT_AUTOSCAN_TIP = "拍卖行开着时每约 15 分钟（全量扫描冷却）自动重扫。"
+  L.OPT_AUTOSAVE = "每次扫描后自动保存"
+  L.OPT_AUTOSAVE_TIP = "每次扫描完成 1 分钟后自动重载界面，把数据写入磁盘并同步到网页终端；重载后自动重开拍卖行、冷却结束自动继续下一轮。夜里挂机/关显示器时开启；白天自己操作时请关闭。"
   L.OPT_TOOLTIP = "物品提示框显示价格信息"
   L.OPT_TOOLTIP_TIP = "在每个物品提示框显示市价/最低价、均价、趋势、区间、供给与波动率。"
   L.OPT_CHART = "拍卖行旁显示价格图表"
@@ -222,10 +229,6 @@ if GetLocale() == "zhCN" then
   L.OPT_R_HISTORY = "历史样本数"
   L.OPT_R_HISTORY_TIP = "7 日窗口内中位有效所需的最少扫描次数。3=默认。"
   L.SETTINGS_AH_RESTORED = "设置已关闭，已恢复拍卖行。请运行 /wahscan 重新扫描。"
-  L.RECIPES_API_MISSING = "当前客户端没有专业技能窗口 API（GetNumTradeSkills/GetTradeSkillInfo）。请打开技能面板（按 K）后再运行 /wahrecipes，或 /console scriptErrors 1 查看报错。"
-  L.RECIPES_EMPTY = "未读取到配方 — 当前技能窗口没有可读配方。请打开技能面板（按 K）选中专业后再运行 /wahrecipes。"
-  L.RECIPES_DONE = "已采集 %d 个配方（共存储 %d 个，专业：%s）。小退或 /reload 后写入磁盘。"
-  L.RECIPES_NO_PROFESSION = "未知专业"
 end
 
 WAH.L = L

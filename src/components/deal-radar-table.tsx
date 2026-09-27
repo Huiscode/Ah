@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import Link from "next/link";
 import { ItemIcon } from "@/components/item-icon";
@@ -8,8 +8,10 @@ import { Coins } from "@/components/coins";
 import { WatchStar } from "@/components/watch-star";
 import { qualityColorClass } from "@/lib/quality";
 import { formatPercent } from "@/lib/utils";
-import { categoryLabel } from "@/lib/category-zh";
+import { categoryLabel, categoryMatches } from "@/lib/category-zh";
 import type { DealRadarRow } from "@/lib/analytics";
+import { usePersistedState } from "@/lib/use-persisted-state";
+import type { PricePoint } from "@/lib/ladders";
 
 type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" | "changePercent" | "quantity" | "numAuctions";
 
@@ -19,20 +21,44 @@ type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" |
 // Headers sort: first click high-to-low, second click low-to-high; without
 // any click the rows keep the radar's own ranking (NPC deals first, then
 // absolute profit).
-export function DealRadarTable({ deals, prices, categories, watchedItemIds }: {
+export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladders }: {
   deals: DealRadarRow[];
   prices: Map<number, number>;
   categories: string[];
   watchedItemIds: number[];
+  ladders: Map<number, PricePoint[]>;
 }) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = usePersistedState<string>("wah:deal-radar:category", "");
+  const [gapFilterOn, setGapFilterOn] = usePersistedState<boolean>("wah:deal-radar:gap-on", false);
+  const [gap1Pct, setGap1Pct] = usePersistedState<number>("wah:deal-radar:gap1", 15);
+  const [gap2Pct, setGap2Pct] = usePersistedState<number>("wah:deal-radar:gap2", 15);
   const watched = new Set(watchedItemIds);
 
-  const rows = category
-    ? deals.filter((deal) => deal.category === category)
+  useEffect(() => {
+    if (category && !categories.includes(category)) setCategory("");
+  }, [categories, category, setCategory]);
+
+  let rows = category
+    ? deals.filter((deal) => categoryMatches(deal.category, category))
     : [...deals];
+
+  // 价格断层筛选：第1档比第2档便宜 ≥ gap1Pct%，第2档比第3档便宜 ≥ gap2Pct%。
+  if (gapFilterOn) {
+    rows = rows.filter((deal) => {
+      const ladder = ladders.get(deal.itemId);
+      if (!ladder || ladder.length < 2) return false;
+      const [t1, t2, t3] = ladder;
+      const gap1 = (t2.price - t1.price) / t2.price * 100;
+      if (gap1 < gap1Pct) return false;
+      if (t3) {
+        const gap2 = (t3.price - t2.price) / t3.price * 100;
+        if (gap2 < gap2Pct) return false;
+      }
+      return true;
+    });
+  }
   if (sortKey) {
     rows.sort((left, right) => {
       const a = sortKey === "name" ? left.name : sortKey === "price" ? (prices.get(left.itemId) ?? 0) : left[sortKey];
@@ -65,6 +91,18 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds }: {
           ))}
         </select>
         <span className="text-terminal-muted">{rows.length} / {deals.length} 条</span>
+        <label className="ml-2 inline-flex items-center gap-1 text-terminal-muted">
+          <input type="checkbox" checked={gapFilterOn} onChange={(e) => setGapFilterOn(e.target.checked)} />
+          价格断层
+        </label>
+        {gapFilterOn && (
+          <span className="inline-flex items-center gap-1 text-terminal-muted">
+            1比2低
+            <input type="number" value={gap1Pct} onChange={(e) => setGap1Pct(Number(e.target.value))} className="w-12 border border-terminal-border bg-terminal-panel2 px-1 py-0.5 text-slate-100" />%
+            2比3低
+            <input type="number" value={gap2Pct} onChange={(e) => setGap2Pct(Number(e.target.value))} className="w-12 border border-terminal-border bg-terminal-panel2 px-1 py-0.5 text-slate-100" />%
+          </span>
+        )}
       </div>
       <div className="max-h-[344px] overflow-y-auto [scrollbar-gutter:stable]">
       <table className="w-full min-w-[1000px] table-fixed border-collapse font-mono text-xs">

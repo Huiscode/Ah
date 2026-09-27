@@ -293,6 +293,45 @@ end
 -- the addon's chart-title fallback calls it, so it must exist here too.
 function GetItemInfo(itemId) return C_Item.GetItemInfoByID(itemId) end
 
+-- ============ Trade-skill window (classic API, P0-B /wahrecipes) ======
+-- The recipes module reads the currently open profession window through
+-- these four functions. Entries mirror the classic shapes: a header row
+-- carries the profession name (and current skill rank), a recipe row the
+-- recipe name and its skill-level requirement; reagents/results walk index
+-- 1..n until nil. Links carry the item id the way the client formats them.
+local TRADE_SKILL_DEFAULT_MAX = 300
+function GetNumTradeSkills() return #(bed.tradeSkills or {}) end
+function GetTradeSkillInfo(index)
+  local entry = bed.tradeSkills and bed.tradeSkills[index]
+  if not entry then return nil end
+  local isHeader = entry.isHeader and 1 or nil
+  return entry.name, isHeader, isHeader and 1 or nil,
+    entry.rank or 0, TRADE_SKILL_DEFAULT_MAX, entry.isHeader and nil or 1, 0
+end
+function GetTradeSkillReagentInfo(index, slot)
+  local entry = bed.tradeSkills and bed.tradeSkills[index]
+  local reagent = entry and entry.reagents and entry.reagents[slot]
+  if not reagent then return nil end
+  return reagent.name, "inv_misc", reagent.count or 1, reagent.link
+end
+function GetTradeSkillResultInfo(index, slot)
+  local entry = bed.tradeSkills and bed.tradeSkills[index]
+  local result = entry and entry.results and entry.results[slot]
+  if not result then return nil end
+  return result.name, "inv_misc", result.count or 1, result.link
+end
+function GetTradeSkillList() return bed.tradeSkillList and bed.tradeSkillList[1], bed.tradeSkillList and bed.tradeSkillList[2] end
+
+function bed.setTradeSkills(entries) bed.tradeSkills = entries or {} end
+function bed.setTradeSkillList(list) bed.tradeSkillList = list end
+function bed.recipes() return WoWderhoiAHDB and WoWderhoiAHDB.recipes end
+function bed.recipeCount()
+  local recipes = WoWderhoiAHDB and WoWderhoiAHDB.recipes
+  local n = 0
+  if recipes then for _ in pairs(recipes) do n = n + 1 end end
+  return n
+end
+
 -- ============================== WoW globals ===========================
 
 function GetAuctionSellItemInfo() return bed.sellItem and bed.sellItem.name, nil, bed.sellItem and bed.sellItem.count end

@@ -49,6 +49,27 @@ local function autoScanOn()
   return WAH.settings and WAH.settings.autoScan
 end
 
+local function autoSaveOn()
+  return WAH.settings and WAH.settings.autoSave
+end
+
+-- Auto-save: one minute after a completed scan, reload the UI so the
+-- client writes SavedVariables to disk and the desktop terminal imports
+-- the scan. After the reload the boot hook reopens the auction house and
+-- the auto-rescan ticker starts the next round, so an unattended session
+-- (monitor off overnight) lands every scan in the database.
+local function tryAutoReload(attempts)
+  if UnitAffectingCombat and UnitAffectingCombat("player") then
+    if attempts and attempts < 30 then -- defer while fighting, give up after ~30 min
+      C_Timer.After(60, function() tryAutoReload(attempts + 1) end)
+      chatMessage(L.AUTOSAVE_COMBAT)
+      return
+    end
+  end
+  chatMessage(L.AUTOSAVE_RELOAD)
+  ReloadUI()
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("REPLICATE_ITEM_LIST_UPDATE")
 frame:RegisterEvent("AUCTION_HOUSE_CLOSED")
@@ -103,20 +124,6 @@ local function printReplicateProbe()
   chatMessage(string.format(L.SCAN_PROBE, #probe0, table.concat(parts, " | ")))
 end
 
--- Icon texture name (e.g. "inv_staff_13") for one itemId, resolved through
--- the retail texture API with a safe fallback. nil means the client has no
--- cache entry yet; GET_ITEM_INFO_RECEIVED backfills it once the info lands.
-local function itemIconName(itemId)
-  if C_Item and C_Item.GetItemIconByID then
-    local t = C_Item.GetItemIconByID(itemId)
-    if type(t) == "string" and t ~= "" then
-      local file = t:match("([^\\]+)$")
-      if file and file ~= "" then return file end
-    end
-  end
-  return nil
-end
-
 -- Class/subclass + vendor price for one itemId, cached for the scan's
 -- lifetime. Retail returns numeric classIDs; translate to localized names
 -- (the terminal stores category strings) with a safe fallback when the
@@ -160,13 +167,6 @@ WAH.refreshPendingCategories = function(itemId)
     entry.itemClass, entry.itemSubClass = itemClass, itemSubClass
     local cache = scanState.itemInfoCache[itemId]
     if cache then cache.class, cache.subClass = itemClass, itemSubClass end
-    if entry.icon == nil or entry.icon == "" then
-      local icon = itemIconName(itemId)
-      if icon then
-        entry.icon = icon
-        if cache then cache.icon = icon end
-      end
-    end
     scanState.pendingCategory[itemId] = nil
   end
 end
@@ -184,18 +184,13 @@ local function recordAuction(info)
     local cached = scanState.itemInfoCache[itemId]
     if cached == nil then
       local itemClass, itemSubClass, vendorPrice = itemCategoryAndVendor(itemId)
-      cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice, icon = itemIconName(itemId) }
+      cached = { class = itemClass, subClass = itemSubClass, vendorP = vendorPrice }
       scanState.itemInfoCache[itemId] = cached
     end
     -- The client may not have this item's info cached yet; flag it so
-    -- GET_ITEM_INFO_RECEIVED can backfill the category in place. The
-    -- replicate stream never loads item info by itself, so ask the client
-    -- to fetch it -- otherwise the flag would sit until the next scan.
+    -- GET_ITEM_INFO_RECEIVED can backfill the category in place.
     if cached.class == "unknown" or cached.subClass == "unknown" then
       scanState.pendingCategory[itemId] = true
-      if C_Item and C_Item.RequestLoadItemDataByID then
-        C_Item.RequestLoadItemDataByID(itemId)
-      end
     end
     entry = {
       name = name,
@@ -203,7 +198,6 @@ local function recordAuction(info)
       itemClass = cached.class,
       itemSubClass = cached.subClass,
       vendorP = cached.vendorP,
-      icon = cached.icon,
       minPrice = unitPrice,
       listings = {}, -- { price = unit price, count } for the weighted median
       quantity = 0,
@@ -251,17 +245,6 @@ local function finishScan(totalAuctions)
   local itemCount = 0
   for itemId, entry in pairs(scanState.itemsById) do
     table.sort(entry.listings, function(left, right) return left.price < right.price end)
-    local ladder = {}
-    local lastPrice = nil
-    for _, listing in ipairs(entry.listings) do
-      if listing.price == lastPrice then
-        ladder[#ladder].count = ladder[#ladder].count + listing.count
-      else
-        ladder[#ladder + 1] = { price = listing.price, count = listing.count }
-        lastPrice = listing.price
-      end
-      if #ladder >= 5 then break end
-    end
     items[itemId] = {
       name = entry.name,
       quality = entry.quality,
@@ -273,8 +256,7 @@ local function finishScan(totalAuctions)
       p5 = math.floor(weightedPercentile(entry.listings, entry.quantity, 0.05) + 0.5),
       marketPrice = math.floor(weightedPercentile(entry.listings, entry.quantity, 0.10) + 0.5),
       quantity = entry.quantity,
-      numAuctions = entry.numAuctions,
-      ladder = ladder
+      numAuctions = entry.numAuctions
     }
     itemCount = itemCount + 1
   end
@@ -329,8 +311,14 @@ local function finishScan(totalAuctions)
   scanState = nil
   WAH.scanRunning = false
   chatMessage(string.format(
-    L.SCAN_COMPLETE .. "%s",
-    totalAuctions or 0, itemCount, autoScanOn() and L.SCAN_AUTO_ARMED or ""))
+    L.SCAN_COMPLETE .. "%s%s",
+    totalAuctions or 0, itemCount,
+    autoScanOn() and L.SCAN_AUTO_ARMED or "",
+    autoSaveOn() and L.SCAN_AUTOSAVE_ARMED or ""))
+  -- Auto-save: schedule the UI reload that flushes this scan to disk.
+  if autoSaveOn() then
+    C_Timer.After(60, function() tryAutoReload(1) end)
+  end
 end
 
 local function processReplicateChunk()
@@ -466,13 +454,44 @@ end)
 
 -- Auto-rescan: while the AH stays open, restart a replicate scan whenever
 -- the ~15-minute cooldown elapses. Ticker is cheap; all real gating is
--- inside the check.
+-- inside the check. Auto-save mode also arms the rescan so the overnight
+-- loop (scan -> reload -> reopen AH -> scan) runs unattended.
 C_Timer.NewTicker(20, function()
-  if not autoScanOn() or scanState then return end
+  if not (autoScanOn() or autoSaveOn()) or scanState then return end
   if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then return end
   if replicateSecondsLeft() > 0 then return end
   chatMessage(L.AUTO_TRIGGER)
   startScan()
+end)
+
+-- Boot hook for auto-save mode: after the reload that flushed the previous
+-- scan, reopen the auction house so the rescan ticker picks up the next
+-- round. Runs a few seconds after load so every other addon's frame has
+-- had time to exist.
+local bootFrame = CreateFrame("Frame")
+bootFrame:RegisterEvent("ADDON_LOADED")
+bootFrame:SetScript("OnEvent", function(_, _, name)
+  if name ~= ADDON_NAME then return end
+  -- Check autoSave inside the timer: WAH.settings is only populated by
+  -- Settings.lua's own ADDON_LOADED handler, which may run after this
+  -- file's handler. Checking here (at event time) would always see the
+  -- default off state and skip the reopen.
+  C_Timer.After(5, function()
+    DEFAULT_CHAT_FRAME:AddMessage(string.format(
+      "WAH boot: autoSave=%s ahFrame=%s ahShown=%s",
+      tostring(autoSaveOn()),
+      tostring(AuctionHouseFrame ~= nil),
+      tostring(AuctionHouseFrame and AuctionHouseFrame:IsShown() or false)))
+    if not autoSaveOn() then return end
+    if AuctionHouseFrame and not AuctionHouseFrame:IsShown() then
+      local ok, err = pcall(function() AuctionHouseFrame:Show() end)
+      if ok then
+        chatMessage(L.AUTOSAVE_CYCLE_RESUME)
+      else
+        DEFAULT_CHAT_FRAME:AddMessage("WAH boot: Show failed " .. tostring(err))
+      end
+    end
+  end)
 end)
 
 -- Single history authority: points accumulated across scans plus the

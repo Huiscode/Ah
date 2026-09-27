@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { normalizeAddonScan, normalizeAddonPoints } from "@/lib/addon-scan";
+import { normalizeAddonScan, normalizeAddonPoints, normalizeAddonRecipes } from "@/lib/addon-scan";
 import { importSnapshot, ImportConflictError, type ImportScanItem } from "@/lib/import-common";
 
 export async function POST(request: Request) {
@@ -18,6 +18,16 @@ export async function POST(request: Request) {
   }
 
   const points = normalizeAddonPoints(rawBody?.points);
+  // P0-B recipe dumps are auxiliary: a malformed recipes payload must never
+  // reject a good scan, so normalization failure -> undefined (recipes
+  // simply do not ride along this round).
+  const recipes = (() => {
+    try {
+      return normalizeAddonRecipes(rawBody?.recipes);
+    } catch {
+      return undefined;
+    }
+  })();
   try {
     const result = await importSnapshot({
       source: "addon",
@@ -27,9 +37,10 @@ export async function POST(request: Request) {
       items: scan.items as unknown as ImportScanItem[],
       ...(points !== undefined ? { points } : {}),
       ...(typeof rawBody?.after === "number" && rawBody.after > 0 ? { after: rawBody.after } : {}),
-      ...(scan.rules !== undefined ? { rules: scan.rules } : {})
+      ...(scan.rules !== undefined ? { rules: scan.rules } : {}),
+      ...(recipes !== undefined ? { recipes } : {})
     });
-    return NextResponse.json({ imported: result.imported, points: result.points, scannedAt: result.scannedAt });
+    return NextResponse.json({ imported: result.imported, points: result.points, recipes: recipes?.length ?? 0, scannedAt: result.scannedAt });
   } catch (error) {
     if (error instanceof ImportConflictError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
