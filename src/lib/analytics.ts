@@ -3,7 +3,8 @@
 // snapshots, never means over daily aggregates — means inherit every
 // bait listing, and daily closes erase the hourly structure of the AH.
 import type { MarketHistory, SnapshotSource } from "@/lib/market-data";
-import { dealRadarRules, type DealRadarRules } from "@/lib/market-rules";
+import { dealRadarRules, AH_CUT, type DealRadarRules } from "@/lib/market-rules";
+import { isStale } from "@/lib/freshness";
 
 export type MarketSignal = {
   itemId: number;
@@ -22,7 +23,7 @@ export type MarketSignal = {
   med7Distinct: number; // distinct closes in that window; 1 = flat series
   discountPercent: number; // how far the current min sits below med7
   changePercent: number; // latest close vs the previous same-source close
-  supplyShrinkPercent: number; // net change of listed quantity over the latest 4 same-source snapshots; 0 when <2 samples
+  latestAt: Date; // timestamp of the latest observation backing this signal
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -56,13 +57,6 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
     .filter((snapshot) => snapshot.timestamp.getTime() >= windowStart)
     .map((snapshot) => snapshot.marketPrice);
   const med7 = windowPrices.length > 0 ? median(windowPrices) : latest.marketPrice;
-  // Liquidity gate A mirrors the addon: net change of the listed quantity
-  // over the latest four snapshots. A negative value means the supply is
-  // being bought up (fast turnover); 0 when there is no baseline.
-  const recentQuantity = sameSource.slice(-4).map((snapshot) => snapshot.quantity);
-  const supplyShrinkPercent = recentQuantity.length >= 2 && recentQuantity[0] > 0
-    ? ((recentQuantity[recentQuantity.length - 1] - recentQuantity[0]) / recentQuantity[0]) * 100
-    : 0;
   return {
     itemId: item.itemId,
     name: item.name,
@@ -80,7 +74,7 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
     med7Distinct: new Set(windowPrices).size,
     discountPercent: med7 > 0 ? (1 - latest.minPrice / med7) * 100 : 0,
     changePercent: previous && previous.marketPrice > 0 ? ((latest.marketPrice - previous.marketPrice) / previous.marketPrice) * 100 : 0,
-    supplyShrinkPercent
+    latestAt: latest.timestamp
   };
 }
 
@@ -107,7 +101,7 @@ export type DealRadarRow = {
 // thresholds; defaults come from the single source of truth
 // (src/lib/market-rules.ts) and route-2 overrides arrive with each scan
 // import (the in-game panel is the authority).
-export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = dealRadarRules): DealRadarRow[] {
+export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = dealRadarRules, now: Date = new Date()): DealRadarRow[] {
   const {
     minProfit: RADAR_MIN_PROFIT,
     minProfitRatio: RADAR_MIN_PROFIT_RATIO,
@@ -116,15 +110,14 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
     minHistory: RADAR_MIN_HISTORY,
     minMed7Distinct: RADAR_MIN_MED7_DISTINCT,
     maxDiscount: RADAR_MAX_DISCOUNT,
-    supplyShrink: RADAR_SUPPLY_SHRINK,
-    supplyShrinkMax: RADAR_SUPPLY_SHRINK_MAX,
     supplyCap: RADAR_SUPPLY_CAP
   } = rules;
-  const minPrice = (rules as any).minPrice ?? 0;
-  const maxPrice = (rules as any).maxPrice ?? 0;
   const minAuctionsGate = RADAR_MIN_AUCTIONS;
   const deals: DealRadarRow[] = [];
   for (const signal of signals) {
+    // Freshness gate: skip deals whose latest observation is older than the
+    // 2h stale window, so the radar never points at a price that already moved.
+    if (isStale(signal.latestAt, now)) continue;
     // Class 1: vendor arbitrage. Listed below the NPC sell price is a
     // guaranteed profit with zero market risk — no history needed, and no
     // profit floor either: the NPC always buys, so even a 1c spread is
@@ -160,15 +153,12 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
     // enabled; both only ever filter, never reorder.
     } else if (signal.med7Samples >= RADAR_MIN_HISTORY && signal.med7 > 0 && signal.minPrice > 0
       && (signal.source === "ahledger" || signal.numAuctions >= minAuctionsGate)
-      && signal.med7 - signal.minPrice >= RADAR_MIN_PROFIT
-      && signal.med7 - signal.minPrice >= signal.med7 * RADAR_MIN_PROFIT_RATIO
+      && signal.med7 * (1 - AH_CUT) - signal.minPrice >= RADAR_MIN_PROFIT
+      && signal.med7 * (1 - AH_CUT) - signal.minPrice >= signal.med7 * (1 - AH_CUT) * RADAR_MIN_PROFIT_RATIO
       && signal.minPrice <= signal.med7 * RADAR_DISCOUNT
       && signal.med7Distinct >= RADAR_MIN_MED7_DISTINCT
       && signal.minPrice >= signal.med7 * (1 - RADAR_MAX_DISCOUNT)
-      && (!RADAR_SUPPLY_SHRINK || signal.supplyShrinkPercent <= RADAR_SUPPLY_SHRINK_MAX * 100)
-      && (RADAR_SUPPLY_CAP <= 0 || signal.quantity <= RADAR_SUPPLY_CAP)
-      && (minPrice <= 0 || signal.price >= minPrice)
-      && (maxPrice <= 0 || signal.price <= maxPrice)) {
+      && (RADAR_SUPPLY_CAP <= 0 || signal.quantity <= RADAR_SUPPLY_CAP)) {
       deals.push({
         itemId: signal.itemId,
         name: signal.name,
@@ -178,7 +168,7 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         source: signal.source,
         minPrice: signal.minPrice,
         reference: signal.med7,
-        profit: signal.med7 - signal.minPrice,
+        profit: Math.floor(signal.med7 * (1 - AH_CUT) - signal.minPrice),
         vendor: false,
         discountPercent: signal.discountPercent,
         changePercent: signal.changePercent,

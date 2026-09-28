@@ -15,12 +15,12 @@ import { loadAddon, type WowLua } from "./wow-lua";
 // prices and references that all rank differently, so every column's sort
 // produces a distinct order and no assertion passes by coincidence.
 const LINEN = { itemId: 2589, name: "Linen Cloth", minPrice: 800, vendorP: 1000, numAuctions: 5 };
-const MAGEWEAVE = { itemId: 4338, name: "Mageweave Cloth", minPrice: 8000, numAuctions: 6 };
+const MAGEWEAVE = { itemId: 4338, name: "Mageweave Cloth", minPrice: 7480, numAuctions: 6 };
 const GOLD_ORE = { itemId: 3577, name: "Gold Ore", minPrice: 34000, numAuctions: 9 };
 
 const SCAN = [LINEN, MAGEWEAVE, GOLD_ORE];
 const POINTS = [
-  // med7 = 11000 (lower median of three), so 8000 is a 27% discount.
+  // med7 = 11000 (lower median of three); 7480 is a 32% discount after the cut.
   { itemId: MAGEWEAVE.itemId, closes: [10000, 11000, 12000] },
   // med7 = 52000, so 34000 is a 35% discount.
   { itemId: GOLD_ORE.itemId, closes: [50000, 52000, 54000] }
@@ -57,9 +57,9 @@ describe("deal radar table", () => {
     expect([1, 2, 3, 4].map((slot) => lua.header(slot))).toEqual(["折扣", "利润", "最低价", "参考价"]);
     // Linen's reference is the NPC sell price, the others' is their med7 --
     // different sources, same meaning: what the min price is measured against.
-    expect(lua.column(1)).toEqual(["-20%", "-35%", "-27%"]);
-    expect(lua.column(2)).toEqual(["2银 00铜", "1金 80银", "30银 00铜"]);
-    expect(lua.column(3)).toEqual(["8银 00铜", "3金 40银", "80银 00铜"]);
+    expect(lua.column(1)).toEqual(["-20%", "-35%", "-32%"]);
+    expect(lua.column(2)).toEqual(["2银 00铜", "1金 54银", "29银 70铜"]);
+    expect(lua.column(3)).toEqual(["8银 00铜", "3金 40银", "74银 80铜"]);
     expect(lua.column(4)).toEqual(["10银 00铜", "5金 20银", "1金 10银"]);
   });
 

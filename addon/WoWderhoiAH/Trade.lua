@@ -165,22 +165,6 @@ end
 
 -- ============================== Deal radar ============================
 
--- Optional liquidity gate A: does the supply look like it is being bought
--- up? Compare the newest four quantity samples in the history window:
--- a net shrink of at least |supplyShrinkMax| says the board is turning
--- over fast (low hoarding risk) instead of piling up. Falls back to false
--- (no opinion) when there are fewer than two quantity samples.
-local function supplyShrinking(pts)
-  local qs = {}
-  for i = #pts, 1, -1 do
-    if pts[i].q and pts[i].q > 0 then qs[#qs + 1] = pts[i].q end
-    if #qs >= 4 then break end
-  end
-  if #qs < 2 then return false end
-  local oldest, newest = qs[#qs], qs[1]
-  return (newest - oldest) / oldest <= (WAH.RADAR.supplyShrinkMax or 0)
-end
-
 local function refreshDeals()
   wipe(deals)
   sortKey = nil
@@ -210,30 +194,32 @@ local function refreshDeals()
         discountPercent = (1 - entry.minPrice / entry.vendorP) * 100
       }
     -- Class 2: P10 median discount. Requires history depth (3+ scans), a
-    -- live market (3+ auctions), a worthwhile absolute spread (30c dust
-    -- floor), and a discount deep enough relative to med7 (25%) that the
-    -- trip is worth taking in the early-server economy. The optional
-    -- liquidity gates A (supply shrinking) and C (supply cap) tighten the
-    -- pool when enabled; both only ever filter, never reorder.
+    -- live market (3+ auctions), and a discount deep enough relative to
+    -- med7 that the trip is worth taking. Profit is measured NET of the
+    -- 5% AH cut (the vendor class above is exempt, since the NPC pays
+    -- full price). The optional supply cap only ever filters, never
+    -- reorders.
     elseif history and #history.pts >= WAH.RADAR.minHistory and history.med7 and history.med7 > 0
       and entry.minPrice and entry.minPrice > 0
-      and (entry.numAuctions or 0) >= WAH.RADAR.minAuctions
-      and (history.med7 - entry.minPrice) >= WAH.RADAR.minProfit
-      and (history.med7 - entry.minPrice) >= history.med7 * WAH.RADAR.minProfitRatio
-      and entry.minPrice <= history.med7 * WAH.RADAR.discount
-      and (history.distinct or 0) >= WAH.RADAR.minMed7Distinct
-      and entry.minPrice >= history.med7 * (1 - WAH.RADAR.maxDiscount)
-      and (not WAH.RADAR.supplyShrink or supplyShrinking(history.pts))
-      and ((WAH.RADAR.supplyCap or 0) <= 0 or (entry.quantity or 0) <= WAH.RADAR.supplyCap) then
-      deals[#deals + 1] = {
-        itemId = itemId,
-        name = entry.name,
-        minPrice = entry.minPrice,
-        med7 = history.med7,
-        profit = history.med7 - entry.minPrice,
-        vendor = false,
-        discountPercent = (1 - entry.minPrice / history.med7) * 100
-      }
+      and (entry.numAuctions or 0) >= WAH.RADAR.minAuctions then
+      local netRef = history.med7 * (1 - WAH.AH_CUT)
+      local netProfit = netRef - entry.minPrice
+      if netProfit >= WAH.RADAR.minProfit
+        and netProfit >= netRef * WAH.RADAR.minProfitRatio
+        and entry.minPrice <= history.med7 * WAH.RADAR.discount
+        and (history.distinct or 0) >= WAH.RADAR.minMed7Distinct
+        and entry.minPrice >= history.med7 * (1 - WAH.RADAR.maxDiscount)
+        and ((WAH.RADAR.supplyCap or 0) <= 0 or (entry.quantity or 0) <= WAH.RADAR.supplyCap) then
+        deals[#deals + 1] = {
+          itemId = itemId,
+          name = entry.name,
+          minPrice = entry.minPrice,
+          med7 = history.med7,
+          profit = math.floor(netProfit),
+          vendor = false,
+          discountPercent = (1 - entry.minPrice / history.med7) * 100
+        }
+      end
     end
   end
   if #deals == 0 and not anyHistory then
@@ -290,6 +276,32 @@ end
 -- 3) PlaceBuyout it.
 -- The listing is therefore verified at click time, never trusted from the
 -- scan snapshot.
+-- ============================ Buy side ============================
+
+-- Retail sells two distinct kinds of auction:
+--   * Items (gear, bags, recipes...) use an itemKey and PlaceBuyout;
+--   * Commodities (herbs, ore, cloth, potions, enchanting mats) use a
+--     quantity/price order: StartCommoditiesPurchase -> COMMODITY_PRICE_UPDATED
+--     -> ConfirmCommoditiesPurchase. The two share QueryForItem but return
+--     through different events, so the path is chosen by which event fires.
+--
+-- Every purchase is confirmed by an event before the radar entry is updated;
+-- a failed buy never hides the deal and never reports success.
+
+local pendingBuyName = nil
+local pendingBuyCommodity = false
+local pendingBuyRunnerUnit = nil
+local expectedCommodityUnitPrice = 0
+
+local repriceAfterPurchase -- forward declaration; defined below
+
+local function clearPendingBuy()
+  pendingBuyItemId = nil
+  pendingBuyName = nil
+  pendingBuyCommodity = false
+  expectedCommodityUnitPrice = 0
+end
+
 local function startBuy(itemId, name)
   if pendingBuyItemId then
     chatMessage(L.BUY_PENDING)
@@ -308,29 +320,29 @@ local function startBuy(itemId, name)
     return
   end
   pendingBuyItemId = itemId
+  pendingBuyName = name
   chatMessage(string.format(L.BUY_QUERYING, name))
   pcall(C_AuctionHouse.QueryForItem, itemKey, nil, nil, nil)
 end
 
-local repriceAfterPurchase -- forward declaration; defined after finalizeBuy
-
-local function finalizeBuy(itemKey)
+-- Item path: read the live item search results, pick the cheapest valid
+-- (non-own) buyout, then PlaceBuyout. The listing is verified at click time.
+local function finalizeItemBuy(itemKey)
   local targetId = pendingBuyItemId
   if not targetId or not itemKey or itemKey.itemID ~= targetId then return end
-  pendingBuyItemId = nil
   local numResults = C_AuctionHouse.GetNumItemSearchResults(itemKey)
   if not numResults or numResults == 0 then
+    clearPendingBuy()
     chatMessage(L.NO_BUYABLE)
     return
   end
-  local best = nil
-  local runnerUp = nil -- cheapest valid listing other than the one bought
+  local best, runnerUp = nil, nil
   for index = 1, numResults do
     local info = C_AuctionHouse.GetItemSearchResultInfo(itemKey, index)
     if info then
       local auctionID = info.auctionID or info.auction_id
       local buyout = info.buyoutAmount or info.buyout_amount
-      local quantity = info.quantity or info.quantity
+      local quantity = info.quantity
       local containsOwn = info.containsOwnerItem or info.contains_owner_item
       if auctionID and buyout and buyout > 0 and quantity and quantity > 0 and not containsOwn then
         local unit = buyout / quantity
@@ -346,35 +358,100 @@ local function finalizeBuy(itemKey)
     end
   end
   if not best then
+    clearPendingBuy()
     chatMessage(L.NO_BUYABLE)
     return
   end
-  pcall(C_AuctionHouse.PlaceBuyout, best.auctionID, best.buyout)
-  chatMessage(string.format(L.BOUGHT, best.name, best.quantity, GetCoinTextureString(best.buyout)))
-  -- The radar reads the scan as "what is listed right now"; the purchase
-  -- just proved one listing is gone, so correct the entry from the listings
-  -- that are still live instead of letting a sold price come back as a deal.
-  repriceAfterPurchase(targetId, runnerUp and runnerUp.unit)
-  -- Re-run the search after the bid settles so the bought listing drops off.
+  -- PlaceBuyout is async; success is confirmed by AUCTION_HOUSE_PURCHASE_COMPLETED.
+  -- Stash the runner-up so the radar entry can be corrected only on success.
+  pendingBuyRunnerUnit = runnerUp and runnerUp.unit
+  local placed = pcall(C_AuctionHouse.PlaceBuyout, best.auctionID, best.buyout)
+  if not placed then
+    clearPendingBuy()
+    chatMessage(L.BUY_FAILED_EVENT)
+  end
+end
+
+-- Commodity path: results are sorted cheapest-first. Start an order for the
+-- cheapest rung's full quantity; the server echoes the live price before we
+-- confirm, so a price move is caught instead of buying at the wrong price.
+local function finalizeCommodityBuy(itemID)
+  local targetId = pendingBuyItemId
+  if not targetId or itemID ~= targetId then return end
+  local numResults = C_AuctionHouse.GetNumCommoditySearchResults(itemID)
+  if not numResults or numResults == 0 then
+    clearPendingBuy()
+    chatMessage(L.NO_BUYABLE)
+    return
+  end
+  local info = C_AuctionHouse.GetCommoditySearchResultInfo(itemID, 1)
+  if not info or not info.unitPrice then
+    clearPendingBuy()
+    chatMessage(L.NO_BUYABLE)
+    return
+  end
+  local quantity = info.quantity or 1
+  pendingBuyCommodity = true
+  expectedCommodityUnitPrice = info.unitPrice
+  local started = pcall(C_AuctionHouse.StartCommoditiesPurchase, itemID, info.unitPrice, quantity)
+  if not started then
+    clearPendingBuy()
+    chatMessage(L.BUY_FAILED_EVENT)
+    return
+  end
+  chatMessage(L.BUY_COMMODITY)
+end
+
+-- The server echoes the live commodity price before confirmation. If it still
+-- matches the rung we targeted, confirm; otherwise let the order lapse (it is
+-- not confirmed, so nothing is bought) and re-open the deal.
+local function onCommodityPriceUpdated(itemID, unitPrice)
+  if not pendingBuyItemId or itemID ~= pendingBuyItemId then return end
+  if unitPrice == expectedCommodityUnitPrice then
+    pcall(C_AuctionHouse.ConfirmCommoditiesPurchase)
+  else
+    clearPendingBuy()
+    chatMessage(L.BUY_PRICE_CHANGED)
+  end
+end
+
+local function onCommodityPurchaseSucceeded(itemID)
+  if not pendingBuyItemId or itemID ~= pendingBuyItemId then return end
+  local targetId, name = pendingBuyItemId, pendingBuyName
+  clearPendingBuy()
+  chatMessage(string.format(L.BOUGHT, name or targetId, 1, GetCoinTextureString(expectedCommodityUnitPrice)))
+  repriceAfterPurchase(targetId, nil)
+end
+
+local function onCommodityPurchaseFailed(itemID)
+  if not pendingBuyItemId or itemID ~= pendingBuyItemId then return end
+  clearPendingBuy()
+  chatMessage(L.BUY_FAILED_EVENT)
+end
+
+-- Item purchase confirmation (PlaceBuyout result).
+local function onItemPurchaseCompleted(auctionID)
+  local targetId = pendingBuyItemId
+  if not targetId then return end
+  local runnerUnit = pendingBuyRunnerUnit
+  clearPendingBuy()
+  chatMessage(L.BOUGHT)
+  repriceAfterPurchase(targetId, runnerUnit)
   C_Timer.After(0.6, function()
     if trade and trade:IsShown() and trade.lastQuery then refreshResults(trade.lastQuery) end
   end)
 end
 
 -- A bought listing is knowledge about the book; write it back into the scan
--- the radar reads. Ceiling: the live query results are one item's listings,
--- never the whole book, so the price this lands on is never below the truth.
--- It can hide a real deal until the next scan; it can never invent one.
-repriceAfterPurchase = function(itemId, remainingUnitPrice)
+-- the radar reads. It can hide a real deal until the next scan; it can never
+-- invent one. When no price is supplied (commodity rung fully consumed), drop
+-- the entry: the next scan re-lists the item.
+repriceAfterPurchase = function(itemId, remainingUnitPrice, boughtQuantity)
   local scan = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion == WAH.PIPELINE_VERSION
     and WoWderhoiAH_ScanData.items
   local scanned = scan and scan[itemId]
   if not scanned then return end
   if not remainingUnitPrice then
-    -- Nothing of this item left in the live results: every number in the
-    -- entry describes a book that no longer exists, and a zeroed minimum
-    -- would read as "free" on the tooltip. The 7d history survives; the
-    -- next scan re-lists the item.
     scan[itemId] = nil
     return
   end
@@ -689,7 +766,15 @@ tradeEvents:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 if C_AuctionHouse and C_AuctionHouse.GetNumItemSearchResults then
   tradeEvents:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
 end
-tradeEvents:SetScript("OnEvent", function(_, event, itemKey)
+-- Commodity channel (herbs/ore/cloth/potions/mats) and purchase confirms.
+if C_AuctionHouse and C_AuctionHouse.GetNumCommoditySearchResults then
+  tradeEvents:RegisterEvent("COMMODITY_SEARCH_RESULTS_UPDATED")
+  tradeEvents:RegisterEvent("COMMODITY_PRICE_UPDATED")
+  tradeEvents:RegisterEvent("COMMODITY_PURCHASE_SUCCEEDED")
+  tradeEvents:RegisterEvent("COMMODITY_PURCHASE_FAILED")
+end
+tradeEvents:RegisterEvent("AUCTION_HOUSE_PURCHASE_COMPLETED")
+tradeEvents:SetScript("OnEvent", function(_, event, arg1, arg2)
   if event == "AUCTION_HOUSE_SHOW" then
     if not trade then createTradeFrame() end
     mode = "deals"
@@ -703,12 +788,21 @@ tradeEvents:SetScript("OnEvent", function(_, event, itemKey)
     sellPoll:Hide()
   elseif event == "GET_ITEM_INFO_RECEIVED" then
     -- Item info landed (itemIcon or the scanner asked for it): backfill a
-    -- category that came back unknown during the scan, then repaint the
-    -- visible rows so a previously-blank icon slot fills in.
-    if WAH.refreshPendingCategories then WAH.refreshPendingCategories(itemKey) end
+    -- category that came back unknown during the scan, then repaint.
+    if WAH.refreshPendingCategories then WAH.refreshPendingCategories(arg1) end
     if trade and trade:IsShown() then renderRows() end
   elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
-    finalizeBuy(itemKey)
+    finalizeItemBuy(arg1)
+  elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" then
+    finalizeCommodityBuy(arg1)
+  elseif event == "COMMODITY_PRICE_UPDATED" then
+    onCommodityPriceUpdated(arg1, arg2)
+  elseif event == "COMMODITY_PURCHASE_SUCCEEDED" then
+    onCommodityPurchaseSucceeded(arg1)
+  elseif event == "COMMODITY_PURCHASE_FAILED" then
+    onCommodityPurchaseFailed(arg1)
+  elseif event == "AUCTION_HOUSE_PURCHASE_COMPLETED" then
+    onItemPurchaseCompleted(arg1)
   end
 end)
 

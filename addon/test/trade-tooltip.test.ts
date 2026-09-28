@@ -20,7 +20,7 @@ const LISTINGS = [
 
 function tradePage(): WowLua {
   const lua = loadAddon();
-  lua.setScan([{ itemId: MAGEWEAVE, name: "Mageweave Cloth", minPrice: 8000, numAuctions: 6 }]);
+  lua.setScan([{ itemId: MAGEWEAVE, name: "Mageweave Cloth", minPrice: 7000, numAuctions: 6 }]);
   lua.setPoints([{ itemId: MAGEWEAVE, closes: [10000, 11000, 12000] }]);
   lua.openTab();
   return lua;

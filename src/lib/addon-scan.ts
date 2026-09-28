@@ -33,8 +33,6 @@ export type AddonRadarRules = {
   minHistory?: number;
   minMed7Distinct?: number;
   maxDiscount?: number;
-  supplyShrink?: boolean;
-  supplyShrinkMax?: number;
   supplyCap?: number;
   minPrice?: number;
   maxPrice?: number;
@@ -241,10 +239,10 @@ function normalizeVendorPrice(value: unknown, itemId: string): number {
 // back to its compiled defaults.
 const RULE_NUMBER_FIELDS = [
   "minProfit", "minProfitRatio", "discount", "minAuctions", "minHistory",
-  "minMed7Distinct", "maxDiscount", "supplyShrinkMax", "supplyCap",
+  "minMed7Distinct", "maxDiscount", "supplyCap",
   "minPrice", "maxPrice", "gap1Pct", "gap2Pct"
 ] as const;
-const RULE_BOOL_FIELDS = ["supplyShrink", "gapFilterOn"] as const;
+const RULE_BOOL_FIELDS = ["gapFilterOn"] as const;
 
 export function normalizeRadarRules(raw: unknown): AddonRadarRules | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;

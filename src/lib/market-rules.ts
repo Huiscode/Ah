@@ -1,4 +1,4 @@
-// Single source of truth for the deal-radar rules and the scan pipeline
+﻿// Single source of truth for the deal-radar rules and the scan pipeline
 // version. The in-game addon (Lua) cannot import this at runtime — the
 // game has no build step — so scripts/gen-lua-rules.ts compiles these
 // values into addon/WoWderhoiAH/GeneratedRules.lua, and a drift test
@@ -10,6 +10,13 @@
 // meaning of the stored prices changed, not just their values.
 export const SCAN_PIPELINE_VERSION = 3;
 
+// Auction house cut on a successful sale (5%). Vendor deals are exempt:
+// selling to an NPC charges no cut. Used to turn gross spreads into net profit.
+export const AH_CUT = 0.05;
+
+// DealRadarRules are the plugin-authority thresholds: they are compiled into
+// GeneratedRules.lua and the in-game options panel is the only place that can
+// change them. Every field here must exist in the addon's RADAR table.
 export type DealRadarRules = {
   minProfit: number;
   minProfitRatio: number;
@@ -18,14 +25,7 @@ export type DealRadarRules = {
   minHistory: number;
   minMed7Distinct: number;
   maxDiscount: number;
-  supplyShrink: boolean;
-  supplyShrinkMax: number;
   supplyCap: number;
-  minPrice: number;
-  maxPrice: number;
-  gapFilterOn: boolean;
-  gap1Pct: number;
-  gap2Pct: number;
 };
 
 export const dealRadarRules: DealRadarRules = {
@@ -40,20 +40,26 @@ export const dealRadarRules: DealRadarRules = {
   // and med7 becomes a price no listing ever traded against.
   minMed7Distinct: 2, // a flat 7d P10 series is one seller, not a market
   maxDiscount: 0.75, // past 75% off, the reference is broken, not the listing cheap
-  // Optional liquidity filters (route-2 tunables; all off by default).
-  // A — supply-shrink gate: the last four scans' listed quantity must have
-  // shrunk by at least |supplyShrinkMax|, i.e. the supply is being bought
-  // up (fast turnover) rather than sitting on the board.
-  supplyShrink: false,
-  supplyShrinkMax: -0.15,
-  // C — supply cap: 0 = off; >0 excludes items whose latest listed
-  // quantity exceeds this (oversupplied goods are a hoarding risk).
-  supplyCap: 0,
+  // Supply cap: 0 = off; >0 excludes items whose latest listed quantity
+  // exceeds this (oversupplied goods are a hoarding risk).
+  supplyCap: 0
+};
+
+// LocalFilterRules are web-only secondary filters over the current database.
+// They are never compiled to Lua and never sent to the plugin; they live in
+// localStorage and are applied client-side in the deal-radar table.
+export type LocalFilterRules = {
+  minPrice: number; // only rows with min price >= this (0 = off)
+  maxPrice: number; // only rows with min price <= this (0 = off)
+  gap1Pct: number; // required gap between the 1st and 2nd price tier (0 = off)
+  gap2Pct: number; // required gap between the 2nd and 3rd price tier (0 = off)
+};
+
+export const localFilterDefaults: LocalFilterRules = {
   minPrice: 0,
   maxPrice: 0,
-  gapFilterOn: false,
-  gap1Pct: 15,
-  gap2Pct: 15
+  gap1Pct: 0,
+  gap2Pct: 0
 };
 
 // Route-2 overrides arrive with each scan import (the in-game options panel

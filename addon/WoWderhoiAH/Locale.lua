@@ -57,6 +57,9 @@ local L = {
   BUY_QUERYING = "Verifying live listing for %s...",
   BUY_FAILED = "Could not build an item key for this item — it may have variants.",
   NO_BUYABLE = "No valid buyout listing right now (all bid-only or yours).",
+  BUY_PRICE_CHANGED = "Price changed before confirmation — aborting, re-open the deal to retry.",
+  BUY_FAILED_EVENT = "Purchase failed (not enough gold, already sold, or server throttled).",
+  BUY_COMMODITY = "Commodity order placed — confirming...",
   DEALS_NEED_SCAN = "No scan this session — run Full Scan first, then Find Deals.",
   DEALS_NEED_HISTORY = "No price history yet — scan a couple of times and it accumulates automatically.",
   DEALS_NONE = "No deals: nothing listed 15%%+ below its 7d P10 median right now.",
@@ -94,10 +97,6 @@ local L = {
   -- radar tunables (route 2: the in-game panel is the authority)
   OPT_RADAR_HEADER = "Deal radar thresholds (applied immediately)",
   OPT_RADAR_NOTE = "Enter to commit a number; toggles apply at once. Saved on logout/reload and synced to the terminal with the next scan.",
-  OPT_R_SUPPLYSHRINK = "A: supply-shrink gate",
-  OPT_R_SUPPLYSHRINK_TIP = "Require the last four scans' listed quantity to have shrunk by the threshold below — the supply is being bought up (fast turnover), not sitting on the board. Off = no requirement.",
-  OPT_R_SHRINK = "A threshold (negative change, e.g. -0.15)",
-  OPT_R_SHRINK_TIP = "Net change over the last four scans' listed quantity, as a fraction. -0.15 means supply must shrink by at least 15% to pass. Enter a negative number; positives are flipped.",
   OPT_R_CAP = "C: supply cap (0 = off)",
   OPT_R_CAP_TIP = "Exclude items whose latest listed quantity exceeds this — oversupplied goods are a hoarding risk. 0 disables the cap.",
   OPT_R_MINPROFIT = "minProfit (copper)",
@@ -112,12 +111,7 @@ local L = {
   OPT_R_DISTINCT_TIP = "Distinct 7d P10 values required: a flat series is one camper's ask, not a market. 2 = default.",
   OPT_R_HISTORY = "minHistory",
   OPT_R_HISTORY_TIP = "Scans inside the 7d window before the median means anything. 3 = default.",
-  SETTINGS_AH_RESTORED = "Settings closed - auction house restored. Run /wahscan to rescan.",
-  -- recipes (P0-B /wahrecipes)
-  RECIPES_API_MISSING = "This client has no trade-skill window API (GetNumTradeSkills/GetTradeSkillInfo). Open the profession window (K) and run /wahrecipes again, or check /console scriptErrors 1.",
-  RECIPES_EMPTY = "No recipes read — the profession window shows no learnable recipes right now. Open it (K), select the profession, then run /wahrecipes again.",
-  RECIPES_DONE = "%d recipes dumped (%d total stored, profession: %s). Logout or /reload to land them on disk.",
-  RECIPES_NO_PROFESSION = "unknown"
+  SETTINGS_AH_RESTORED = "Settings closed - auction house restored. Run /wahscan to rescan."
 }
 
 if GetLocale() == "zhCN" then
@@ -171,6 +165,9 @@ if GetLocale() == "zhCN" then
   L.BUY_QUERYING = "正在核验 %s 的实时挂单..."
   L.BUY_FAILED = "无法构造该物品的 itemKey — 可能带随机属性变体。"
   L.NO_BUYABLE = "当前没有有效的一口价挂单（全部仅竞拍或为本人挂单）。"
+  L.BUY_PRICE_CHANGED = "确认前价格已变 — 已取消，重新打开该捡漏再试。"
+  L.BUY_FAILED_EVENT = "购买失败（金币不足、已被买走或服务器限流）。"
+  L.BUY_COMMODITY = "商品订单已提交 — 正在确认..."
   L.DEALS_NEED_SCAN = "本次会话尚未扫描 — 先点全量扫描，再点找便宜。"
   L.DEALS_NEED_HISTORY = "还没有价格历史 — 多扫几次会自动积累。"
   L.DEALS_NONE = "暂无便宜货：当前没有低于 7 日P10中位 15%% 以上的挂单。"
@@ -203,10 +200,6 @@ if GetLocale() == "zhCN" then
   L.OPT_VERBOSE_TIP = "逐页降级扫描时每页播报进度。"
   L.OPT_RADAR_HEADER = "捡漏雷达参数（改动立即生效）"
   L.OPT_RADAR_NOTE = "数字回车提交；开关即时生效。小退或 /reload 后保存，并随下次扫描同步到网页终端。"
-  L.OPT_R_SUPPLYSHRINK = "供给收缩"
-  L.OPT_R_SUPPLYSHRINK_TIP = "要求最近 4 次扫描的在售量按下方阈值收缩——说明供给在被买走（周转快），而不是压在货架上。关闭则不要求。"
-  L.OPT_R_SHRINK = "供给收缩阈值（负数，如 -0.15）"
-  L.OPT_R_SHRINK_TIP = "最近 4 次扫描在售量的净变化比例。-0.15 表示在售量至少收缩 15% 才算通过。输入负数；正数会自动取负。"
   L.OPT_R_CAP = "供给量上限（0=关闭）"
   L.OPT_R_CAP_TIP = "排除最新在售量超过该上限的物品——供给过剩的商品有囤积风险。0 表示不设上限。"
   L.OPT_R_MINPROFIT = "绝对利润下限（铜）"
@@ -222,10 +215,6 @@ if GetLocale() == "zhCN" then
   L.OPT_R_HISTORY = "历史样本数"
   L.OPT_R_HISTORY_TIP = "7 日窗口内中位有效所需的最少扫描次数。3=默认。"
   L.SETTINGS_AH_RESTORED = "设置已关闭，已恢复拍卖行。请运行 /wahscan 重新扫描。"
-  L.RECIPES_API_MISSING = "当前客户端没有专业技能窗口 API（GetNumTradeSkills/GetTradeSkillInfo）。请打开技能面板（按 K）后再运行 /wahrecipes，或 /console scriptErrors 1 查看报错。"
-  L.RECIPES_EMPTY = "未读取到配方 — 当前技能窗口没有可读配方。请打开技能面板（按 K）选中专业后再运行 /wahrecipes。"
-  L.RECIPES_DONE = "已采集 %d 个配方（共存储 %d 个，专业：%s）。小退或 /reload 后写入磁盘。"
-  L.RECIPES_NO_PROFESSION = "未知专业"
 end
 
 WAH.L = L

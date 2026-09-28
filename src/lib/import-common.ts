@@ -226,9 +226,17 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
   }
   const existingDayRows = await prisma.dailySummary.findMany({
     where: { source, date: { in: Array.from(affectedDates).map((ms) => new Date(ms)) } },
-    select: { itemId: true, date: true, highPrice: true, lowPrice: true }
+    select: { itemId: true, date: true, openPrice: true, closePrice: true, highPrice: true, lowPrice: true }
   });
-  const pointDayResult = mergePointsIntoDailySummaries(freshPoints, existingDayRows, source);
+  // BigInt price columns come back as BigInt; coerce to number for the
+  // daily-summary merge arithmetic.
+  const existingDayRowsNum: Array<{ itemId: number; date: Date; openPrice: number; closePrice: number; highPrice: number; lowPrice: number }> =
+    existingDayRows.map((row) => ({
+      itemId: row.itemId, date: row.date,
+      openPrice: Number(row.openPrice), closePrice: Number(row.closePrice),
+      highPrice: Number(row.highPrice), lowPrice: Number(row.lowPrice)
+    }));
+  const pointDayResult = mergePointsIntoDailySummaries(freshPoints, existingDayRowsNum, source);
   const dayProbe = mergeScanIntoDailySummaries(items, scannedAt, [], source);
   // Rows the points pass will create count as existing for the snapshot fold
   // ONLY when they belong to the snapshot's own day — points that fell on an
@@ -236,7 +244,7 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
   // must not update.
   const dayMs = dayProbe.date.getTime();
   const effectiveExisting = [
-    ...existingDayRows.filter((row) => row.date.getTime() === dayMs),
+    ...existingDayRowsNum.filter((row) => row.date.getTime() === dayMs),
     ...pointDayResult.creates.filter((row) => row.date.getTime() === dayMs)
   ];
   const { date, creates: dayCreates, updates: dayUpdates } = mergeScanIntoDailySummaries(items, scannedAt, effectiveExisting, source);

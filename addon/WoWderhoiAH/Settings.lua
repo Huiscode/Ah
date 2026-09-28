@@ -105,7 +105,14 @@ local OPTIONS = {
 
 -- Radar tunables. Numeric fields are committed on Enter; checkbox toggles
 -- apply immediately. All of them write WAH.settings.radar then re-apply.
-local RADAR_NUMERIC = {}
+local RADAR_NUMERIC = {
+  { key = "minProfit", label = "绝对利润 (铜)", tip = "" },
+  { key = "minProfitRatio", label = "相对利润下限 (0.25=25%)", tip = "" },
+  { key = "minAuctions", label = "最低挂单数", tip = "" },
+  { key = "minHistory", label = "历史样本数", tip = "" },
+  { key = "minMed7Distinct", label = "中位去重样本", tip = "" },
+  { key = "supplyCap", label = "供给量上限 (0=关)", tip = "" },
+}
 local RADAR_CHECKS = {}
 
 local function formatRadarValue(value)
@@ -121,7 +128,6 @@ local function commitRadarField(box, key, tipText)
     box:SetText(formatRadarValue(WAH.settings.radar[key]))
     return
   end
-  if key == "supplyShrinkMax" and parsed > 0 then parsed = -parsed end -- keep it a shrink
   WAH.settings.radar[key] = parsed
   applyRadarSettings()
   box:SetText(formatRadarValue(parsed))

@@ -305,8 +305,7 @@ local function finishScan(totalAuctions)
   for itemId, item in pairs(items) do
     local pts = WoWderhoiAH_Points[itemId] or {}
     -- Each point carries the scan's close price (c) and the listed
-    -- quantity (q); q feeds the optional supply-shrink liquidity gate of
-    -- the deal radar. c remains the only field any chart or median reads.
+    -- quantity (q). c remains the only field any chart or median reads.
     pts[#pts + 1] = { t = nowTs, c = item.marketPrice, q = item.quantity }
     WoWderhoiAH_Points[itemId] = pts
   end
@@ -315,7 +314,13 @@ local function finishScan(totalAuctions)
     for _, point in ipairs(pts) do
       if point.t >= cutoff then pruned[#pruned + 1] = point end
     end
-    while #pruned > 192 do table.remove(pruned, 1) end
+    if #pruned > 192 then
+      -- Keep only the newest 192: a single O(n) slice instead of
+      -- repeatedly removing the head (table.remove(pruned, 1) is O(n^2)).
+      local trimmed = {}
+      for index = #pruned - 191, #pruned do trimmed[#trimmed + 1] = pruned[index] end
+      pruned = trimmed
+    end
     if #pruned == 0 then
       WoWderhoiAH_Points[itemId] = nil
     else

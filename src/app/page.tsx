@@ -1,4 +1,4 @@
-﻿import { Bell, CalendarClock, Hammer, RadioTower, Star } from "lucide-react";
+import { Bell, CalendarClock, Hammer, RadioTower, Star } from "lucide-react";
 import { buildDealRadar } from "@/lib/analytics";
 import { evaluateAlertRules } from "@/lib/alerts";
 import { buildFloorPriceIndex, computeRecipeProfits } from "@/lib/recipe-profits";
@@ -121,7 +121,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   {signals.length === 0 ? "暂无市场数据。进游戏 /wahscan 扫描。" : "当前没有满足流动性与利润门槛的捡漏挂单。"}
                 </div>
               ) : (
-                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} ladders={ladders} gapFilterOn={radarRules.gapFilterOn ?? false} gap1Pct={radarRules.gap1Pct ?? 15} gap2Pct={radarRules.gap2Pct ?? 15} />
+                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} ladders={ladders} />
               )}
             </div>
           </Panel>

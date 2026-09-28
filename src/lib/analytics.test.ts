@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import { buildDealRadar, buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
 import { generateDemoHistory } from "@/lib/demo-history";
 
@@ -104,7 +104,8 @@ describe("buildDealRadar", () => {
 
   it("flags vendor arbitrage without any history depth", () => {
     const deals = buildDealRadar(
-      signals([history([{ daysAgo: 0, marketPrice: 900, minPrice: 400, ...liquid }], { vendorPrice: 1000 })])
+      signals([history([{ daysAgo: 0, marketPrice: 900, minPrice: 400, ...liquid }], { vendorPrice: 1000 })]),
+      undefined, now
     );
     expect(deals).toHaveLength(1);
     expect(deals[0].vendor).toBe(true);
@@ -115,7 +116,8 @@ describe("buildDealRadar", () => {
     // minPrice 999 vs vendorPrice 1000: a 1c spread, far under RADAR_MIN_PROFIT.
     // Reselling to the NPC is guaranteed, so it still belongs on the radar.
     const deals = buildDealRadar(
-      signals([history([{ daysAgo: 0, marketPrice: 999, minPrice: 999, ...liquid }], { vendorPrice: 1000 })])
+      signals([history([{ daysAgo: 0, marketPrice: 999, minPrice: 999, ...liquid }], { vendorPrice: 1000 })]),
+      undefined, now
     );
     expect(deals).toHaveLength(1);
     expect(deals[0].vendor).toBe(true);
@@ -141,10 +143,10 @@ describe("buildDealRadar", () => {
       ],
       { itemId: 5 }
     );
-    const deals = buildDealRadar(signals([qualifying, thinDiscount, shallowHistory, illiquid, subFloor]));
+    const deals = buildDealRadar(signals([qualifying, thinDiscount, shallowHistory, illiquid, subFloor]), undefined, now);
     expect(deals.map((deal) => deal.itemId)).toEqual([2770]);
     expect(deals[0].vendor).toBe(false);
-    expect(deals[0].profit).toBe(3000);
+    expect(deals[0].profit).toBe(2500);
   });
 
   it("orders vendor deals first, then by absolute profit", () => {
@@ -157,7 +159,7 @@ describe("buildDealRadar", () => {
       ],
       { itemId: 2 }
     );
-    const deals = buildDealRadar(signals([bigMedian, smallVendor]));
+    const deals = buildDealRadar(signals([bigMedian, smallVendor]), undefined, now);
     expect(deals.map((deal) => deal.itemId)).toEqual([1, 2]);
   });
 
@@ -170,7 +172,7 @@ describe("buildDealRadar", () => {
       { daysAgo: 1, marketPrice: 49240, ...liquid },
       { daysAgo: 0, marketPrice: 49240, minPrice: 40000, ...liquid }
     ]);
-    expect(buildDealRadar(signals([camper]))).toHaveLength(0);
+    expect(buildDealRadar(signals([camper]), undefined, now)).toHaveLength(0);
   });
 
   it("rejects implausible discounts — past the cap the reference is broken", () => {
@@ -181,7 +183,7 @@ describe("buildDealRadar", () => {
       { daysAgo: 1, marketPrice: 49240, ...liquid },
       { daysAgo: 0, marketPrice: 49500, minPrice: 6240, ...liquid }
     ]);
-    expect(buildDealRadar(signals([absurd]))).toHaveLength(0);
+    expect(buildDealRadar(signals([absurd]), undefined, now)).toHaveLength(0);
   });
 
   it("keeps a discount sitting exactly on the plausibility cap", () => {
@@ -190,7 +192,7 @@ describe("buildDealRadar", () => {
       { daysAgo: 1, marketPrice: 10000, ...liquid },
       { daysAgo: 0, marketPrice: 11000, minPrice: 2500, ...liquid }
     ]);
-    const deals = buildDealRadar(signals([atCap])); // med7 10000, min 2500 = 75% off
+    const deals = buildDealRadar(signals([atCap]), undefined, now); // med7 10000, min 2500 = 75% off
     expect(deals).toHaveLength(1);
     expect(deals[0].discountPercent).toBeCloseTo(75, 5);
   });
@@ -199,7 +201,8 @@ describe("buildDealRadar", () => {
     // Single scan, flat series, 90% below the NPC price: none of the
     // reference-credibility guards apply, because the NPC always buys.
     const deals = buildDealRadar(
-      signals([history([{ daysAgo: 0, marketPrice: 1000, minPrice: 100, ...liquid }], { vendorPrice: 1000 })])
+      signals([history([{ daysAgo: 0, marketPrice: 1000, minPrice: 100, ...liquid }], { vendorPrice: 1000 })]),
+      undefined, now
     );
     expect(deals).toHaveLength(1);
     expect(deals[0].vendor).toBe(true);

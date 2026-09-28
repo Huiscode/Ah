@@ -24,10 +24,10 @@ export function calculateEventStudy(event: Event, summaries: DailySummary[]) {
   const a3 = closestSummary(sorted, after3);
   const b7 = closestSummary(sorted, before7);
   const a7 = closestSummary(sorted, after7);
-  const pre3Return = eventDay && b3 ? percentChange(eventDay.closePrice, b3.closePrice) : 0;
-  const post3Return = eventDay && a3 ? percentChange(a3.closePrice, eventDay.closePrice) : 0;
-  const pre7Return = eventDay && b7 ? percentChange(eventDay.closePrice, b7.closePrice) : 0;
-  const post7Return = eventDay && a7 ? percentChange(a7.closePrice, eventDay.closePrice) : 0;
+  const pre3Return = eventDay && b3 ? percentChange(Number(eventDay.closePrice), Number(b3.closePrice)) : 0;
+  const post3Return = eventDay && a3 ? percentChange(Number(a3.closePrice), Number(eventDay.closePrice)) : 0;
+  const pre7Return = eventDay && b7 ? percentChange(Number(eventDay.closePrice), Number(b7.closePrice)) : 0;
+  const post7Return = eventDay && a7 ? percentChange(Number(a7.closePrice), Number(eventDay.closePrice)) : 0;
   const expectedReturn = (pre3Return + pre7Return) / 2;
   const abnormalReturn = post3Return - expectedReturn;
   const cumulativeAbnormalReturn = abnormalReturn + post7Return - expectedReturn;

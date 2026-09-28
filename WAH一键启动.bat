@@ -15,25 +15,25 @@ if %errorlevel%==0 (
     echo [ok] Web server already running - skip.
 ) else (
     echo [..] Starting web server (hidden)...
-    powershell -NoProfile -Command "Start-Process cmd -ArgumentList '/c npm run dev' -WindowStyle Hidden"
+    powershell -NoProfile -Command "Start-Process -FilePath 'npm.cmd' -ArgumentList 'run','dev' -WorkingDirectory '%~dp0' -WindowStyle Hidden"
 )
 
 REM --- Addon scan watcher ---
-powershell -NoProfile -Command "$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*watch-savedvars*' }; if (-not $p) { exit 1 }" >nul 2>&1
+powershell -NoProfile -Command "if (Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*watch-savedvars*' }) { exit 0 } else { exit 1 }" >nul 2>&1
 if %errorlevel%==0 (
     echo [ok] Addon watcher already running - skip.
 ) else (
     echo [..] Starting addon watcher (hidden)...
-    powershell -NoProfile -Command "Start-Process cmd -ArgumentList '/c npm run addon:watch' -WindowStyle Hidden"
+    powershell -NoProfile -Command "Start-Process -FilePath 'npm.cmd' -ArgumentList 'run','addon:watch' -WorkingDirectory '%~dp0' -WindowStyle Hidden"
 )
 
 REM --- AHledger website sync ---
-powershell -NoProfile -Command "$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*ahledger-importer*' }; if (-not $p) { exit 1 }" >nul 2>&1
+powershell -NoProfile -Command "if (Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*ahledger-importer*' }) { exit 0 } else { exit 1 }" >nul 2>&1
 if %errorlevel%==0 (
     echo [ok] AHledger sync already running - skip.
 ) else (
     echo [..] Starting AHledger sync (hidden)...
-    powershell -NoProfile -Command "Start-Process cmd -ArgumentList '/c npm run ahledger:sync' -WindowStyle Hidden"
+    powershell -NoProfile -Command "Start-Process -FilePath 'npm.cmd' -ArgumentList 'run','ahledger:sync' -WorkingDirectory '%~dp0' -WindowStyle Hidden"
 )
 
 echo.
@@ -52,5 +52,5 @@ echo [ok] Opening http://localhost:3000
 start "" "http://localhost:3000"
 echo.
 echo Done. All three services run silently in the background.
-echo To stop them later, use Task Manager or run the stop script.
+echo To stop them, run WAH一键停止.bat
 pause

@@ -121,16 +121,12 @@ describe("normalizeAddonScan", () => {
       rules: {
         minProfit: 50,
         minProfitRatio: 0.2,
-        supplyShrink: true,
-        supplyShrinkMax: -0.1,
         supplyCap: 0
       }
     });
     expect(scan.rules).toEqual({
       minProfit: 50,
       minProfitRatio: 0.2,
-      supplyShrink: true,
-      supplyShrinkMax: -0.1,
       supplyCap: 0
     });
   });
@@ -141,7 +137,6 @@ describe("normalizeAddonScan", () => {
       rules: {
         minProfit: "no",
         minProfitRatio: 0.2,
-        supplyShrink: "yes",
         supplyCap: 5
       }
     });
@@ -163,7 +158,7 @@ describe("normalizeAddonScan", () => {
   it("omits rules when none survive validation", () => {
     const scan = normalizeAddonScan({
       ...(rawScan() as Record<string, unknown>),
-      rules: { minProfit: "no", supplyShrink: "yes" }
+      rules: { minProfit: "no", gapFilterOn: "yes" }
     });
     expect("rules" in scan).toBe(false);
   });
@@ -202,8 +197,6 @@ describe("normalizeRadarRules", () => {
       minHistory: 3,
       minMed7Distinct: 2,
       maxDiscount: 0.75,
-      supplyShrink: false,
-      supplyShrinkMax: -0.15,
       supplyCap: 0
     })).toEqual({
       minProfit: 30,
@@ -213,8 +206,6 @@ describe("normalizeRadarRules", () => {
       minHistory: 3,
       minMed7Distinct: 2,
       maxDiscount: 0.75,
-      supplyShrink: false,
-      supplyShrinkMax: -0.15,
       supplyCap: 0
     });
   });

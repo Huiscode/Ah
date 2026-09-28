@@ -5,7 +5,9 @@
 // infinite realm — bars and bolts — not TBC-exclusive crafts whose mats can
 // never appear in the market feed.
 
+import { AH_CUT } from "@/lib/market-rules";
 export type CraftRecipe = {
+
   name: string;
   productItemId: number;
   productQuantity: number;
@@ -23,7 +25,6 @@ export type CraftProfitRow = {
   missing: string[];
 };
 
-const AH_CUT = 0.05; // neutral/faction AH cut on successful sales
 
 export const craftRecipes: CraftRecipe[] = [
   // Bars (mining) — ore -> bar smelting, the leveling economy staple.

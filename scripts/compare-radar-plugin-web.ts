@@ -58,7 +58,17 @@ async function main() {
   const rules = ruleRow ? (ruleRow.rules as unknown as Record<string, unknown>) : undefined;
   const items = await prisma.item.findMany({ include: { snapshots: { orderBy: { timestamp: "asc" } }, dailySummaries: { orderBy: { date: "asc" } } } });
   const now = new Date();
-  const signals: MarketSignal[] = items.filter((i) => i.snapshots.length > 0).map((i) => buildMarketSignal(i, now));
+  // Coerce BigInt price columns to numbers to match the domain MarketHistory type.
+  const coerced = items.map((i) => ({
+    ...i,
+    snapshots: i.snapshots.map((s) => ({ ...s, minPrice: Number(s.minPrice), marketPrice: Number(s.marketPrice) })),
+    dailySummaries: i.dailySummaries.map((d) => ({
+      ...d,
+      openPrice: Number(d.openPrice), closePrice: Number(d.closePrice),
+      highPrice: Number(d.highPrice), lowPrice: Number(d.lowPrice)
+    }))
+  }));
+  const signals: MarketSignal[] = coerced.filter((i) => i.snapshots.length > 0).map((i) => buildMarketSignal(i, now));
   const allWebDeals = buildDealRadar(signals, rules as Parameters<typeof buildDealRadar>[1]);
   // Same universe rule as production: only items of the latest addon scan round.
   const latestAddon = await prisma.auctionSnapshot.findFirst({ where: { source: "addon" }, orderBy: { timestamp: "desc" }, select: { timestamp: true } });

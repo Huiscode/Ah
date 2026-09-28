@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
@@ -21,15 +21,12 @@ type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" |
 // Headers sort: first click high-to-low, second click low-to-high; without
 // any click the rows keep the radar's own ranking (NPC deals first, then
 // absolute profit).
-export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladders, gapFilterOn = false, gap1Pct = 15, gap2Pct = 15 }: {
+export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladders }: {
   deals: DealRadarRow[];
   prices: Map<number, number>;
   categories: string[];
   watchedItemIds: number[];
   ladders: Map<number, PricePoint[]>;
-  gapFilterOn?: boolean;
-  gap1Pct?: number;
-  gap2Pct?: number;
 }) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortAsc, setSortAsc] = useState(false);

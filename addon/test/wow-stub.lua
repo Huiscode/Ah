@@ -14,7 +14,7 @@
 -- code passing here passes there. Upgrade path if integer-sensitive code
 -- ever lands: run the same stub under a real 5.1 binary.
 
-local bed = { chat = {}, frames = {}, timers = {}, hooks = {}, listings = {}, itemInfo = {}, searchResults = {}, ns = {} }
+local bed = { chat = {}, frames = {}, timers = {}, hooks = {}, listings = {}, itemInfo = {}, searchResults = {}, commodityResults = {}, ns = {} }
 WowTest = bed
 
 local NOW = 1700000000 -- fixed clock; a real time() would make med7 windows flaky
@@ -259,6 +259,28 @@ C_AuctionHouse = {
   end,
   PlaceBuyout = function(auctionID, buyout)
     bed.bought = { auctionID = auctionID, buyout = buyout }
+    -- The real buy completes asynchronously; fire the confirmation so the
+    -- addon's event-driven success path runs.
+    bed.fireEvent("AUCTION_HOUSE_PURCHASE_COMPLETED", auctionID)
+  end,
+  -- Commodity channel (herbs/ore/cloth/potions/mats). Results are sorted
+  -- cheapest-first; a purchase is a price/quantity order confirmed in steps.
+  GetNumCommoditySearchResults = function(itemID)
+    local rows = bed.commodityResults[itemID]
+    return rows and #rows or 0
+  end,
+  GetCommoditySearchResultInfo = function(itemID, index)
+    local rows = bed.commodityResults[itemID]
+    return rows and rows[index] or nil
+  end,
+  StartCommoditiesPurchase = function(itemID, unitPrice, quantity)
+    bed.commodityOrder = { itemID = itemID, unitPrice = unitPrice, quantity = quantity }
+    -- Echo the live price, mirroring the server's confirm step.
+    bed.fireEvent("COMMODITY_PRICE_UPDATED", itemID, unitPrice)
+  end,
+  ConfirmCommoditiesPurchase = function()
+    local order = bed.commodityOrder
+    if order then bed.fireEvent("COMMODITY_PURCHASE_SUCCEEDED", order.itemID) end
   end,
   ReplicateItems = function() bed.replicated = true end,
   GetNumReplicateItems = function() return 0 end,

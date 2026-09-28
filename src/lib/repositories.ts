@@ -18,7 +18,7 @@ export async function getMarketUniverse(): Promise<MarketHistory[]> {
 }
 
 
-export async function getItemDetail(itemId: number) {
+export async function getItemDetail(itemId: number): Promise<MarketHistory | null> {
   const row = await prisma.item.findUnique({
     where: { itemId },
     include: {

@@ -16,8 +16,9 @@ const MAGEWEAVE = 4338;
 const LINEN = 2589;
 const MED7 = 110000; // median of the closes below; the radar's reference price
 
-// 80000 is 27% under the reference, so it is a deal; the discount gate sits
-// at 93500, which is what makes the second listing's price decisive.
+// 70000 is comfortably under the reference (after the 5% cut), so it is a
+// deal; the discount gate sits at 93500, which is what makes the second
+// listing's price decisive.
 const CLOSES = [100000, 110000, 120000];
 
 type ResultRow = { auctionID: number; itemID: number; quantity: number; buyoutAmount: number; containsOwnerItem?: boolean };
@@ -35,7 +36,7 @@ function page(options?: { numAuctions?: number; extraScan?: unknown[] }): WowLua
   lua.setScan([
     {
       itemId: MAGEWEAVE, name: "Mageweave Cloth",
-      minPrice: 80000, numAuctions: options?.numAuctions ?? 6
+      minPrice: 70000, numAuctions: options?.numAuctions ?? 6
     },
     ...(options?.extraScan ?? [])
   ]);
@@ -62,20 +63,20 @@ describe("a purchase corrects the scan the radar reads", () => {
     const lua = page();
     // Two survivors, so "the cheapest one left" and "one of the ones left"
     // are different answers.
-    buyCheapest(lua, [result(1, 80000), result(2, 90000), result(3, 82000)]);
-    expect(lua.scanMin(MAGEWEAVE)).toBe(82000);
-    // Still 25% under the reference, so it stays on the radar -- at the
-    // price a player would actually pay now.
+    buyCheapest(lua, [result(1, 70000), result(2, 75000), result(3, 78000)]);
+    expect(lua.scanMin(MAGEWEAVE)).toBe(75000);
+    // The cheapest surviving listing still clears the net gate, so it stays
+    // on the radar -- at the price a player would actually pay now.
     lua.findDeals();
     expect(lua.names()).toEqual(["Mageweave Cloth"]);
-    expect(lua.cell(1, 3)).toBe("8金 20银");
+    expect(lua.cell(1, 3)).toBe("7金 50银");
   });
 
   it("drops the item once the surviving price no longer clears the gate", () => {
     const lua = page();
     // 95000 is 14% under a reference of 110000: short of the 15% the radar
     // requires, so what is left is not a deal any more.
-    buyCheapest(lua, [result(1, 80000), result(2, 95000)]);
+    buyCheapest(lua, [result(1, 70000), result(2, 95000)]);
     expect(lua.scanMin(MAGEWEAVE)).toBe(95000);
     lua.findDeals();
     expect(lua.names()).toEqual([]);
@@ -83,7 +84,7 @@ describe("a purchase corrects the scan the radar reads", () => {
 
   it("forgets the item entirely when its last listing is the one bought", () => {
     const lua = page();
-    buyCheapest(lua, [result(1, 80000)]);
+    buyCheapest(lua, [result(1, 70000)]);
     // Every number in the entry described a book that no longer exists, and
     // a zeroed minimum would read as "free" on the tooltip.
     expect(lua.scanned(MAGEWEAVE)).toBe(false);
@@ -95,7 +96,7 @@ describe("a purchase corrects the scan the radar reads", () => {
     // Three auctions is exactly the liquidity floor, so buying one has to
     // take the item off the radar even though the price still qualifies.
     const lua = page({ numAuctions: 3 });
-    buyCheapest(lua, [result(1, 80000), result(2, 82000)]);
+    buyCheapest(lua, [result(1, 70000), result(2, 75000)]);
     expect(lua.scanAuctions(MAGEWEAVE)).toBe(2);
     lua.findDeals();
     expect(lua.names()).toEqual([]);
@@ -103,25 +104,25 @@ describe("a purchase corrects the scan the radar reads", () => {
 
   it("reprices the bought item only, never a lookalike from the same list", () => {
     const lua = page({
-      extraScan: [{ itemId: LINEN, name: "Linen Cloth", minPrice: 80000, numAuctions: 6 }]
+      extraScan: [{ itemId: LINEN, name: "Linen Cloth", minPrice: 70000, numAuctions: 6 }]
     });
     // The live answer for Mageweave is corrected; Linen's entry stays
     // whatever the last scan saw — the purchase is knowledge about the book.
-    buyCheapest(lua, [result(1, 80000), result(2, 85000)]);
+    buyCheapest(lua, [result(1, 70000), result(2, 85000)]);
     expect(lua.scanMin(MAGEWEAVE)).toBe(85000);
-    expect(lua.scanMin(LINEN)).toBe(80000);
+    expect(lua.scanMin(LINEN)).toBe(70000);
     expect(lua.scanAuctions(LINEN)).toBe(6);
   });
 
   it("changes nothing when the server has no buyable listing at click time", () => {
     const lua = page();
     lua.search("Mageweave");
-    lua.setSearchResults(MAGEWEAVE, [result(1, 80000, MAGEWEAVE, { owner: true })]);
+    lua.setSearchResults(MAGEWEAVE, [result(1, 70000, MAGEWEAVE, { owner: true })]);
     lua.buyRow(1);
     lua.flushQueries();
     // Only the player's own listing exists: nothing is bought, nothing moves.
     expect(lua.lastChat()).toContain("没有有效的一口价挂单");
-    expect(lua.scanMin(MAGEWEAVE)).toBe(80000);
+    expect(lua.scanMin(MAGEWEAVE)).toBe(70000);
     expect(lua.scanAuctions(MAGEWEAVE)).toBe(6);
   });
 
@@ -132,6 +133,6 @@ describe("a purchase corrects the scan the radar reads", () => {
     lua.buyRow(1);
     lua.flushQueries();
     expect(lua.lastChat()).toContain("没有有效的一口价挂单");
-    expect(lua.scanMin(MAGEWEAVE)).toBe(80000);
+    expect(lua.scanMin(MAGEWEAVE)).toBe(70000);
   });
 });

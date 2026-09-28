@@ -11,6 +11,7 @@
 //      source that carries Forever-only items before their public IDs land):
 //      curated dictionary (vendor-prices.ts) < DB Item.vendorPrice < dump.
 import { vendorPriceById } from "@/data/vendor-prices";
+import { AH_CUT } from "@/lib/market-rules";
 
 export type RecipeMaterial = {
   itemId: number;
@@ -62,7 +63,6 @@ export type RecipeProfitRow = {
   materials: MaterialPrice[]; // 每种材料当前单价与来源（缺价材料不在此列）
 };
 
-const AH_CUT = 0.05; // neutral/faction AH cut on successful sales
 
 // Canonical English profession names (stored value) → client-locale display
 // labels. Data keeps the English keys (import layer / /wahrecipes normalize to

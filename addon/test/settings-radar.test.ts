@@ -1,8 +1,8 @@
-// Route-2 tunables: the in-game options panel owns the deal-radar
-// thresholds. These tests pin (a) the three optional liquidity gates
-// A/B/C behaving identically in Lua (Trade.lua) and TS (analytics.ts),
-// and (b) the settings panel persisting into WAH.settings.radar and
-// applying to WAH.RADAR immediately.
+﻿// Route-2 tunables: the in-game options panel owns the deal-radar
+// thresholds. These tests pin (a) the optional supply-cap gate behaving
+// identically in Lua (Trade.lua) and TS (analytics.ts), and (b) the
+// settings panel persisting into WAH.settings.radar and applying to
+// WAH.RADAR immediately. Profit is net of the 5% AH cut.
 
 import { describe, expect, it } from "vitest";
 import { loadAddon, type WowLua } from "./wow-lua";
@@ -20,13 +20,13 @@ type Candidate = {
   numAuctions: number;
   quantity?: number;
   closes: number[]; // P10 series, oldest first, one per scan
-  qs?: number[]; // listed quantity per scan, feeds gate A
 };
 
-// Control: moving reference, live book, shrinking supply, well under cap.
+// Control: moving reference, live book, well under the cap. A comfortable
+// net margin so the supply-cap gate is the only thing that differs.
 const CLEAN: Candidate = {
-  itemId: 1, name: "Clean", minPrice: 8000, numAuctions: 6, quantity: 100,
-  closes: [10000, 11000, 12000, 11000], qs: [100, 95, 90, 80]
+  itemId: 1, name: "Clean", minPrice: 6000, numAuctions: 6, quantity: 100,
+  closes: [10000, 11000, 12000, 11000]
 };
 
 function addonWith(candidates: Candidate[], rules: Partial<DealRadarRules>): WowLua {
@@ -39,7 +39,7 @@ function addonWith(candidates: Candidate[], rules: Partial<DealRadarRules>): Wow
     numAuctions: candidate.numAuctions,
     quantity: candidate.quantity ?? 100
   })));
-  lua.setPoints(candidates.map(({ itemId, closes, qs }) => ({ itemId, closes, qs })));
+  lua.setPoints(candidates.map(({ itemId, closes }) => ({ itemId, closes })));
   lua.openTab();
   for (const [key, value] of Object.entries(rules)) {
     lua.exec(`WowTest.ns.RADAR.${key} = ${JSON.stringify(value)}`);
@@ -69,37 +69,19 @@ function webWith(candidates: Candidate[], rules: Partial<DealRadarRules>): strin
         faction: "Alliance",
         marketPrice: price,
         minPrice: index === last ? candidate.minPrice : price,
-        quantity: candidate.qs ? candidate.qs[index] : candidate.quantity ?? 100,
+        quantity: candidate.quantity ?? 100,
         numAuctions: index === last ? candidate.numAuctions : 10
       })),
       dailySummaries: []
     }, NOW);
   });
-  return buildDealRadar(signals, { ...dealRadarRules, ...rules }).map((row) => row.name);
+  return buildDealRadar(signals, { ...dealRadarRules, ...rules }, NOW).map((row) => row.name);
 }
-
-describe("liquidity gate A (supply shrink)", () => {
-  const INFLATED: Candidate = {
-    itemId: 2, name: "Piling Up", minPrice: 8000, numAuctions: 6, quantity: 130,
-    closes: [10000, 11000, 12000, 11000], qs: [100, 110, 120, 130]
-  };
-  const RULES = { supplyShrink: true, supplyShrinkMax: -0.15 } as const;
-
-  it("admits a shrinking supply and rejects a piling one, identically in Lua and TS", () => {
-    expect(addonNames(addonWith([CLEAN, INFLATED], RULES))).toEqual(["Clean"]);
-    expect(webWith([CLEAN, INFLATED], RULES)).toEqual(["Clean"]);
-  });
-
-  it("gate A is inert while switched off", () => {
-    expect(addonNames(addonWith([CLEAN, INFLATED], {}))).toEqual(["Clean", "Piling Up"]);
-    expect(webWith([CLEAN, INFLATED], {})).toEqual(["Clean", "Piling Up"]);
-  });
-});
 
 describe("liquidity gate C (supply cap)", () => {
   const OVERSOLD: Candidate = {
-    itemId: 4, name: "Oversold", minPrice: 8000, numAuctions: 6, quantity: 1000,
-    closes: [10000, 11000, 12000, 11000], qs: [1100, 1050, 1000, 1000]
+    itemId: 4, name: "Oversold", minPrice: 6000, numAuctions: 6, quantity: 1000,
+    closes: [10000, 11000, 12000, 11000]
   };
   const RULES = { supplyCap: 500 } as const;
 
@@ -118,8 +100,7 @@ describe("settings panel (in-game authority)", () => {
   it("initializes settings.radar from the compiled defaults on ADDON_LOADED", () => {
     const lua = loadAddon();
     expect(lua.eval("WowTest.ns.settings.radar.minProfit")).toBe(dealRadarRules.minProfit);
-    expect(lua.eval("WowTest.ns.settings.radar.supplyShrinkMax")).toBe(dealRadarRules.supplyShrinkMax);
-    expect(lua.eval("WowTest.ns.settings.radar.supplyShrink")).toBe(false);
+    expect(lua.eval("WowTest.ns.settings.radar.supplyCap")).toBe(dealRadarRules.supplyCap);
   });
 
   it("committing a number in the panel updates settings.radar and the live rules at once", () => {
@@ -146,19 +127,6 @@ describe("settings panel (in-game authority)", () => {
     `);
     expect(lua.eval("WowTest.ns.settings.radar.minProfit")).toBe(dealRadarRules.minProfit);
     expect(lua.eval("WowTest.ns.RADAR.minProfit")).toBe(dealRadarRules.minProfit);
-  });
-
-  it("toggling the A checkbox applies immediately", () => {
-    const lua = loadAddon();
-    lua.exec(`
-      local panel = _G.WoWderhoiAHSettingsPanel
-      panel:Show()
-      local check = panel.radarChecks[1]
-      check:SetChecked(true)
-      check._scripts.OnClick(check)
-    `);
-    expect(lua.eval("WowTest.ns.settings.radar.supplyShrink")).toBe(true);
-    expect(lua.eval("WowTest.ns.RADAR.supplyShrink")).toBe(true);
   });
 
   it("applyRadarSettings is public so any writer can re-apply persisted tunables", () => {

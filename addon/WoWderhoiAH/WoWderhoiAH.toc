@@ -17,6 +17,5 @@ Locale.lua
 GeneratedRules.lua
 Settings.lua
 WoWderhoiAH.lua
-Recipes.lua
 GUI.lua
 Trade.lua

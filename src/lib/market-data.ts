@@ -18,6 +18,9 @@ export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt"> & {
   // source is a string (Prisma type) rather than the SnapshotSource union so
   // both DB rows (source: string) and hand-built test fixtures (no source)
   // assign cleanly; consumers narrow with snapshotSource() in analytics.
-  snapshots: Array<Omit<AuctionSnapshot, "id" | "itemId" | "item" | "rawPayload" | "source"> & Partial<Pick<AuctionSnapshot, "id" | "itemId" | "rawPayload">> & { source?: string }>;
-  dailySummaries: Array<Omit<DailySummary, "id" | "itemId" | "item" | "source"> & Partial<Pick<DailySummary, "id" | "itemId">> & { source?: string }>;
+  // Price columns are BigInt in the DB (to hold 100k-gold prices), but the
+  // repositories convert them to Number before they reach domain code, so the
+  // domain types use number.
+  snapshots: Array<Omit<AuctionSnapshot, "id" | "itemId" | "item" | "rawPayload" | "source" | "minPrice" | "marketPrice"> & Partial<Pick<AuctionSnapshot, "id" | "itemId" | "rawPayload">> & { source?: string; minPrice: number; marketPrice: number }>;
+  dailySummaries: Array<Omit<DailySummary, "id" | "itemId" | "item" | "source" | "openPrice" | "closePrice" | "highPrice" | "lowPrice"> & Partial<Pick<DailySummary, "id" | "itemId">> & { source?: string; openPrice: number; closePrice: number; highPrice: number; lowPrice: number }>;
 };

@@ -26,9 +26,10 @@ type Candidate = {
 };
 
 // The control every gate test is measured against: 3 scans, a moving
-// reference, a live book, and a min price 27% under med7 = 11000.
+// reference, a live book, and a min price comfortably under med7 = 11000
+// after the 5% AH cut (net margin clears the 25% ratio gate).
 const CLEAN: Candidate = {
-  itemId: 4338, name: "Clean Discount", minPrice: 8000, numAuctions: 6, closes: [10000, 11000, 12000]
+  itemId: 4338, name: "Clean Discount", minPrice: 7000, numAuctions: 6, closes: [10000, 11000, 12000]
 };
 
 function radar(candidates: Candidate[]): WowLua {
@@ -80,7 +81,7 @@ function classifiedByWeb(candidates: Candidate[]) {
       dailySummaries: []
     }, NOW);
   });
-  return buildDealRadar(signals).map((row) => ({
+  return buildDealRadar(signals, undefined, NOW).map((row) => ({
     name: row.name,
     vendor: row.vendor,
     discountPercent: row.discountPercent

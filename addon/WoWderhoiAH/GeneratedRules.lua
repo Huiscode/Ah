@@ -6,6 +6,9 @@ local ADDON_NAME, WAH = ...
 
 WAH.PIPELINE_VERSION = 3
 
+-- Auction house cut on a successful sale; vendor deals are exempt.
+WAH.AH_CUT = 0.05
+
 WAH.RADAR = {
   minProfit = 30,
   minProfitRatio = 0.25,
@@ -14,7 +17,5 @@ WAH.RADAR = {
   minHistory = 3,
   minMed7Distinct = 2,
   maxDiscount = 0.75,
-  supplyShrink = false,
-  supplyShrinkMax = -0.15,
   supplyCap = 0
 }
