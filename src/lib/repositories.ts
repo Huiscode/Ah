@@ -3,24 +3,34 @@ import { type MarketHistory } from "@/lib/market-data";
 import type { DbRecipe, RecipeMaterial } from "@/lib/recipe-profits";
 
 export async function getMarketUniverse(): Promise<MarketHistory[]> {
-  return prisma.item.findMany({
+  const rows = await prisma.item.findMany({
     include: {
       snapshots: { orderBy: { timestamp: "asc" }, take: -48 },
       dailySummaries: { orderBy: { date: "asc" }, take: -30 }
     },
     orderBy: { name: "asc" }
   });
+  for (const row of rows as any[]) {
+    for (const s of row.snapshots) { s.minPrice = Number(s.minPrice); s.marketPrice = Number(s.marketPrice); }
+    for (const d of row.dailySummaries) { d.openPrice = Number(d.openPrice); d.closePrice = Number(d.closePrice); d.highPrice = Number(d.highPrice); d.lowPrice = Number(d.lowPrice); }
+  }
+  return rows as any;
 }
 
 
 export async function getItemDetail(itemId: number) {
-  return prisma.item.findUnique({
+  const row = await prisma.item.findUnique({
     where: { itemId },
     include: {
       snapshots: { orderBy: { timestamp: "asc" }, take: -96 },
       dailySummaries: { orderBy: { date: "asc" }, take: -60 }
     }
   });
+  if (row) {
+    for (const s of (row as any).snapshots) { s.minPrice = Number(s.minPrice); s.marketPrice = Number(s.marketPrice); }
+    for (const d of (row as any).dailySummaries) { d.openPrice = Number(d.openPrice); d.closePrice = Number(d.closePrice); d.highPrice = Number(d.highPrice); d.lowPrice = Number(d.lowPrice); }
+  }
+  return row as any;
 }
 
 export async function getUpcomingEvents() {

@@ -3,31 +3,37 @@ title WoWderhoiAH Launcher
 cd /d "%~dp0"
 
 echo ================================================
-echo   WoWderhoiAH - one-click launcher
-echo   Web server on port 3000 + scan importer
-echo   Already-running services are skipped.
+echo   WoWderhoiAH - silent one-click launcher
+echo   Web server :3000 + addon watcher + AHledger sync
+echo   Services run in the background (no windows).
 echo ================================================
 echo.
 
-set "DEV_RUNNING="
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr /R /C:":3000 .*LISTENING"') do set "DEV_RUNNING=1"
-
-set "WATCH_RUNNING="
-powershell -NoProfile -Command "$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*watch-savedvars*' }; if ($p) { exit 0 } else { exit 1 }" >nul 2>&1
-if %errorlevel%==0 set "WATCH_RUNNING=1"
-
-if defined DEV_RUNNING (
-    echo [ok] Web server already running on port 3000 - skip.
+REM --- Web server (port 3000) ---
+netstat -ano | findstr /R /C:":3000 .*LISTENING" >nul 2>&1
+if %errorlevel%==0 (
+    echo [ok] Web server already running - skip.
 ) else (
-    echo [..] Starting web server: npm run dev
-    start "WAH-Web" cmd /k "npm run dev"
+    echo [..] Starting web server (hidden)...
+    powershell -NoProfile -Command "Start-Process cmd -ArgumentList '/c npm run dev' -WindowStyle Hidden"
 )
 
-if defined WATCH_RUNNING (
-    echo [ok] Scan importer already running - skip.
+REM --- Addon scan watcher ---
+powershell -NoProfile -Command "$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*watch-savedvars*' }; if (-not $p) { exit 1 }" >nul 2>&1
+if %errorlevel%==0 (
+    echo [ok] Addon watcher already running - skip.
 ) else (
-    echo [..] Starting scan importer: npm run addon:watch
-    start "WAH-Watch" cmd /k "npm run addon:watch"
+    echo [..] Starting addon watcher (hidden)...
+    powershell -NoProfile -Command "Start-Process cmd -ArgumentList '/c npm run addon:watch' -WindowStyle Hidden"
+)
+
+REM --- AHledger website sync ---
+powershell -NoProfile -Command "$p = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*ahledger-importer*' }; if (-not $p) { exit 1 }" >nul 2>&1
+if %errorlevel%==0 (
+    echo [ok] AHledger sync already running - skip.
+) else (
+    echo [..] Starting AHledger sync (hidden)...
+    powershell -NoProfile -Command "Start-Process cmd -ArgumentList '/c npm run ahledger:sync' -WindowStyle Hidden"
 )
 
 echo.
@@ -45,5 +51,6 @@ goto waitloop
 echo [ok] Opening http://localhost:3000
 start "" "http://localhost:3000"
 echo.
-echo Done. Keep the two black windows open; closing them stops the services.
+echo Done. All three services run silently in the background.
+echo To stop them later, use Task Manager or run the stop script.
 pause
