@@ -1,4 +1,4 @@
-import { Bell, CalendarClock, Hammer, RadioTower, Star } from "lucide-react";
+﻿import { Bell, CalendarClock, Hammer, RadioTower, Star } from "lucide-react";
 import { buildDealRadar } from "@/lib/analytics";
 import { evaluateAlertRules } from "@/lib/alerts";
 import { buildFloorPriceIndex, computeRecipeProfits } from "@/lib/recipe-profits";
@@ -28,6 +28,7 @@ import { AhledgerToggle } from "@/components/ahledger-toggle";
 import { DealRadarTable } from "@/components/deal-radar-table";
 import { getLatestLadders } from "@/lib/ladders";
 import { RadarParamsPanel } from "@/components/radar-params-panel";
+import { PriceLadderPanel } from "@/components/price-ladder-panel";
 import { RecipeProfitPanel } from "@/components/recipe-profit-panel";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import Link from "next/link";
@@ -36,7 +37,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // Chinese labels for the alert metrics surfaced on the dashboard; kept in
   // sync with components/trader-panels.tsx.
   const alertMetricLabels: Record<string, string> = {
-    price: "最新价",
+    price: "市场价",
     minPrice: "最低价",
     med7: "7日参考",
     discountPercent: "折扣%",
@@ -120,7 +121,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   {signals.length === 0 ? "暂无市场数据。进游戏 /wahscan 扫描。" : "当前没有满足流动性与利润门槛的捡漏挂单。"}
                 </div>
               ) : (
-                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} ladders={ladders} />
+                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} ladders={ladders} gapFilterOn={radarRules.gapFilterOn ?? false} gap1Pct={radarRules.gap1Pct ?? 15} gap2Pct={radarRules.gap2Pct ?? 15} />
               )}
             </div>
           </Panel>
@@ -139,61 +140,16 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </Panel>
         </div>
         <div className="space-y-3">
+          <PriceLadderPanel />
+          <RadarParamsPanel initialRules={radarRules} />
           <RecipeProfitPanel rows={conversionRows} prices={priceByItemId} floorPrices={floorPriceIndex} limitPerProfession={8} />
-          <RadarParamsPanel note="游戏内权威 · 扫描后同步">
-            <div className="space-y-2 font-mono text-xs">
-              <p className="text-[10px] leading-relaxed text-terminal-muted">
-                这些阈值在游戏内修改（拍卖行面板「设置」按钮或 /wahopt），改动立即生效并随下次扫描同步回这里。此处为只读跟随。捡漏雷达同时受 NPC 必赚（无门槛）与以下第二档门槛约束。网站数据（AHledger）按 7 日中位口径计算、跟随最新来源，与自扫 P10 口径互不混算。
-              </p>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">绝对利润下限</span>
-                <Coins copper={radarRules.minProfit} />
-              </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">利润低于此铜币数的价差视为噪音而非机会。</p>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">相对利润下限</span>
-                <span>{formatPercent(radarRules.minProfitRatio * 100).replace(/^\+/, "")}</span>
-              </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">利润还须达到 7 日参考价（自扫P10/网站P50）的该比例，让下限随物价缩放。0.25 = 利润不低于参考价的 25%。</p>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">最大折扣</span>
-                <span>{formatPercent(radarRules.maxDiscount * 100).replace(/^\+/, "")}</span>
-              </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">雷达信任的最大折扣深度；超过此深度说明参考价已失效，而不是挂单便宜。0.75 = 最多信任低于中位 75%。</p>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">最低挂单数</span>
-                <span>{radarRules.minAuctions}</span>
-              </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">构成真实市场所需的最低挂单数；挂单太少就没有可买入的市场。</p>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">历史样本数</span>
-                <span>{radarRules.minHistory}</span>
-              </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">7 日窗口内中位有效所需的最少扫描次数；历史太浅时中位没有意义。</p>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">中位去重样本</span>
-                <span>{radarRules.minMed7Distinct}</span>
-              </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">要求的 7 日参考价（自扫P10/网站P50）去重样本数。完全平坦的序列是一个蹲守卖家的报价，不是市场，雷达拒绝按它折扣。</p>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">供给收缩</span>
-                <span className={radarRules.supplyShrink ? "text-terminal-green" : "text-terminal-muted"}>{radarRules.supplyShrink ? `开（≤${formatPercent(Math.abs(radarRules.supplyShrinkMax) * 100)}）` : "关"}</span>
-              </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">开启后要求最近 4 次扫描的在售量净收缩至少 {formatPercent(Math.abs(radarRules.supplyShrinkMax) * 100)}——供给在被买走，周转快、囤积风险低。关闭则不要求。</p>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">供给量上限</span>
-                <span className={radarRules.supplyCap > 0 ? "text-terminal-green" : "text-terminal-muted"}>{radarRules.supplyCap > 0 ? radarRules.supplyCap.toLocaleString("zh-CN") : "关（0）"}</span>
-              </div>
-              <p className="-mt-1 text-[10px] leading-relaxed text-terminal-muted">排除最新在售量超过该上限的物品——供给过剩的商品有囤积风险。0 表示不设上限。</p>
-            </div>
-          </RadarParamsPanel>
           <Panel>
             <PanelHeader title="触发的预警" action={<Bell size={13} className={triggeredAlerts.length > 0 ? "text-terminal-red" : "text-terminal-muted"} />} />
             <div className="space-y-2 p-3 font-mono text-xs">
               {triggeredAlerts.length === 0 && <div className="text-terminal-muted">无触发预警</div>}
               {triggeredAlerts.map((hit) => (
                 <div key={hit.rule.id} className="flex items-center justify-between gap-2">
-                  <Link href={`/items/${hit.rule.itemId}`} className="text-slate-100 hover:text-terminal-amber">{hit.signal.name}</Link>
+                  <Link href={`/items/${hit.signal.itemId}`} target="_blank" className="text-slate-100 hover:text-terminal-amber">{hit.signal.name}</Link>
                   <span className="text-terminal-red">
                     {alertMetricLabels[hit.rule.metric] ?? hit.rule.metric} {hit.rule.operator === "gt" ? ">" : "<"} {hit.rule.threshold}（现 {hit.actual.toFixed(2)}）
                   </span>
@@ -209,7 +165,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 <div key={signal.itemId} className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-2">
                     <WatchStar itemId={signal.itemId} watched />
-                    <Link href={`/items/${signal.itemId}`} className={`inline-flex items-center gap-1 ${qualityColorClass(signal.quality)}`}><ItemIcon itemId={signal.itemId} size={16} />{signal.name}</Link>
+                    <Link href={`/items/${signal.itemId}`} target="_blank" className={`inline-flex items-center gap-1 ${qualityColorClass(signal.quality)}`}><ItemIcon itemId={signal.itemId} size={16} />{signal.name}</Link>
                   </span>
                   <span className="flex items-center gap-3">
                     <Coins copper={signal.price} />

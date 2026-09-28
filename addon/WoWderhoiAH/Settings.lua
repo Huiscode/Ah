@@ -105,19 +105,8 @@ local OPTIONS = {
 
 -- Radar tunables. Numeric fields are committed on Enter; checkbox toggles
 -- apply immediately. All of them write WAH.settings.radar then re-apply.
-local RADAR_NUMERIC = {
-  { key = "minProfit", label = L.OPT_R_MINPROFIT, tip = L.OPT_R_MINPROFIT_TIP },
-  { key = "minProfitRatio", label = L.OPT_R_RATIO, tip = L.OPT_R_RATIO_TIP },
-  { key = "maxDiscount", label = L.OPT_R_MAXDISC, tip = L.OPT_R_MAXDISC_TIP },
-  { key = "minAuctions", label = L.OPT_R_MINAUC, tip = L.OPT_R_MINAUC_TIP },
-  { key = "minMed7Distinct", label = L.OPT_R_DISTINCT, tip = L.OPT_R_DISTINCT_TIP },
-  { key = "minHistory", label = L.OPT_R_HISTORY, tip = L.OPT_R_HISTORY_TIP },
-  { key = "supplyShrinkMax", label = L.OPT_R_SHRINK, tip = L.OPT_R_SHRINK_TIP },
-  { key = "supplyCap", label = L.OPT_R_CAP, tip = L.OPT_R_CAP_TIP }
-}
-local RADAR_CHECKS = {
-  { key = "supplyShrink", label = L.OPT_R_SUPPLYSHRINK, tip = L.OPT_R_SUPPLYSHRINK_TIP }
-}
+local RADAR_NUMERIC = {}
+local RADAR_CHECKS = {}
 
 local function formatRadarValue(value)
   -- Integers stay integers; ratios keep enough precision to be meaningful.

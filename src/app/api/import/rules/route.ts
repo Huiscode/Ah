@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { normalizeRadarRules } from "@/lib/addon-scan";
 import { prisma } from "@/lib/prisma";
 
+export async function GET() {
+  const row = await prisma.radarRule.findUnique({ where: { id: 1 } });
+  return NextResponse.json(row?.rules ?? {});
+}
+
 // Lightweight rules-only sync: the in-game options panel writes settings.radar
 // to SavedVariables on every keystroke/checkbox, often between scans. The
 // watcher posts those changes here so the web radar thresholds stay in sync

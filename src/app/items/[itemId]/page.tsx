@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+﻿import { notFound } from "next/navigation";
 import Link from "next/link";
 import { buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
 import { getItemDetail, getWatchedItemIds } from "@/lib/repositories";
@@ -12,6 +12,7 @@ import { describeFreshness } from "@/lib/freshness";
 import { CandlestickChart, TimeSeriesChart } from "@/components/charts";
 import { AlertRulePanel } from "@/components/trader-panels";
 import { WatchStar } from "@/components/watch-star";
+import { CloseTabButton } from "@/components/close-tab-button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 
 export default async function ItemDetail({ params }: { params: Promise<{ itemId: string }> }) {
@@ -86,7 +87,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
 
   return (
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
-      <div className="mb-3 flex items-center justify-between border border-terminal-border bg-terminal-panel px-4 py-3">
+      <div className="relative mb-3 flex items-center justify-between border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
           <div className="font-mono text-xs uppercase text-terminal-muted">商品终端</div>
           <h1 className={`flex items-center gap-2 font-mono text-2xl font-semibold ${qualityColorClass(item.quality)}`}><ItemIcon itemId={item.itemId} icon={item.icon} size={28} />{item.name}</h1>
@@ -95,9 +96,9 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Link href="/" className="font-mono text-xs text-terminal-amber hover:underline">← 返回主页</Link>
           <span className="text-xl"><WatchStar itemId={item.itemId} watched={watchedIds.has(item.itemId)} /></span>
         </div>
+        <div className="absolute left-1/2 -translate-x-1/2"><CloseTabButton /></div>
       </div>
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
@@ -147,7 +148,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
               {signal && (
                 <>
                   <div>
-                    <div className="text-xs uppercase text-terminal-muted">最新价{latestSource === "ahledger" ? " · P50" : " · P10"}</div>
+                    <div className="text-xs uppercase text-terminal-muted">市场价{latestSource === "ahledger" ? " · P50" : " · P10"}</div>
                     <div className="text-2xl"><Coins copper={signal.price} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">

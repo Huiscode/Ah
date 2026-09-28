@@ -120,6 +120,8 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
     supplyShrinkMax: RADAR_SUPPLY_SHRINK_MAX,
     supplyCap: RADAR_SUPPLY_CAP
   } = rules;
+  const minPrice = (rules as any).minPrice ?? 0;
+  const maxPrice = (rules as any).maxPrice ?? 0;
   const minAuctionsGate = RADAR_MIN_AUCTIONS;
   const deals: DealRadarRow[] = [];
   for (const signal of signals) {
@@ -164,7 +166,9 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
       && signal.med7Distinct >= RADAR_MIN_MED7_DISTINCT
       && signal.minPrice >= signal.med7 * (1 - RADAR_MAX_DISCOUNT)
       && (!RADAR_SUPPLY_SHRINK || signal.supplyShrinkPercent <= RADAR_SUPPLY_SHRINK_MAX * 100)
-      && (RADAR_SUPPLY_CAP <= 0 || signal.quantity <= RADAR_SUPPLY_CAP)) {
+      && (RADAR_SUPPLY_CAP <= 0 || signal.quantity <= RADAR_SUPPLY_CAP)
+      && (minPrice <= 0 || signal.price >= minPrice)
+      && (maxPrice <= 0 || signal.price <= maxPrice)) {
       deals.push({
         itemId: signal.itemId,
         name: signal.name,

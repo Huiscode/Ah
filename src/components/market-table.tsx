@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // View-state shell for the server-filtered market table: every control
 // writes URL search params and the server re-renders just the visible
@@ -18,8 +18,8 @@ import { ItemIcon } from "@/components/item-icon";
 import { usePersistedState } from "@/lib/use-persisted-state";
 
 const sortableColumns: Array<{ key: SignalSortKey; heading: string }> = [
-  { key: "price", heading: "最新价" },
   { key: "minPrice", heading: "最低价" },
+  { key: "price", heading: "市场价" },
   { key: "med7", heading: "7日参考" },
   { key: "discountPercent", heading: "折扣%" },
   { key: "changePercent", heading: "环比%" },
@@ -191,7 +191,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
               <tr key={signal.itemId} className="border-b border-terminal-border/70 hover:bg-slate-800/35">
                 <td className="px-2 py-2 text-center"><WatchStar itemId={signal.itemId} watched={watched.has(signal.itemId)} /></td>
                 <td className="px-3 py-2 text-left">
-                  <Link href={`/items/${signal.itemId}`} className={`inline-flex items-center gap-2 ${qualityColorClass(signal.quality)}`}>
+                  <Link href={`/items/${signal.itemId}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(signal.quality)}`}>
                     <ItemIcon itemId={signal.itemId} icon={signal.icon} />
                     {signal.name}
                   </Link>

@@ -21,6 +21,11 @@ export type DealRadarRules = {
   supplyShrink: boolean;
   supplyShrinkMax: number;
   supplyCap: number;
+  minPrice: number;
+  maxPrice: number;
+  gapFilterOn: boolean;
+  gap1Pct: number;
+  gap2Pct: number;
 };
 
 export const dealRadarRules: DealRadarRules = {
@@ -43,7 +48,12 @@ export const dealRadarRules: DealRadarRules = {
   supplyShrinkMax: -0.15,
   // C — supply cap: 0 = off; >0 excludes items whose latest listed
   // quantity exceeds this (oversupplied goods are a hoarding risk).
-  supplyCap: 0
+  supplyCap: 0,
+  minPrice: 0,
+  maxPrice: 0,
+  gapFilterOn: false,
+  gap1Pct: 15,
+  gap2Pct: 15
 };
 
 // Route-2 overrides arrive with each scan import (the in-game options panel

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 
@@ -22,6 +22,7 @@ export function usePersistedState<T>(key: string, initial: T): [T, (v: T | ((pre
     if (!loaded) return;
     try {
       localStorage.setItem(key, JSON.stringify(value));
+      window.dispatchEvent(new CustomEvent('wah:persist', { detail: { key } }));
     } catch {
       // 隐私模式等写不进去时静默失败
     }

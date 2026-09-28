@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useTransition } from "react";
 import { createAlertRule, deleteAlertRule } from "@/app/actions";
@@ -8,7 +8,7 @@ import { formatWowMoney } from "@/lib/wow-money";
 type AlertRuleRow = { id: string; metric: string; operator: string; threshold: number; enabled: boolean };
 
 const metricLabels: Record<string, string> = {
-  price: "最新价",
+  price: "市场价",
   minPrice: "最低价",
   med7: "7日参考",
   discountPercent: "折扣%",

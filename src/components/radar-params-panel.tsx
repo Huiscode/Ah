@@ -3,52 +3,69 @@
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/panel";
+import { usePersistedState } from "@/lib/use-persisted-state";
+import { MoneyInput } from "@/components/money-input";
 
-// Route-2 dashboard panel: the in-game settings panel is the authority, this
-// card only follows. The collapse switch hides the whole block; while hidden a
-// single slim row remains so the card can be brought back.
-export function RadarParamsPanel({
-  note,
-  children
-}: {
-  note: string;
-  children: React.ReactNode;
-}) {
-  // Default collapsed: the radar params are read-only mirror of the in-game
-  // panel, so a slim row keeps the card out of the way until asked for.
-  const [open, setOpen] = useState(false);
+export type RadarRules = Record<string, unknown>;
+
+export function RadarParamsPanel({ initialRules }: { initialRules: RadarRules }) {
+  const [open, setOpen] = usePersistedState<boolean>("wah:radar-panel:open", true);
+  const [minPrice, setMinPrice] = usePersistedState<number>("wah:filter:minPrice", 0);
+  const [maxPrice, setMaxPrice] = usePersistedState<number>("wah:filter:maxPrice", 0);
+  const [gap1Pct, setGap1Pct] = usePersistedState<number>("wah:filter:gap1", 0);
+  const [gap2Pct, setGap2Pct] = usePersistedState<number>("wah:filter:gap2", 0);
+
+  const field = "rounded border border-terminal-border bg-terminal-panel2 px-2 py-1 text-right text-slate-100 focus:border-terminal-amber focus:outline-none";
+  const row = "flex items-center justify-between gap-3 py-1.5 border-b border-terminal-border/40 last:border-0";
+
+  const notify = () => setTimeout(() => window.dispatchEvent(new Event("wah:filter")), 100);
 
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        className="flex w-full items-center justify-between border border-terminal-border bg-terminal-panel/92 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-terminal-muted hover:text-terminal-amber"
-      >
-        <span>雷达参数</span>
-        <Eye size={13} />
-      </button>
+      <Panel>
+        <PanelHeader
+          title="捡漏池筛选"
+          action={
+            <button onClick={() => setOpen(true)} aria-label="展开" className="text-terminal-muted hover:text-terminal-amber">
+              <Eye size={13} />
+            </button>
+          }
+        />
+      </Panel>
     );
   }
 
   return (
     <Panel>
       <PanelHeader
-        title="雷达参数"
+        title="捡漏池筛选"
         action={
-          <span className="flex items-center gap-2">
-            <span className="font-mono text-[10px] text-terminal-muted">{note}</span>
-            <button
-              onClick={() => setOpen(false)}
-              aria-label="隐藏雷达参数"
-              title="隐藏雷达参数"
-              className="text-terminal-muted hover:text-terminal-amber"
-            >
-              <EyeOff size={13} />
-            </button>
-          </span>
+          <button onClick={() => setOpen(false)} aria-label="收起" className="text-terminal-muted hover:text-terminal-amber">
+            <EyeOff size={13} />
+          </button>
         }
       />
-      <div className="space-y-2 p-3 font-mono text-xs">{children}</div>
+      <div className="space-y-0 p-3 font-mono text-xs">
+        <div className={row}>
+          <span className="text-slate-100">价格下限 (0=关)</span>
+          <MoneyInput value={minPrice} onChange={(v) => { setMinPrice(v); notify(); }} fieldClass={field} />
+        </div>
+        <div className={row}>
+          <span className="text-slate-100">价格上限 (0=关)</span>
+          <MoneyInput value={maxPrice} onChange={(v) => { setMaxPrice(v); notify(); }} fieldClass={field} />
+        </div>
+        <div className={row}>
+          <span className="text-slate-100">价格1比2低 (%)</span>
+          <input type="number" min="0" className={field + " w-20"} value={gap1Pct} onChange={(e) => { setGap1Pct(Number(e.target.value) || 0); notify(); }} />
+        </div>
+        <div className={row}>
+          <span className="text-slate-100">价格2比3低 (%)</span>
+          <input type="number" min="0" className={field + " w-20"} value={gap2Pct} onChange={(e) => { setGap2Pct(Number(e.target.value) || 0); notify(); }} />
+        </div>
+        <p className="pt-2 text-[10px] leading-relaxed text-terminal-muted">
+          所有条件仅对本地数据库的捡漏池做筛选。
+        </p>
+      </div>
     </Panel>
   );
 }

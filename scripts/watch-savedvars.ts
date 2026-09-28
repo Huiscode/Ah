@@ -1,52 +1,29 @@
 // Watches the WoW SavedVariables file written by the WoWderhoiAH addon
-// and posts each new scan to the terminal import endpoint. In-game
-// history accumulates inside the addon itself (WoWderhoiAH_Points); the
-// whole 7-day point series rides along with each import so an overnight
-// auto-rescan session (monitor off, no reload) lands every round in the
-// terminal in one shot when the player next logs out. Run alongside the
-// game client:  npm run addon:watch
+// and posts each new scan to the terminal import endpoint. Also polls the
+// web terminal for radar rule changes and writes them back to SavedVariables
+// so the user can tune thresholds from the browser.
 import { readFileSync, writeFileSync, watchFile } from "node:fs";
 import { parseSavedVariables } from "@/lib/addon-scan";
 import { SCAN_PIPELINE_VERSION } from "@/lib/market-rules";
 
-// Nothing else in this process loads .env (the Prisma import that did so
-// as a side effect is gone), so load it explicitly before reading config.
 process.loadEnvFile();
 
 const savedVarsPath = process.env.AQT_SAVEDVARS_PATH;
-if (!savedVarsPath) {
-  throw new Error(
-    "AQT_SAVEDVARS_PATH is not set. Point it at the WoW SavedVariables file, e.g. " +
-      "<WoW install dir>\\_classic_beta_\\WTF\\Account\\<ACCOUNT>\\SavedVariables\\WoWderhoiAH.lua " +
-      "(the WoW: Forever Beta client uses the _classic_beta_ layout and names the file after the addon, " +
-      "not after the variable — confirmed on a live install)"
-  );
-}
+if (!savedVarsPath) throw new Error("AQT_SAVEDVARS_PATH not set");
 const importUrl = process.env.AQT_IMPORT_URL ?? "http://localhost:3000/api/import/addon-scan";
+const rulesUrl = importUrl.replace(/\/addon-scan\/?$/, "/rules");
 
-// Watcher restart bookkeeping: remember the last imported scan timestamp so
-// a fresh process does not re-import the whole 7-day point history. The
-// state file lives next to this script and is gitignored.
 const statePath = new URL("./.watch-state.json", import.meta.url);
 function readState(): { lastImportedScanAt: number } {
-  try {
-    return JSON.parse(readFileSync(statePath, "utf8")) as { lastImportedScanAt: number };
-  } catch {
-    return { lastImportedScanAt: 0 };
-  }
+  try { return JSON.parse(readFileSync(statePath, "utf8")); } catch { return { lastImportedScanAt: 0 }; }
 }
-function writeState(state: { lastImportedScanAt: number }) {
-  writeFileSync(statePath, JSON.stringify(state), "utf8");
-}
+function writeState(state: { lastImportedScanAt: number }) { writeFileSync(statePath, JSON.stringify(state), "utf8"); }
 
 let state = readState();
 let lastImportedScanAt = state.lastImportedScanAt ?? 0;
 let lastSentRulesJson = "";
+let lastWebRulesJson = "";
 
-const rulesUrl = importUrl.replace(/\/addon-scan\/?$/, "/rules");
-
-// Push radar rules to the lightweight endpoint when the in-game options panel
-// changes them between scans, so the web thresholds never lag a user tweak.
 async function syncRulesIfChanged(parsed: Record<string, unknown>) {
   const db = parsed.WoWderhoiAHDB as Record<string, unknown> | undefined;
   const settings = db?.settings as Record<string, unknown> | undefined;
@@ -55,55 +32,65 @@ async function syncRulesIfChanged(parsed: Record<string, unknown>) {
   const json = JSON.stringify(radarRules);
   if (json === lastSentRulesJson) return;
   try {
-    const res = await fetch(rulesUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: json
-    });
-    if (res.ok) {
-      lastSentRulesJson = json;
-      console.log("Radar rules synced (settings changed between scans).");
-    } else {
-      console.error(`Rules sync failed (${res.status}): ${await res.text()}`);
-    }
-  } catch (error) {
-    console.error("Rules sync error:", error);
+    const res = await fetch(rulesUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: json });
+    if (res.ok) { lastSentRulesJson = json; console.log("Radar rules synced (game → web)."); }
+  } catch {}
+}
+
+// Write web rules back to the Lua SavedVariables file by replacing the
+// ["radar"] = { ... } block inside WoWderhoiAHDB.settings.
+function writeRulesBackToLua(webRules: Record<string, unknown>) {
+  const text = readFileSync(savedVarsPath!, "utf8");
+  // Build the new radar block in WoW Lua syntax.
+  const lines = Object.entries(webRules).map(([k, v]) => {
+    if (typeof v === "boolean") return `      ["${k}"] = ${v ? "true" : "false"},`;
+    if (typeof v === "number") return `      ["${k}"] = ${v},`;
+    return `      ["${k}"] = "${v}",`;
+  });
+  const newBlock = `["radar"] = {\n${lines.join("\n")}\n    }`;
+  // Match existing ["radar"] = { ... } (up to the closing brace at 4-space indent).
+  const re = /\["radar"\] = \{[\s\S]*?\n  \},?/;
+  if (re.test(text)) {
+    const updated = text.replace(re, newBlock);
+    writeFileSync(savedVarsPath!, updated, "utf8");
+    console.log("Radar rules written back to SavedVariables (web → game). /reload in game.");
   }
 }
 
+async function pullWebRules(parsed: Record<string, unknown>) {
+  try {
+    const res = await fetch(rulesUrl);
+    if (!res.ok) return;
+    const webRules = await res.json();
+    if (!webRules || Object.keys(webRules).length === 0) return;
+    const webJson = JSON.stringify(webRules);
+    if (webJson === lastWebRulesJson) return;
+    lastWebRulesJson = webJson;
+    // Compare with what's in the SV; if different, write back.
+    const db = parsed.WoWderhoiAHDB as Record<string, unknown> | undefined;
+    const gameRules = (db?.settings as Record<string, unknown> | undefined)?.radar;
+    if (JSON.stringify(gameRules) !== webJson) {
+      writeRulesBackToLua(webRules);
+    }
+  } catch {}
+}
 
 async function importLatestScan() {
   const parsed = parseSavedVariables(readFileSync(savedVarsPath!, "utf8"));
-  // Sync radar settings even when there's no new scan (user tweaked options).
+  await pullWebRules(parsed);
   await syncRulesIfChanged(parsed);
-  // v0.3.1+ persists everything under the single WoWderhoiAHDB variable
-  // (the Forever beta refuses multi-variable TOC declarations); older scans
-  // used the standalone WoWderhoiAH_ScanData global. Accept both.
+
   const scan = (parsed.WoWderhoiAH_ScanData ??
     (parsed.WoWderhoiAHDB as Record<string, unknown> | undefined)?.scanData) as
     { scannedAt?: number; dataVersion?: number } | undefined;
-  if (!scan || typeof scan.scannedAt !== "number") {
-    console.log("No WoWderhoiAH_ScanData in SavedVariables yet; waiting for the first /wahscan.");
-    return;
-  }
-  if (scan.dataVersion !== SCAN_PIPELINE_VERSION) {
-    console.log("Stale scan from an old addon version on disk — rescan in game (/wahscan) to produce current-pipeline data.");
-    return;
-  }
+  if (!scan || typeof scan.scannedAt !== "number") return;
+  if (scan.dataVersion !== SCAN_PIPELINE_VERSION) return;
   if (scan.scannedAt <= lastImportedScanAt) return;
 
-  // Route 2: the in-game options panel is the authority for radar rules.
-  // Ride the current settings.radar along with the scan so the terminal
-  // keeps rendering deals with exactly the thresholds the addon uses.
   const db = parsed.WoWderhoiAHDB as Record<string, unknown> | undefined;
   const settings = db?.settings as Record<string, unknown> | undefined;
   const radarRules = settings?.radar;
-  // In-game history points, one per item per completed scan (7-day window).
-  // Sent raw; the import route validates and de-duplicates them.
   const points = db?.points;
-  // P0-B: recipes dumped by /wahrecipes ride along with the next scan.
-  // Keyed by profession|name in SavedVariables; the import route normalizes
-  // and upserts them on (name, profession).
   const recipes = db?.recipes;
 
   const response = await fetch(importUrl, {
@@ -118,27 +105,25 @@ async function importLatestScan() {
     })
   });
   const body = await response.json();
-  if (!response.ok && response.status !== 409) {
-    throw new Error(`Import failed (${response.status}): ${JSON.stringify(body)}`);
-  }
+  if (!response.ok && response.status !== 409) throw new Error(`Import failed: ${JSON.stringify(body)}`);
   lastImportedScanAt = scan.scannedAt;
   writeState({ lastImportedScanAt });
   if (radarRules !== undefined) lastSentRulesJson = JSON.stringify(radarRules);
-  console.log(
-    response.status === 409
-      ? `Scan ${new Date(scan.scannedAt * 1000).toISOString()} already imported, skipping.`
-      : `Imported ${body.imported} items + ${body.points ?? 0} history points + ${body.recipes ?? 0} recipes from scan ${body.scannedAt}.`
-  );
+  console.log(`Imported ${body.imported} items from scan ${body.scannedAt}.`);
 }
 
 async function main() {
   console.log(`Watching ${savedVarsPath}`);
-  console.log(`Posting new scans to ${importUrl}`);
-  await importLatestScan().catch((error) => console.error(error));
-  // WoW rewrites SavedVariables on logout//reload; mtime polling is enough.
+  await importLatestScan().catch(console.error);
   watchFile(savedVarsPath!, { interval: 5000 }, () => {
-    void importLatestScan().catch((error) => console.error(error));
+    void importLatestScan().catch(console.error);
   });
+  // Periodically pull web rules even when the game hasn't scanned, so a web
+  // save reaches the SV file without waiting for the next scan.
+  setInterval(() => {
+    const parsed = parseSavedVariables(readFileSync(savedVarsPath!, "utf8"));
+    void pullWebRules(parsed).catch(console.error);
+  }, 5000);
 }
 
 void main();

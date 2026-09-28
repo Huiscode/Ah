@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
@@ -21,19 +21,37 @@ type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" |
 // Headers sort: first click high-to-low, second click low-to-high; without
 // any click the rows keep the radar's own ranking (NPC deals first, then
 // absolute profit).
-export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladders }: {
+export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladders, gapFilterOn = false, gap1Pct = 15, gap2Pct = 15 }: {
   deals: DealRadarRow[];
   prices: Map<number, number>;
   categories: string[];
   watchedItemIds: number[];
   ladders: Map<number, PricePoint[]>;
+  gapFilterOn?: boolean;
+  gap1Pct?: number;
+  gap2Pct?: number;
 }) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
+  const [, force] = useState(0);
   const [category, setCategory] = usePersistedState<string>("wah:deal-radar:category", "");
-  const [gapFilterOn, setGapFilterOn] = usePersistedState<boolean>("wah:deal-radar:gap-on", false);
-  const [gap1Pct, setGap1Pct] = usePersistedState<number>("wah:deal-radar:gap1", 15);
-  const [gap2Pct, setGap2Pct] = usePersistedState<number>("wah:deal-radar:gap2", 15);
+  const [fMinPrice, setFMinPrice] = usePersistedState<number>("wah:filter:minPrice", 0);
+  const [fMaxPrice, setFMaxPrice] = usePersistedState<number>("wah:filter:maxPrice", 0);
+  const [fGap1, setFGap1] = usePersistedState<number>("wah:filter:gap1", 0);
+  const [fGap2, setFGap2] = usePersistedState<number>("wah:filter:gap2", 0);
+  useEffect(() => {
+    const h = () => {
+      try {
+        const p = localStorage.getItem("wah:filter:minPrice"); if (p) setFMinPrice(JSON.parse(p));
+        const x = localStorage.getItem("wah:filter:maxPrice"); if (x) setFMaxPrice(JSON.parse(x));
+        const g1 = localStorage.getItem("wah:filter:gap1"); if (g1) setFGap1(JSON.parse(g1));
+        const g2 = localStorage.getItem("wah:filter:gap2"); if (g2) setFGap2(JSON.parse(g2));
+      } catch {}
+      force((n) => n + 1);
+    };
+    window.addEventListener("wah:filter", h);
+    return () => window.removeEventListener("wah:filter", h);
+  }, []);
   const watched = new Set(watchedItemIds);
 
   useEffect(() => {
@@ -44,21 +62,29 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
     ? deals.filter((deal) => categoryMatches(deal.category, category))
     : [...deals];
 
-  // 价格断层筛选：第1档比第2档便宜 ≥ gap1Pct%，第2档比第3档便宜 ≥ gap2Pct%。
-  if (gapFilterOn) {
+  // Client-side secondary filters (from radar params panel).
+  if (fMinPrice > 0) rows = rows.filter((d) => d.minPrice >= fMinPrice);
+  if (fMaxPrice > 0) rows = rows.filter((d) => d.minPrice <= fMaxPrice);
+  if (fGap1 > 0 || fGap2 > 0) {
     rows = rows.filter((deal) => {
       const ladder = ladders.get(deal.itemId);
-      if (!ladder || ladder.length < 2) return false;
+      if (!ladder || ladder.length < 2) return true;
       const [t1, t2, t3] = ladder;
-      const gap1 = (t2.price - t1.price) / t2.price * 100;
-      if (gap1 < gap1Pct) return false;
-      if (t3) {
-        const gap2 = (t3.price - t2.price) / t3.price * 100;
-        if (gap2 < gap2Pct) return false;
+      if (fGap1 > 0) {
+        if (t1.price >= t2.price) return false;
+        const g1 = (t2.price - t1.price) / t2.price * 100;
+        if (g1 < fGap1) return false;
+      }
+      if (fGap2 > 0 && t3) {
+        if (t2.price >= t3.price) return false;
+        const g2 = (t3.price - t2.price) / t3.price * 100;
+        if (g2 < fGap2) return false;
       }
       return true;
     });
   }
+
+
   if (sortKey) {
     rows.sort((left, right) => {
       const a = sortKey === "name" ? left.name : sortKey === "price" ? (prices.get(left.itemId) ?? 0) : left[sortKey];
@@ -91,18 +117,6 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
           ))}
         </select>
         <span className="text-terminal-muted">{rows.length} / {deals.length} 条</span>
-        <label className="ml-2 inline-flex items-center gap-1 text-terminal-muted">
-          <input type="checkbox" checked={gapFilterOn} onChange={(e) => setGapFilterOn(e.target.checked)} />
-          价格断层
-        </label>
-        {gapFilterOn && (
-          <span className="inline-flex items-center gap-1 text-terminal-muted">
-            1比2低
-            <input type="number" value={gap1Pct} onChange={(e) => setGap1Pct(Number(e.target.value))} className="w-12 border border-terminal-border bg-terminal-panel2 px-1 py-0.5 text-slate-100" />%
-            2比3低
-            <input type="number" value={gap2Pct} onChange={(e) => setGap2Pct(Number(e.target.value))} className="w-12 border border-terminal-border bg-terminal-panel2 px-1 py-0.5 text-slate-100" />%
-          </span>
-        )}
       </div>
       <div className="max-h-[344px] overflow-y-auto [scrollbar-gutter:stable]">
       <table className="w-full min-w-[1000px] table-fixed border-collapse font-mono text-xs">
@@ -121,8 +135,8 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
           <tr>
             <th className="border-b border-terminal-border px-2 py-2 text-center">★</th>
             <th onClick={() => toggle("name")} className={`${thClass} text-left`}>物品{mark("name")}</th>
-            <th onClick={() => toggle("price")} className={`${thClass} text-right`}>最新价{mark("price")}</th>
             <th onClick={() => toggle("minPrice")} className={`${thClass} text-right`}>最低价{mark("minPrice")}</th>
+            <th onClick={() => toggle("price")} className={`${thClass} text-right`}>市场价{mark("price")}</th>
             <th onClick={() => toggle("reference")} className={`${thClass} text-right`}>7日参考{mark("reference")}</th>
             <th onClick={() => toggle("discountPercent")} className={`${thClass} text-right`}>折扣%{mark("discountPercent")}</th>
             <th onClick={() => toggle("changePercent")} className={`${thClass} text-right`}>环比%{mark("changePercent")}</th>
@@ -135,14 +149,14 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
             <tr key={deal.itemId} className="border-b border-terminal-border/70 hover:bg-slate-800/35">
               <td className="px-2 py-2 text-center"><WatchStar itemId={deal.itemId} watched={watched.has(deal.itemId)} /></td>
               <td className="px-3 py-2 text-left">
-                <Link href={`/items/${deal.itemId}`} className={`inline-flex items-center gap-2 ${qualityColorClass(deal.quality)}`}>
+                <Link href={`/items/${deal.itemId}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(deal.quality)}`}>
                   <ItemIcon itemId={deal.itemId} icon={deal.icon} />
                   <span className="truncate">{deal.name}</span>
                 </Link>
                 {deal.source === "ahledger" && <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400">网站</span>}
               </td>
-              <td className="px-3 py-2 text-right"><Coins copper={prices.get(deal.itemId) ?? 0} /></td>
               <td className="px-3 py-2 text-right"><Coins copper={deal.minPrice} /></td>
+              <td className="px-3 py-2 text-right"><Coins copper={prices.get(deal.itemId) ?? 0} /></td>
               <td className="px-3 py-2 text-right text-terminal-muted"><Coins copper={deal.reference} /></td>
               {deal.vendor
                 ? <td className="px-3 py-2 text-right text-terminal-amber">NPC必赚 +<Coins copper={deal.profit} /></td>

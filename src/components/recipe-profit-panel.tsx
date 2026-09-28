@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { Hammer } from "lucide-react";
+import { Hammer, Eye, EyeOff } from "lucide-react";
 import type { RecipeProfitRow } from "@/lib/recipe-profits";
 import { professionLabel } from "@/lib/recipe-profits";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -44,6 +44,7 @@ export function RecipeProfitPanel({ rows, prices, floorPrices, limitPerProfessio
     return Array.from(seen).sort((a, b) => a.localeCompare(b, "zh-CN"));
   }, [rows]);
   const [profession, setProfession] = usePersistedState<string>("wah:profit-panel:profession", "全部");
+  const [open, setOpen] = useState(true);
 
   const filtered = useMemo(
     () => (profession === "全部" ? rows : rows.filter((row) => row.recipe.profession === profession)),
@@ -53,6 +54,18 @@ export function RecipeProfitPanel({ rows, prices, floorPrices, limitPerProfessio
   const shown = limitPerProfession ? computable.slice(0, limitPerProfession) : computable;
   const hiddenCount = computable.length - shown.length;
   const missingCount = filtered.length - computable.length;
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex h-9 w-full items-center justify-between border border-terminal-border bg-terminal-panel px-3 font-mono text-[11px] uppercase tracking-wide text-terminal-muted hover:text-terminal-amber"
+      >
+        <span>制造利润</span>
+        <Eye size={13} />
+      </button>
+    );
+  }
 
   return (
     <Panel>
@@ -73,6 +86,7 @@ export function RecipeProfitPanel({ rows, prices, floorPrices, limitPerProfessio
                 ))}
               </select>
             )}
+            <button onClick={() => setOpen(false)} aria-label="收起" className="text-terminal-muted hover:text-terminal-amber"><EyeOff size={13} /></button>
           </span>
         }
       />
