@@ -150,6 +150,13 @@ export function loadAddon(options?: { locale?: string }) {
     flushQueries: () => exec("WowTest.runTimers()"),
     setSearchResults: (itemId: number, rows: unknown[]) =>
       exec(`WowTest.setSearchResults(${itemId}, ${toLua(rows)})`),
+    setCommodityResults: (itemId: number, rungs: unknown[]) =>
+      exec(`WowTest.setCommodityResults(${itemId}, ${toLua(rungs)})`),
+    dialogVisible: () => Boolean(evaluate("WowTest.dialogVisible()")),
+    dialogTotal: () => String(evaluate("WowTest.dialogTotal()")),
+    dialogNote: () => String(evaluate("WowTest.dialogNote()")),
+    setBuyQuantity: (qty: number) => exec(`WowTest.setBuyQuantity(${qty})`),
+    confirmBuyDialog: () => exec("WowTest.confirmBuyDialog()"),
     scanned: (itemId: number) => Boolean(evaluate(`WowTest.scanned(${itemId})`)),
     scanMin: (itemId: number) => evaluate(`WowTest.scanMin(${itemId})`),
     scanAuctions: (itemId: number) => evaluate(`WowTest.scanAuctions(${itemId})`),

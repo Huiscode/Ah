@@ -92,6 +92,17 @@ function frameMeta:SetFrameLevel(level) self._level = level end
 function frameMeta:GetFrameLevel() return self._level or 0 end
 function frameMeta:SetChecked(checked) self._checked = checked end
 function frameMeta:GetChecked() return self._checked end
+-- Numeric EditBox support (commodity quantity dialog) and button enable.
+function frameMeta:SetNumeric() self._numeric = true end
+function frameMeta:IsNumeric() return self._numeric end
+function frameMeta:SetNumber(n)
+  self._number = n
+  if self._scripts.OnTextChanged then self._scripts.OnTextChanged(self) end
+end
+function frameMeta:GetNumber() return self._number or 0 end
+function frameMeta:Disable() self._enabled = false end
+function frameMeta:Enable() self._enabled = true end
+function frameMeta:IsEnabled() return self._enabled ~= false end
 
 -- ============================== WoW globals ===========================
 
@@ -217,7 +228,17 @@ function date(format, when) return os.date(format, when or NOW) end
 function debugprofilestop() return 0 end -- never trip the per-frame yield budget
 function GetRealmName() return "TestRealm" end
 function UnitFactionGroup() return "Alliance" end
-function GetCoinTextureString(copper) return tostring(copper) .. "c" end
+-- Mirror the addon's Forever-client shim (WoWderhoiAH.lua): the beta client
+-- lacks the coin-icon formatter, so amounts render as "Ng Ns Nc".
+function GetCoinTextureString(copper)
+  local amount = math.max(0, math.floor(copper or 0))
+  local g = math.floor(amount / 10000)
+  local s = math.floor((amount % 10000) / 100)
+  local c = amount % 100
+  if g > 0 then return string.format("%dg %ds %dc", g, s, c) end
+  if s > 0 then return string.format("%ds %dc", s, c) end
+  return string.format("%dc", c)
+end
 function GetItemIcon(itemId) return "icon:" .. tostring(itemId) end
 
 function FauxScrollFrame_GetOffset(frame) return frame._offset or 0 end
@@ -246,7 +267,13 @@ C_AuctionHouse = {
   QueryForItem = function(itemKey)
     bed.lastQueryKey = itemKey
     bed.timers[#bed.timers + 1] = function()
-      bed.fireEvent("ITEM_SEARCH_RESULTS_UPDATED", itemKey)
+      -- Route to the commodity channel when the test set commodity rungs
+      -- for this item, otherwise the item channel.
+      if bed.commodityResults[itemKey.itemID] then
+        bed.fireEvent("COMMODITY_SEARCH_RESULTS_UPDATED", itemKey.itemID)
+      else
+        bed.fireEvent("ITEM_SEARCH_RESULTS_UPDATED", itemKey)
+      end
     end
   end,
   GetNumItemSearchResults = function(itemKey)
@@ -275,12 +302,28 @@ C_AuctionHouse = {
   end,
   StartCommoditiesPurchase = function(itemID, unitPrice, quantity)
     bed.commodityOrder = { itemID = itemID, unitPrice = unitPrice, quantity = quantity }
-    -- Echo the live price, mirroring the server's confirm step.
-    bed.fireEvent("COMMODITY_PRICE_UPDATED", itemID, unitPrice)
+    -- Walk rungs cheapest-first to compute the total for the requested
+    -- quantity, then return the server quote asynchronously -- exactly as
+    -- the real client does (the quote lands a frame later), so the addon has
+    -- already switched into its "quote" state by the time it arrives.
+    local rows = bed.commodityResults[itemID] or {}
+    local remaining, total = quantity, 0
+    for _, r in ipairs(rows) do
+      local take = math.min(remaining, r.quantity)
+      total = total + take * r.unitPrice
+      remaining = remaining - take
+      if remaining <= 0 then break end
+    end
+    bed.timers[#bed.timers + 1] = function()
+      bed.fireEvent("COMMODITY_PRICE_UPDATED", itemID, unitPrice, total)
+    end
   end,
   ConfirmCommoditiesPurchase = function()
     local order = bed.commodityOrder
-    if order then bed.fireEvent("COMMODITY_PURCHASE_SUCCEEDED", order.itemID) end
+    -- Confirmation also resolves asynchronously.
+    bed.timers[#bed.timers + 1] = function()
+      if order then bed.fireEvent("COMMODITY_PURCHASE_SUCCEEDED", order.itemID) end
+    end
   end,
   ReplicateItems = function() bed.replicated = true end,
   GetNumReplicateItems = function() return 0 end,
@@ -293,6 +336,22 @@ C_AuctionHouse = {
 -- to land ITEM_SEARCH_RESULTS_UPDATED. Rows mirror the retail shape of
 -- GetItemSearchResultInfo.
 function bed.setSearchResults(itemId, rows) bed.searchResults[itemId] = rows end
+
+-- ===== Commodity quantity dialog test surface =====
+function bed.setCommodityResults(itemId, rungs) bed.commodityResults[itemId] = rungs end
+local function buyDialogFrame()
+  local dlg = bed.ns._buyDialog
+  if not dlg then error("commodity dialog not built yet") end
+  return dlg
+end
+function bed.dialogVisible() return buyDialogFrame():IsShown() end
+function bed.dialogTotal() return bed.plain(buyDialogFrame().totalValue._text) end
+function bed.dialogNote() return buyDialogFrame().note._text end
+function bed.setBuyQuantity(qty) buyDialogFrame().quantity:SetNumber(qty) end
+function bed.confirmBuyDialog()
+  local dlg = buyDialogFrame()
+  dlg.confirm._scripts.OnClick(dlg.confirm)
+end
 
 -- Retail item info: C_Item.GetItemInfoByID returns class/subclass as IDs
 -- and vendor price in the same slot the addon reads (11). The addon

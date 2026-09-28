@@ -39,6 +39,14 @@ local mode = "deals" -- which list the scroll frame renders
 
 local lastSellName = nil
 local pendingBuyItemId = nil
+-- Commodity buy-dialog state.
+local buyDialog = nil
+local commodityRungs = {} -- cached cheapest-first rungs { unitPrice, quantity }
+local commodityTotalAvailable = 0
+local commodityDialogState = "idle" -- idle | ready | quote
+local expectedTotal = 0 -- client estimate the server quote must match
+local expectedCommodityUnitPrice = 0
+local pendingBuyCommodity = false
 
 local function chatMessage(text)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WAH|r " .. text)
@@ -300,6 +308,11 @@ local function clearPendingBuy()
   pendingBuyName = nil
   pendingBuyCommodity = false
   expectedCommodityUnitPrice = 0
+  commodityDialogState = "idle"
+  commodityRungs = {}
+  commodityTotalAvailable = 0
+  expectedTotal = 0
+  if buyDialog then buyDialog:Hide() end
 end
 
 local function startBuy(itemId, name)
@@ -372,9 +385,36 @@ local function finalizeItemBuy(itemKey)
   end
 end
 
--- Commodity path: results are sorted cheapest-first. Start an order for the
--- cheapest rung's full quantity; the server echoes the live price before we
--- confirm, so a price move is caught instead of buying at the wrong price.
+-- Walk the cached rungs cheapest-first and return the total cost to buy
+-- `quantity` units, plus the unmet remainder (0 = fully covered).
+local function quoteCommodity(rungs, quantity)
+  local remaining, total = quantity, 0
+  for _, rung in ipairs(rungs) do
+    local take = math.min(remaining, rung.quantity)
+    total = total + take * rung.unitPrice
+    remaining = remaining - take
+    if remaining <= 0 then break end
+  end
+  return total, remaining
+end
+
+-- Recompute the dialog's total line from the quantity box.
+local function refreshBuyDialog()
+  if not buyDialog then return end
+  local qty = tonumber(buyDialog.quantity:GetNumber()) or 0
+  if qty < 1 then qty = 0 end
+  local total, remainder = quoteCommodity(commodityRungs, qty)
+  if remainder > 0 then
+    buyDialog.totalValue:SetText("|cffff5555-|r")
+    buyDialog.confirm:Disable()
+  else
+    buyDialog.totalValue:SetText(GetCoinTextureString(total))
+    buyDialog.confirm:Enable()
+  end
+  expectedTotal = total
+end
+
+-- Commodity results are ready: cache the rungs and present the quantity dialog.
 local function finalizeCommodityBuy(itemID)
   local targetId = pendingBuyItemId
   if not targetId or itemID ~= targetId then return end
@@ -384,43 +424,90 @@ local function finalizeCommodityBuy(itemID)
     chatMessage(L.NO_BUYABLE)
     return
   end
-  local info = C_AuctionHouse.GetCommoditySearchResultInfo(itemID, 1)
-  if not info or not info.unitPrice then
+  commodityRungs = {}
+  commodityTotalAvailable = 0
+  local firstUnit = nil
+  for index = 1, numResults do
+    local info = C_AuctionHouse.GetCommoditySearchResultInfo(itemID, index)
+    if info and info.unitPrice then
+      local qty = info.quantity or 1
+      commodityRungs[#commodityRungs + 1] = { unitPrice = info.unitPrice, quantity = qty }
+      commodityTotalAvailable = commodityTotalAvailable + qty
+      if not firstUnit then firstUnit = info.unitPrice end
+    end
+  end
+  if #commodityRungs == 0 then
     clearPendingBuy()
     chatMessage(L.NO_BUYABLE)
     return
   end
-  local quantity = info.quantity or 1
   pendingBuyCommodity = true
-  expectedCommodityUnitPrice = info.unitPrice
-  local started = pcall(C_AuctionHouse.StartCommoditiesPurchase, itemID, info.unitPrice, quantity)
+  expectedCommodityUnitPrice = firstUnit
+  -- Populate the dialog and default to the cheapest rung's full quantity.
+  buyDialog.title:SetText(string.format(L.BUY_DIALOG_TITLE, pendingBuyName or itemID))
+  buyDialog.unitValue:SetText(GetCoinTextureString(firstUnit))
+  buyDialog.availValue:SetText(tostring(commodityTotalAvailable))
+  buyDialog.quantity:SetNumber(commodityRungs[1].quantity)
+  buyDialog.note:SetText("")
+  commodityDialogState = "ready"
+  refreshBuyDialog()
+  buyDialog:Show()
+end
+
+-- User confirmed the quantity: place the order. The server answers with a
+-- quote (COMMODITY_PRICE_UPDATED) before anything is bought.
+local function confirmCommodityOrder()
+  local itemID = pendingBuyItemId
+  if not itemID or commodityDialogState ~= "ready" then return end
+  local qty = buyDialog.quantity:GetNumber() or 0
+  if qty < 1 then return end
+  local started = pcall(C_AuctionHouse.StartCommoditiesPurchase, itemID,
+    expectedCommodityUnitPrice, qty)
   if not started then
     clearPendingBuy()
     chatMessage(L.BUY_FAILED_EVENT)
     return
   end
-  chatMessage(L.BUY_COMMODITY)
+  commodityDialogState = "quote"
+  buyDialog.confirm:Disable()
+  buyDialog.note:SetText(L.BUY_QUOTE_WAIT)
 end
 
--- The server echoes the live commodity price before confirmation. If it still
--- matches the rung we targeted, confirm; otherwise let the order lapse (it is
--- not confirmed, so nothing is bought) and re-open the deal.
-local function onCommodityPriceUpdated(itemID, unitPrice)
+-- Server quote. If the total matches the client estimate, confirm; if it
+-- differs, surface the real total and require another confirm (the order is
+-- not confirmed yet, so nothing is bought).
+local function onCommodityPriceUpdated(itemID, unitPrice, totalPrice)
   if not pendingBuyItemId or itemID ~= pendingBuyItemId then return end
-  if unitPrice == expectedCommodityUnitPrice then
+  if commodityDialogState == "quote" and totalPrice and totalPrice == expectedTotal then
     pcall(C_AuctionHouse.ConfirmCommoditiesPurchase)
   else
-    clearPendingBuy()
-    chatMessage(L.BUY_PRICE_CHANGED)
+    commodityDialogState = "ready"
+    buyDialog.note:SetText(L.BUY_QUOTE_MISMATCH)
+    if totalPrice then
+      buyDialog.totalValue:SetText(GetCoinTextureString(totalPrice))
+      expectedTotal = totalPrice
+    end
+    buyDialog.confirm:Enable()
   end
 end
 
 local function onCommodityPurchaseSucceeded(itemID)
   if not pendingBuyItemId or itemID ~= pendingBuyItemId then return end
   local targetId, name = pendingBuyItemId, pendingBuyName
+  local total = expectedTotal
+  local qty = buyDialog and (buyDialog.quantity:GetNumber() or 0) or 0
+  -- Subtract the bought quantity from the cached rungs to find the cheapest
+  -- surviving unit, so the radar keeps the item at its real remaining price.
+  local remaining, newMin = qty, nil
+  for _, rung in ipairs(commodityRungs) do
+    local take = math.min(remaining, rung.quantity)
+    local left = rung.quantity - take
+    remaining = remaining - take
+    if left > 0 and not newMin then newMin = rung.unitPrice end
+  end
   clearPendingBuy()
-  chatMessage(string.format(L.BOUGHT, name or targetId, 1, GetCoinTextureString(expectedCommodityUnitPrice)))
-  repriceAfterPurchase(targetId, nil)
+  chatMessage(string.format(L.BOUGHT, name or targetId, qty, GetCoinTextureString(total)))
+  repriceAfterPurchase(targetId, newMin)
 end
 
 local function onCommodityPurchaseFailed(itemID)
@@ -706,6 +793,78 @@ local function createTradeFrame()
     rowFrame:Hide()
     trade.rows[rowIndex] = rowFrame
   end
+
+  -- ===================== Commodity quantity dialog =====================
+  -- Shown only for commodities; lets the user pick how many to buy. The
+  -- total is pre-computed from the cached rungs and re-confirmed by the
+  -- server quote before anything is bought.
+  buyDialog = CreateFrame("Frame", nil, trade, "BackdropTemplate")
+  buyDialog:SetSize(300, 200)
+  buyDialog:SetPoint("CENTER", trade, "CENTER")
+  buyDialog:SetFrameStrata("DIALOG")
+  buyDialog:SetFrameLevel(trade:GetFrameLevel() + 20)
+  buyDialog:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 20,
+    insets = { left = 5, right = 5, top = 5, bottom = 5 }
+  })
+  buyDialog:EnableMouse(true) -- block clicks from reaching the rows behind
+  buyDialog:SetMouseClickEnabled(true)
+
+  buyDialog.title = buyDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  buyDialog.title:SetPoint("TOPLEFT", 12, -12)
+
+  local dlgClose = CreateFrame("Button", nil, buyDialog)
+  dlgClose:SetSize(20, 20)
+  dlgClose:SetPoint("TOPRIGHT", -10, -10)
+  dlgClose:SetText("|cffff5555X|r")
+  dlgClose:SetScript("OnClick", function() clearPendingBuy() end)
+
+  local function infoLine(y, label)
+    local l = buyDialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    l:SetPoint("TOPLEFT", 14, y)
+    l:SetText(label)
+    local v = buyDialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    v:SetPoint("TOPLEFT", 104, y)
+    return v
+  end
+  buyDialog.unitValue = infoLine(-40, L.BUY_UNIT)
+  buyDialog.availValue = infoLine(-62, L.BUY_AVAILABLE)
+
+  local qtyLabel = buyDialog:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  qtyLabel:SetPoint("TOPLEFT", 14, -86)
+  qtyLabel:SetText(L.BUY_QUANTITY)
+  buyDialog.quantity = CreateFrame("EditBox", nil, buyDialog, "InputBoxTemplate")
+  buyDialog.quantity:SetSize(110, 24)
+  buyDialog.quantity:SetPoint("TOPLEFT", 104, -92)
+  buyDialog.quantity:SetAutoFocus(false)
+  buyDialog.quantity:SetNumeric(true)
+  buyDialog.quantity:SetNumber(1)
+  buyDialog.quantity:SetScript("OnTextChanged", function() refreshBuyDialog() end)
+  buyDialog.quantity:SetScript("OnEnterPressed", function() buyDialog.quantity:ClearFocus() end)
+
+  buyDialog.totalValue = infoLine(-122, L.BUY_TOTAL)
+
+  buyDialog.note = buyDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  buyDialog.note:SetPoint("BOTTOM", 0, 38)
+  buyDialog.note:SetTextColor(1, 0.85, 0.1)
+
+  buyDialog.cancel = CreateFrame("Button", nil, buyDialog, "UIPanelButtonTemplate")
+  buyDialog.cancel:SetSize(100, 24)
+  buyDialog.cancel:SetPoint("BOTTOMLEFT", 18, 10)
+  buyDialog.cancel:SetText(L.CANCEL)
+  buyDialog.cancel:SetScript("OnClick", function() clearPendingBuy() end)
+
+  buyDialog.confirm = CreateFrame("Button", nil, buyDialog, "UIPanelButtonTemplate")
+  buyDialog.confirm:SetSize(100, 24)
+  buyDialog.confirm:SetPoint("BOTTOMRIGHT", -18, 10)
+  buyDialog.confirm:SetText(L.CONFIRM)
+  buyDialog.confirm:SetScript("OnClick", function() confirmCommodityOrder() end)
+  buyDialog:Hide()
+  -- Exposed for the headless test harness; harmless in the real client.
+  WAH._buyDialog = buyDialog
+
   trade:Hide()
 end
 
@@ -774,7 +933,7 @@ if C_AuctionHouse and C_AuctionHouse.GetNumCommoditySearchResults then
   tradeEvents:RegisterEvent("COMMODITY_PURCHASE_FAILED")
 end
 tradeEvents:RegisterEvent("AUCTION_HOUSE_PURCHASE_COMPLETED")
-tradeEvents:SetScript("OnEvent", function(_, event, arg1, arg2)
+tradeEvents:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
   if event == "AUCTION_HOUSE_SHOW" then
     if not trade then createTradeFrame() end
     mode = "deals"
@@ -796,7 +955,8 @@ tradeEvents:SetScript("OnEvent", function(_, event, arg1, arg2)
   elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" then
     finalizeCommodityBuy(arg1)
   elseif event == "COMMODITY_PRICE_UPDATED" then
-    onCommodityPriceUpdated(arg1, arg2)
+    -- payload: itemID, unitPrice, totalPrice
+    onCommodityPriceUpdated(arg1, arg2, arg3)
   elseif event == "COMMODITY_PURCHASE_SUCCEEDED" then
     onCommodityPurchaseSucceeded(arg1)
   elseif event == "COMMODITY_PURCHASE_FAILED" then
