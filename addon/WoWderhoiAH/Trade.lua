@@ -502,8 +502,17 @@ end
 -- Server quote. If the total matches the client estimate, confirm; if it
 -- differs, surface the real total and require another confirm (the order is
 -- not confirmed yet, so nothing is bought).
-local function onCommodityPriceUpdated(itemID, unitPrice, totalPrice)
-  if not pendingBuyItemId or itemID ~= pendingBuyItemId then return end
+local function onCommodityPriceUpdated(arg1, arg2, arg3)
+  if not pendingBuyItemId then return end
+  -- Payload differs by client: Forever is (unitPrice, totalPrice); retail is
+  -- (itemID, unitPrice, totalPrice). Detect the three-arg form via arg3.
+  local unitPrice, totalPrice
+  if arg3 ~= nil then
+    if arg1 ~= pendingBuyItemId then return end
+    unitPrice, totalPrice = arg2, arg3
+  else
+    unitPrice, totalPrice = arg1, arg2
+  end
   if commodityDialogState == "quote" and totalPrice and totalPrice == expectedTotal then
     pcall(C_AuctionHouse.ConfirmCommoditiesPurchase)
   else
@@ -513,12 +522,14 @@ local function onCommodityPriceUpdated(itemID, unitPrice, totalPrice)
       buyDialog.totalValue:SetText(GetCoinTextureString(totalPrice))
       expectedTotal = totalPrice
     end
+    if unitPrice then expectedCommodityUnitPrice = unitPrice end
     buyDialog.confirm:Enable()
   end
 end
 
 local function onCommodityPurchaseSucceeded(itemID)
-  if not pendingBuyItemId or itemID ~= pendingBuyItemId then return end
+  if not pendingBuyItemId then return end
+  if itemID ~= nil and itemID ~= pendingBuyItemId then return end
   local targetId, name = pendingBuyItemId, pendingBuyName
   local total = expectedTotal
   local qty = buyDialog and (buyDialog.quantity:GetNumber() or 0) or 0
@@ -537,7 +548,8 @@ local function onCommodityPurchaseSucceeded(itemID)
 end
 
 local function onCommodityPurchaseFailed(itemID)
-  if not pendingBuyItemId or itemID ~= pendingBuyItemId then return end
+  if not pendingBuyItemId then return end
+  if itemID ~= nil and itemID ~= pendingBuyItemId then return end
   clearPendingBuy()
   chatMessage(L.BUY_FAILED_EVENT)
 end

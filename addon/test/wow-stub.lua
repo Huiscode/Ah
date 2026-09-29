@@ -339,7 +339,8 @@ C_AuctionHouse = {
       if remaining <= 0 then break end
     end
     bed.timers[#bed.timers + 1] = function()
-      bed.fireEvent("COMMODITY_PRICE_UPDATED", itemID, unitPrice, total)
+      -- Forever reports (unitPrice, total) with no itemID.
+      bed.fireEvent("COMMODITY_PRICE_UPDATED", unitPrice, total)
     end
   end,
   ConfirmCommoditiesPurchase = function()
