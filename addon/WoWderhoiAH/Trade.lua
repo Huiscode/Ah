@@ -346,7 +346,7 @@ local function startBuy(itemId, name)
     -- functions are batch/browse helpers that do not always return those
     -- results, so they are used only as fallbacks.
     if C_AuctionHouse.SendSearchQuery then
-      return C_AuctionHouse.SendSearchQuery(itemKey, nil)
+      return C_AuctionHouse.SendSearchQuery(itemKey, {}, false)
     elseif C_AuctionHouse.SearchForItem then
       return C_AuctionHouse.SearchForItem(itemKey)
     elseif C_AuctionHouse.QueryForItem then
@@ -357,10 +357,10 @@ local function startBuy(itemId, name)
     return nil
   end
   chatMessage(string.format(L.BUY_QUERYING, name))
-  local queried = pcall(runQuery)
+  local queried, queryErr = pcall(runQuery)
   if not queried then
     clearPendingBuy()
-    chatMessage(L.BUY_FAILED)
+    chatMessage(L.BUY_FAILED .. " [" .. tostring(queryErr) .. "]")
   end
 end
 
