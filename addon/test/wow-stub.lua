@@ -264,13 +264,26 @@ C_AuctionHouse = {
   end,
   -- The real query answers asynchronously; queue the results-updated event
   -- on the C_Timer queue so a test can control the moment it lands. The
-  -- modern/Forever client names this SearchForItem (QueryForItem is the
-  -- older retail name); both are provided so the addon's fallback is covered.
-  SearchForItem = function(itemKey)
+  -- newest (Forever) client only exposes the plural SearchForKeys; modern
+  -- retail exposed SearchForItem and older retail QueryForItem. The addon
+  -- prefers SearchForKeys, so the stub provides it and keeps the singular
+  -- SearchForItem to exercise the fallback.
+  SearchForKeys = function(itemKeys)
+    local itemKey = itemKeys[1]
     bed.lastQueryKey = itemKey
     bed.timers[#bed.timers + 1] = function()
       -- Route to the commodity channel when the test set commodity rungs
       -- for this item, otherwise the item channel.
+      if bed.commodityResults[itemKey.itemID] then
+        bed.fireEvent("COMMODITY_SEARCH_RESULTS_UPDATED", itemKey.itemID)
+      else
+        bed.fireEvent("ITEM_SEARCH_RESULTS_UPDATED", itemKey)
+      end
+    end
+  end,
+  SearchForItem = function(itemKey)
+    bed.lastQueryKey = itemKey
+    bed.timers[#bed.timers + 1] = function()
       if bed.commodityResults[itemKey.itemID] then
         bed.fireEvent("COMMODITY_SEARCH_RESULTS_UPDATED", itemKey.itemID)
       else

@@ -324,26 +324,38 @@ local function startBuy(itemId, name)
     chatMessage(L.SCAN_OPEN_AH_FIRST)
     return
   end
+  -- Build the item's base key. Modern clients expect numeric (0) rather
+  -- than nil for the unused itemLevel/suffix/battlePet slots.
   local itemKey
-  local ok = pcall(function()
-    itemKey = C_AuctionHouse.MakeItemKey(itemId, nil, 0, nil)
+  local ok, keyErr = pcall(function()
+    itemKey = C_AuctionHouse.MakeItemKey(itemId, 0, 0, 0)
   end)
   if not ok or not itemKey then
-    chatMessage(L.BUY_FAILED)
+    chatMessage(L.BUY_FAILED .. " [" .. tostring(keyErr) .. "]")
     return
   end
   pendingBuyItemId = itemId
   pendingBuyName = name
-  -- The modern/Forever client renamed QueryForItem to SearchForItem; use
-  -- whichever exists so the panel works on both API generations.
-  local queryFn = C_AuctionHouse.SearchForItem or C_AuctionHouse.QueryForItem
-  if not queryFn then
-    clearPendingBuy()
-    chatMessage(L.BUY_FAILED)
-    return
+  -- Query the live item. API generations differ:
+  --   newest (Forever): SearchForKeys({ itemKey })  -- plural-only
+  --   modern retail:     SearchForItem(itemKey)
+  --   older retail:      QueryForItem(itemKey)
+  local function runQuery()
+    if C_AuctionHouse.SearchForKeys then
+      return C_AuctionHouse.SearchForKeys({ itemKey })
+    elseif C_AuctionHouse.SearchForItem then
+      return C_AuctionHouse.SearchForItem(itemKey)
+    elseif C_AuctionHouse.QueryForItem then
+      return C_AuctionHouse.QueryForItem(itemKey)
+    end
+    return nil
   end
   chatMessage(string.format(L.BUY_QUERYING, name))
-  pcall(queryFn, itemKey)
+  local queried = pcall(runQuery)
+  if not queried then
+    clearPendingBuy()
+    chatMessage(L.BUY_FAILED)
+  end
 end
 
 -- Item path: read the live item search results, pick the cheapest valid
