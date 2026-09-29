@@ -341,12 +341,18 @@ local function startBuy(itemId, name)
   --   modern retail:     SearchForItem(itemKey)
   --   older retail:      QueryForItem(itemKey)
   local function runQuery()
-    if C_AuctionHouse.SearchForKeys then
-      return C_AuctionHouse.SearchForKeys({ itemKey })
+    -- SendSearchQuery loads one item's full commodity/item results and
+    -- fires the matching *_SEARCH_RESULTS_UPDATED event. The SearchFor*
+    -- functions are batch/browse helpers that do not always return those
+    -- results, so they are used only as fallbacks.
+    if C_AuctionHouse.SendSearchQuery then
+      return C_AuctionHouse.SendSearchQuery(itemKey, nil)
     elseif C_AuctionHouse.SearchForItem then
       return C_AuctionHouse.SearchForItem(itemKey)
     elseif C_AuctionHouse.QueryForItem then
       return C_AuctionHouse.QueryForItem(itemKey)
+    elseif C_AuctionHouse.SearchForKeys then
+      return C_AuctionHouse.SearchForKeys({ itemKey })
     end
     return nil
   end

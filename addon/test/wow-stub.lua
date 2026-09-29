@@ -263,11 +263,20 @@ C_AuctionHouse = {
     return { itemID = itemID, itemLevel = itemLevel, itemSuffix = itemSuffix or 0, battlePetSpeciesID = battlePetSpeciesID }
   end,
   -- The real query answers asynchronously; queue the results-updated event
-  -- on the C_Timer queue so a test can control the moment it lands. The
-  -- newest (Forever) client only exposes the plural SearchForKeys; modern
-  -- retail exposed SearchForItem and older retail QueryForItem. The addon
-  -- prefers SearchForKeys, so the stub provides it and keeps the singular
-  -- SearchForItem to exercise the fallback.
+  -- on the C_Timer queue so a test can control the moment it lands.
+  -- SendSearchQuery loads one item's full commodity/item results and is
+  -- the preferred path on Forever; SearchForKeys/SearchForItem are kept as
+  -- fallbacks for other API generations.
+  SendSearchQuery = function(itemKey)
+    bed.lastQueryKey = itemKey
+    bed.timers[#bed.timers + 1] = function()
+      if bed.commodityResults[itemKey.itemID] then
+        bed.fireEvent("COMMODITY_SEARCH_RESULTS_UPDATED", itemKey.itemID)
+      else
+        bed.fireEvent("ITEM_SEARCH_RESULTS_UPDATED", itemKey)
+      end
+    end
+  end,
   SearchForKeys = function(itemKeys)
     local itemKey = itemKeys[1]
     bed.lastQueryKey = itemKey
