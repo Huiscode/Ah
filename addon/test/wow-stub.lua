@@ -263,8 +263,10 @@ C_AuctionHouse = {
     return { itemID = itemID, itemLevel = itemLevel, itemSuffix = itemSuffix or 0, battlePetSpeciesID = battlePetSpeciesID }
   end,
   -- The real query answers asynchronously; queue the results-updated event
-  -- on the C_Timer queue so a test can control the moment it lands.
-  QueryForItem = function(itemKey)
+  -- on the C_Timer queue so a test can control the moment it lands. The
+  -- modern/Forever client names this SearchForItem (QueryForItem is the
+  -- older retail name); both are provided so the addon's fallback is covered.
+  SearchForItem = function(itemKey)
     bed.lastQueryKey = itemKey
     bed.timers[#bed.timers + 1] = function()
       -- Route to the commodity channel when the test set commodity rungs

@@ -334,8 +334,16 @@ local function startBuy(itemId, name)
   end
   pendingBuyItemId = itemId
   pendingBuyName = name
+  -- The modern/Forever client renamed QueryForItem to SearchForItem; use
+  -- whichever exists so the panel works on both API generations.
+  local queryFn = C_AuctionHouse.SearchForItem or C_AuctionHouse.QueryForItem
+  if not queryFn then
+    clearPendingBuy()
+    chatMessage(L.BUY_FAILED)
+    return
+  end
   chatMessage(string.format(L.BUY_QUERYING, name))
-  pcall(C_AuctionHouse.QueryForItem, itemKey, nil, nil, nil)
+  pcall(queryFn, itemKey)
 end
 
 -- Item path: read the live item search results, pick the cheapest valid
