@@ -324,8 +324,8 @@ C_AuctionHouse = {
     local rows = bed.commodityResults[itemID]
     return rows and rows[index] or nil
   end,
-  StartCommoditiesPurchase = function(itemID, unitPrice, quantity)
-    bed.commodityOrder = { itemID = itemID, unitPrice = unitPrice, quantity = quantity }
+  StartCommoditiesPurchase = function(itemID, quantity)
+    bed.commodityOrder = { itemID = itemID, quantity = quantity }
     -- Walk rungs cheapest-first to compute the total for the requested
     -- quantity, then return the server quote asynchronously -- exactly as
     -- the real client does (the quote lands a frame later), so the addon has

@@ -39,6 +39,9 @@ local mode = "deals" -- which list the scroll frame renders
 
 local lastSellName = nil
 local pendingBuyItemId = nil
+local pendingBuyName = nil
+local pendingBuyRunnerUnit = nil
+local pendingBuyCommodity = false
 -- Commodity buy-dialog state.
 local buyDialog = nil
 local commodityRungs = {} -- cached cheapest-first rungs { unitPrice, quantity }
@@ -46,7 +49,6 @@ local commodityTotalAvailable = 0
 local commodityDialogState = "idle" -- idle | ready | quote
 local expectedTotal = 0 -- client estimate the server quote must match
 local expectedCommodityUnitPrice = 0
-local pendingBuyCommodity = false
 
 local function chatMessage(text)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WAH|r " .. text)
@@ -296,11 +298,6 @@ end
 -- Every purchase is confirmed by an event before the radar entry is updated;
 -- a failed buy never hides the deal and never reports success.
 
-local pendingBuyName = nil
-local pendingBuyCommodity = false
-local pendingBuyRunnerUnit = nil
-local expectedCommodityUnitPrice = 0
-
 local repriceAfterPurchase -- forward declaration; defined below
 
 local function clearPendingBuy()
@@ -487,8 +484,10 @@ local function confirmCommodityOrder()
   if not itemID or commodityDialogState ~= "ready" then return end
   local qty = buyDialog.quantity:GetNumber() or 0
   if qty < 1 then return end
-  local started = pcall(C_AuctionHouse.StartCommoditiesPurchase, itemID,
-    expectedCommodityUnitPrice, qty)
+  -- Forever's StartCommoditiesPurchase takes only (itemID, quantity); there
+  -- is no unitPrice argument. Passing the unit price as the second arg made
+  -- the server read it as the quantity.
+  local started = pcall(C_AuctionHouse.StartCommoditiesPurchase, itemID, qty)
   if not started then
     clearPendingBuy()
     chatMessage(L.BUY_FAILED_EVENT)
