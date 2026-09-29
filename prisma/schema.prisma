@@ -108,6 +108,27 @@ model AppState {
   updatedAt DateTime @updatedAt @map("updated_at")
 }
 
+// Trading ledger (Stage D): our own buy/sell/expired fills uploaded from the
+// addon. uid comes from the addon and lets the importer dedup on repeat scans.
+// itemId is stored without a hard FK so a fill for an item we never scanned
+// still lands; joins to Item at read time for name/icon.
+model TradeRecord {
+  id        String   @id @default(cuid())
+  uid       String   @unique
+  kind      String   // "buy" | "sell" | "expired"
+  itemId    Int      @map("item_id")
+  qty       Int
+  unitPrice BigInt   @map("unit_price") // copper per unit, avg
+  total     BigInt   // copper total
+  ts        DateTime
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([itemId])
+  @@index([ts])
+  @@index([kind])
+}
+
 // Crafting recipes dumped by the in-game /wahrecipes command (P0-B). The
 // client never exposes a spell id from the trade-skill window, so the
 // composite (name, profession) is the identity: re-scans upsert over the

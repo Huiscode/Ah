@@ -405,10 +405,13 @@ local function finalizeItemBuy(itemKey)
   pendingBuyRunnerUnit = runnerUp and runnerUp.unit
   pendingBuyQty = best.quantity
   pendingBuyCost = best.buyout
-  local placed = pcall(C_AuctionHouse.PlaceBuyout, best.auctionID, best.buyout)
+  -- Forever (and the Sylvanas emulator) has no PlaceBuyout; a non-commodity
+  -- buyout is a bid placed at the buyout price via PlaceBid.
+  local placeFn = C_AuctionHouse.PlaceBid or C_AuctionHouse.PlaceBuyout
+  local placed, placeErr = pcall(placeFn, best.auctionID, best.buyout)
   if not placed then
     clearPendingBuy()
-    chatMessage(L.BUY_FAILED_EVENT)
+    chatMessage(L.BUY_FAILED_EVENT .. " [" .. tostring(placeErr) .. "]")
   end
 end
 
@@ -549,6 +552,9 @@ local function onCommodityPurchaseSucceeded(itemID)
     remaining = remaining - take
     if left > 0 and not newMin then newMin = rung.unitPrice end
   end
+  if WAH.LedgerRecord then
+    WAH.LedgerRecord("buy", targetId, qty, qty > 0 and math.floor(total / qty) or 0, total, name)
+  end
   clearPendingBuy()
   chatMessage(string.format(L.BOUGHT, name or targetId, qty, GetCoinTextureString(total)))
   repriceAfterPurchase(targetId, newMin)
@@ -570,6 +576,10 @@ local function onItemPurchaseCompleted(auctionID)
   if not targetId then return end
   local runnerUnit = pendingBuyRunnerUnit
   local itemName, itemQty, itemCost = pendingBuyName, pendingBuyQty, pendingBuyCost
+  if WAH.LedgerRecord then
+    WAH.LedgerRecord("buy", targetId, itemQty or 1, itemQty > 0 and math.floor((itemCost or 0) / itemQty) or 0,
+      itemCost or 0, itemName)
+  end
   clearPendingBuy()
   chatMessage(string.format(L.BOUGHT, itemName or targetId, itemQty or 1,
     GetCoinTextureString(itemCost or 0)))

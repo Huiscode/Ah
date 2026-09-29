@@ -1,4 +1,4 @@
-import { Bell, CalendarClock, Hammer, RadioTower, Star } from "lucide-react";
+import { ArrowLeftRight, Bell, CalendarClock, Hammer, RadioTower, Star } from "lucide-react";
 import { buildDealRadar } from "@/lib/analytics";
 import { evaluateAlertRules } from "@/lib/alerts";
 import { buildFloorPriceIndex, computeRecipeProfits } from "@/lib/recipe-profits";
@@ -107,6 +107,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </span>
           <AhledgerToggle initialEnabled={ahledgerEnabled !== "0"} />
           <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><Hammer size={14} /> 配方库</Link>
+          <Link href="/ledger" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ArrowLeftRight size={14} /> 成交账本</Link>
           <span className="flex items-center gap-1"><Bell size={14} /> 预警就绪</span>
         </div>
       </div>

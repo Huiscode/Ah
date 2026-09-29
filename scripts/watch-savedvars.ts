@@ -12,6 +12,7 @@ const savedVarsPath = process.env.AQT_SAVEDVARS_PATH;
 if (!savedVarsPath) throw new Error("AQT_SAVEDVARS_PATH not set");
 const importUrl = process.env.AQT_IMPORT_URL ?? "http://localhost:3000/api/import/addon-scan";
 const rulesUrl = importUrl.replace(/\/addon-scan\/?$/, "/rules");
+const ledgerUrl = (process.env.AQT_IMPORT_URL ?? "http://localhost:3000/api/import/addon-scan").replace(/\/addon-scan\/?$/, "/ledger");
 
 const statePath = new URL("./.watch-state.json", import.meta.url);
 function readState(): { lastImportedScanAt: number } {
@@ -112,11 +113,31 @@ async function importLatestScan() {
   console.log(`Imported ${body.imported} items from scan ${body.scannedAt}.`);
 }
 
+// Upload the trading ledger (Stage D). It rides on every watch tick so a buy
+// recorded between scans still reaches the terminal promptly.
+async function uploadLedger() {
+  try {
+    const parsed = parseSavedVariables(readFileSync(savedVarsPath!, "utf8"));
+    const db = parsed.WoWderhoiAHDB as Record<string, unknown> | undefined;
+    const ledger = db?.ledger;
+    if (!Array.isArray(ledger) || ledger.length === 0) return;
+    const res = await fetch(ledgerUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ledger })
+    });
+    if (!res.ok) return;
+    const out = (await res.json()) as { imported?: number; skipped?: number };
+    if (out.imported) console.log(`Ledger uploaded: ${out.imported} new records.`);
+  } catch {}
+}
+
 async function main() {
   console.log(`Watching ${savedVarsPath}`);
   await importLatestScan().catch(console.error);
   watchFile(savedVarsPath!, { interval: 5000 }, () => {
     void importLatestScan().catch(console.error);
+    void uploadLedger().catch(console.error);
   });
   // Periodically pull web rules even when the game hasn't scanned, so a web
   // save reaches the SV file without waiting for the next scan.
