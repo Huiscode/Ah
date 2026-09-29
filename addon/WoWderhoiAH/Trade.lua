@@ -41,6 +41,8 @@ local lastSellName = nil
 local pendingBuyItemId = nil
 local pendingBuyName = nil
 local pendingBuyRunnerUnit = nil
+local pendingBuyQty = 0
+local pendingBuyCost = 0
 local pendingBuyCommodity = false
 -- Commodity buy-dialog state.
 local buyDialog = nil
@@ -401,6 +403,8 @@ local function finalizeItemBuy(itemKey)
   -- PlaceBuyout is async; success is confirmed by AUCTION_HOUSE_PURCHASE_COMPLETED.
   -- Stash the runner-up so the radar entry can be corrected only on success.
   pendingBuyRunnerUnit = runnerUp and runnerUp.unit
+  pendingBuyQty = best.quantity
+  pendingBuyCost = best.buyout
   local placed = pcall(C_AuctionHouse.PlaceBuyout, best.auctionID, best.buyout)
   if not placed then
     clearPendingBuy()
@@ -487,12 +491,13 @@ local function confirmCommodityOrder()
   -- Forever's StartCommoditiesPurchase takes only (itemID, quantity); there
   -- is no unitPrice argument. Passing the unit price as the second arg made
   -- the server read it as the quantity.
-  local started = pcall(C_AuctionHouse.StartCommoditiesPurchase, itemID, qty)
+  local started, startErr = pcall(C_AuctionHouse.StartCommoditiesPurchase, itemID, qty)
   if not started then
     clearPendingBuy()
     chatMessage(L.BUY_FAILED_EVENT)
     return
   end
+  -- Await the COMMODITY_PRICE_UPDATED quote; the handler confirms it.
   commodityDialogState = "quote"
   buyDialog.confirm:Disable()
   buyDialog.note:SetText(L.BUY_QUOTE_WAIT)
@@ -512,8 +517,11 @@ local function onCommodityPriceUpdated(arg1, arg2, arg3)
   else
     unitPrice, totalPrice = arg1, arg2
   end
-  if commodityDialogState == "quote" and totalPrice and totalPrice == expectedTotal then
-    pcall(C_AuctionHouse.ConfirmCommoditiesPurchase)
+  -- Ignore price updates that are not the quote we are awaiting.
+  if commodityDialogState ~= "quote" then return end
+  local qty = buyDialog.quantity:GetNumber() or 0
+  if totalPrice and totalPrice == expectedTotal then
+    pcall(C_AuctionHouse.ConfirmCommoditiesPurchase, pendingBuyItemId, qty)
   else
     commodityDialogState = "ready"
     buyDialog.note:SetText(L.BUY_QUOTE_MISMATCH)
@@ -555,11 +563,16 @@ end
 
 -- Item purchase confirmation (PlaceBuyout result).
 local function onItemPurchaseCompleted(auctionID)
+  -- Forever also fires this for a commodity buy, but the commodity flow reports
+  -- success via COMMODITY_PURCHASE_SUCCEEDED; let that handler own the message.
+  if pendingBuyCommodity then return end
   local targetId = pendingBuyItemId
   if not targetId then return end
   local runnerUnit = pendingBuyRunnerUnit
+  local itemName, itemQty, itemCost = pendingBuyName, pendingBuyQty, pendingBuyCost
   clearPendingBuy()
-  chatMessage(L.BOUGHT)
+  chatMessage(string.format(L.BOUGHT, itemName or targetId, itemQty or 1,
+    GetCoinTextureString(itemCost or 0)))
   repriceAfterPurchase(targetId, runnerUnit)
   C_Timer.After(0.6, function()
     if trade and trade:IsShown() and trade.lastQuery then refreshResults(trade.lastQuery) end

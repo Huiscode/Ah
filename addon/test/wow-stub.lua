@@ -343,7 +343,7 @@ C_AuctionHouse = {
       bed.fireEvent("COMMODITY_PRICE_UPDATED", unitPrice, total)
     end
   end,
-  ConfirmCommoditiesPurchase = function()
+  ConfirmCommoditiesPurchase = function(itemID, quantity)
     local order = bed.commodityOrder
     -- Confirmation also resolves asynchronously.
     bed.timers[#bed.timers + 1] = function()
