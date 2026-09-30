@@ -44,6 +44,7 @@ local pendingBuyRunnerUnit = nil
 local pendingBuyQty = 0
 local pendingBuyCost = 0
 local pendingBuyCommodity = false
+local pendingItemAuction = nil -- non-commodity: { auctionID, buyout, quantity } chosen at search time
 -- Commodity buy-dialog state.
 local buyDialog = nil
 local commodityRungs = {} -- cached cheapest-first rungs { unitPrice, quantity }
@@ -306,6 +307,7 @@ local function clearPendingBuy()
   pendingBuyItemId = nil
   pendingBuyName = nil
   pendingBuyCommodity = false
+  pendingItemAuction = nil
   expectedCommodityUnitPrice = 0
   commodityDialogState = "idle"
   commodityRungs = {}
@@ -400,19 +402,43 @@ local function finalizeItemBuy(itemKey)
     chatMessage(L.NO_BUYABLE)
     return
   end
-  -- PlaceBuyout is async; success is confirmed by AUCTION_HOUSE_PURCHASE_COMPLETED.
-  -- Stash the runner-up so the radar entry can be corrected only on success.
+  -- Stash the chosen auction and present the confirm dialog. PlaceBid is a
+  -- protected action: it must be issued from a hardware click (the confirm
+  -- button), not from this *_SEARCH_RESULTS_UPDATED event, or WoW flags it
+  -- "插件导致界面行为失效" and silently drops the bid.
   pendingBuyRunnerUnit = runnerUp and runnerUp.unit
   pendingBuyQty = best.quantity
   pendingBuyCost = best.buyout
-  -- Forever (and the Sylvanas emulator) has no PlaceBuyout; a non-commodity
-  -- buyout is a bid placed at the buyout price via PlaceBid.
+  pendingItemAuction = { auctionID = best.auctionID, buyout = best.buyout, quantity = best.quantity }
+  pendingBuyCommodity = false
+  buyDialog.title:SetText(string.format(L.BUY_DIALOG_TITLE, pendingBuyName or targetId))
+  buyDialog.unitValue:SetText(GetCoinTextureString(best.unit))
+  buyDialog.availValue:SetText(tostring(best.quantity))
+  buyDialog.quantity:SetNumber(1)
+  buyDialog.note:SetText("")
+  expectedTotal = best.buyout
+  commodityDialogState = "ready"
+  buyDialog.totalValue:SetText(GetCoinTextureString(best.buyout))
+  buyDialog.confirm:Enable()
+  buyDialog:Show()
+end
+
+-- User confirmed the item buy: PlaceBid with the buyout price (from the
+-- confirm button's hardware context so it is not tainted).
+local function confirmItemOrder()
+  local sel = pendingItemAuction
+  if not pendingBuyItemId or not sel or commodityDialogState ~= "ready" then return end
+  pendingBuyQty = 1
+  pendingBuyCost = sel.buyout
   local placeFn = C_AuctionHouse.PlaceBid or C_AuctionHouse.PlaceBuyout
-  local placed, placeErr = pcall(placeFn, best.auctionID, best.buyout)
+  local placed, placeErr = pcall(placeFn, sel.auctionID, sel.buyout)
   if not placed then
     clearPendingBuy()
     chatMessage(L.BUY_FAILED_EVENT .. " [" .. tostring(placeErr) .. "]")
+    return
   end
+  buyDialog.note:SetText(L.BUY_QUOTE_WAIT)
+  buyDialog.confirm:Disable()
 end
 
 -- Walk the cached rungs cheapest-first and return the total cost to buy
@@ -431,6 +457,13 @@ end
 -- Recompute the dialog's total line from the quantity box.
 local function refreshBuyDialog()
   if not buyDialog then return end
+  -- Non-commodity item buy: single fixed buyout price, quantity always 1.
+  if pendingItemAuction then
+    buyDialog.totalValue:SetText(GetCoinTextureString(pendingItemAuction.buyout))
+    expectedTotal = pendingItemAuction.buyout
+    buyDialog.confirm:Enable()
+    return
+  end
   local qty = tonumber(buyDialog.quantity:GetNumber()) or 0
   if qty < 1 then qty = 0 end
   local total, remainder = quoteCommodity(commodityRungs, qty)
@@ -920,7 +953,9 @@ local function createTradeFrame()
   buyDialog.confirm:SetSize(100, 24)
   buyDialog.confirm:SetPoint("BOTTOMRIGHT", -18, 10)
   buyDialog.confirm:SetText(L.CONFIRM)
-  buyDialog.confirm:SetScript("OnClick", function() confirmCommodityOrder() end)
+  buyDialog.confirm:SetScript("OnClick", function()
+    if pendingBuyCommodity then confirmCommodityOrder() else confirmItemOrder() end
+  end)
   buyDialog:Hide()
   -- Exposed for the headless test harness; harmless in the real client.
   WAH._buyDialog = buyDialog
@@ -1025,6 +1060,21 @@ tradeEvents:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     onItemPurchaseCompleted(arg1)
   end
 end)
+
+-- Auto-accept the native AH buyout confirmation popup ("以一口价购买：").
+-- PlaceBid triggers this StaticPopup; because we call it from our confirm
+-- button's hardware click, accepting it inline is not tainted. Only auto-
+-- accept while we have an in-flight non-commodity item buy.
+if not WAH._origStaticPopupShow then
+  WAH._origStaticPopupShow = StaticPopup_Show
+  StaticPopup_Show = function(name, ...)
+    local frame = WAH._origStaticPopupShow(name, ...)
+    if pendingItemAuction and frame and frame.button1 and frame.button1:IsShown() then
+      frame.button1:Click()
+    end
+    return frame
+  end
+end
 
 -- Settings.lua calls this after applying radar tunables: if the trade panel
 -- is open on the deal radar, re-run it immediately with the new rules.

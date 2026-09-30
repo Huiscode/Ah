@@ -55,7 +55,9 @@ function buyCheapest(lua: WowLua, liveResults: ResultRow[]) {
   lua.search("Mageweave");
   lua.setSearchResults(MAGEWEAVE, liveResults);
   lua.buyRow(1);
-  lua.flushQueries();
+  lua.flushQueries();   // ITEM_SEARCH_RESULTS_UPDATED -> opens the confirm dialog
+  lua.confirmBuyDialog();// user clicks confirm -> PlaceBid/PlaceBuyout
+  lua.flushQueries();    // AUCTION_HOUSE_PURCHASE_COMPLETED resolves
 }
 
 describe("a purchase corrects the scan the radar reads", () => {

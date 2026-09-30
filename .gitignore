@@ -32,3 +32,6 @@ WoWderhoiAH-*.zip
 scripts/.watch-state.json
 .ahledger-state.json
 scripts/.ahledger-state.json
+
+# local addon snapshots
+_addon_game_backup_*/

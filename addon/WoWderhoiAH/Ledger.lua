@@ -125,21 +125,3 @@ mailFrame:SetScript("OnEvent", function(_, event)
   -- Defer a tick so header data is populated.
   C_Timer.After(0.2, scanInbox)
 end)
-
--- TEMP: print every C_AuctionHouse function to chat in chunks (immediate, no
--- SavedVariables save-timing dependency). Also stash in SV.
-do
-  local all = {}
-  for k, v in pairs(C_AuctionHouse or {}) do
-    if type(v) == "function" then all[#all + 1] = k end
-  end
-  table.sort(all)
-  WoWderhoiAHDB = WoWderhoiAHDB or {}
-  WoWderhoiAHDB._ahFuncs = table.concat(all, ", ")
-  print("WAHDBG C_AuctionHouse has " .. #all .. " functions:")
-  for i = 1, #all, 12 do
-    local chunk = {}
-    for j = i, math.min(i + 11, #all) do chunk[#chunk + 1] = all[j] end
-    print("WAHDBG " .. table.concat(chunk, ", "))
-  end
-end
