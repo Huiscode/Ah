@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeftRight, Package, Coins, TrendingUp, Clock } from "lucide-react";
+import { ArrowLeftRight, Package, Coins, TrendingUp, Clock, Wallet, CheckCircle2 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 
@@ -44,7 +44,6 @@ type Position = {
 
 function computePositions(records: RecordRow[]): Map<number, { queue: QueueLot[]; pos: Position }> {
   const byItem = new Map<number, { queue: QueueLot[]; pos: Position }>();
-  // records arrive newest-first; process oldest-first.
   const sorted = [...records].sort((a, b) => a.ts.getTime() - b.ts.getTime());
   for (const r of sorted) {
     if (r.itemId <= 0) continue;
@@ -82,9 +81,7 @@ function computePositions(records: RecordRow[]): Map<number, { queue: QueueLot[]
       pos.costOfSold += cost;
       pos.realized = pos.revenueNet - pos.costOfSold;
     }
-    // expired: no P&L effect; items return to stock at unknown cost.
   }
-  // Finalize avg cost of held lots.
   for (const entry of byItem.values()) {
     let held = 0, cost = 0;
     for (const lot of entry.queue) { held += lot.qty; cost += lot.qty * lot.unit; }
@@ -95,28 +92,35 @@ function computePositions(records: RecordRow[]): Map<number, { queue: QueueLot[]
 }
 
 export default async function LedgerPage() {
-  const records = await prisma.tradeRecord.findMany({ orderBy: { ts: "desc" }, take: 1000 });
+  const records = await prisma.tradeRecord.findMany({ orderBy: { ts: "desc" }, take: 2000 });
   const itemIds = [...new Set(records.map((r) => r.itemId).filter((id) => id > 0))];
   const items = itemIds.length ? await prisma.item.findMany({ where: { itemId: { in: itemIds } } }) : [];
   const nameOf = new Map(items.map((i) => [i.itemId, i.name]));
 
   const positions = computePositions(records as unknown as RecordRow[]);
-  const posList = [...positions.values()]
-    .map((e) => e.pos)
-    .filter((p) => p.held > 0 || p.soldQty > 0)
+  const all = [...positions.values()].map((e) => e.pos);
+
+  // Split into open positions (still held) and closed (fully sold).
+  const openPos = all
+    .filter((p) => p.held > 0)
+    .sort((a, b) => b.held * b.avgCost - a.held * a.avgCost);
+  const closedPos = all
+    .filter((p) => p.held === 0 && p.soldQty > 0)
     .sort((a, b) => b.realized - a.realized);
 
-  const totalRealized = posList.reduce((s, p) => s + p.realized, 0);
-  const totalHeldCost = posList.reduce((s, p) => s + p.held * p.avgCost, 0);
+  const totalRealized = all.reduce((s, p) => s + p.realized, 0);
+  const totalHeldCost = openPos.reduce((s, p) => s + p.held * p.avgCost, 0);
   const sells = records.filter((r) => r.kind === "sell").length;
   const buys = records.filter((r) => r.kind === "buy").length;
+
+  const detailRows = records.slice(0, 100);
 
   return (
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
           <h1 className="font-mono text-lg font-semibold uppercase text-terminal-amber">成交账本</h1>
-          <p className="font-mono text-xs text-terminal-muted">买入实时记录 · 卖出/流拍来自邮箱扫描 · FIFO 成本与已实现盈亏</p>
+          <p className="font-mono text-xs text-terminal-muted">买入实时记录 · 卖出来自邮箱扫描 · FIFO 成本与已实现盈亏</p>
         </div>
         <Link href="/" className="font-mono text-xs text-terminal-amber hover:underline">← 返回终端</Link>
       </div>
@@ -136,29 +140,60 @@ export default async function LedgerPage() {
         </Panel>
       </div>
 
+      {/* Open positions: items still held */}
       <div className="mb-3">
         <Panel>
-          <PanelHeader title="持仓与盈亏（按已实现盈亏排序）" />
+          <PanelHeader title={<span className="flex items-center gap-1"><Wallet size={14} /> 持仓中（买入后未卖出）</span>} />
           <table className="w-full font-mono text-xs">
             <thead className="border-b border-terminal-border text-terminal-muted">
               <tr>
                 <th className="p-2 text-left">物品</th>
                 <th className="p-2 text-right">持仓</th>
                 <th className="p-2 text-right">均价</th>
-                <th className="p-2 text-right">已售</th>
-                <th className="p-2 text-right">已实现盈亏</th>
+                <th className="p-2 text-right">成本</th>
               </tr>
             </thead>
             <tbody>
-              {posList.length === 0 && (
-                <tr><td colSpan={5} className="p-3 text-terminal-muted">暂无记录。在游戏内通过 WAH 按钮买入后，流水会自动出现在这里。</td></tr>
+              {openPos.length === 0 && (
+                <tr><td colSpan={4} className="p-3 text-terminal-muted">暂无持仓。通过 WAH 按钮买入后会出现在这里。</td></tr>
               )}
-              {posList.map((p) => (
+              {openPos.map((p) => (
                 <tr key={p.itemId} className="border-b border-terminal-border/50">
                   <td className="p-2">{nameOf.get(p.itemId) ?? `item:${p.itemId}`}</td>
                   <td className="p-2 text-right">{p.held}</td>
                   <td className="p-2 text-right">{fmtCopper(p.avgCost)}</td>
+                  <td className="p-2 text-right text-terminal-amber">{fmtCopper(p.held * p.avgCost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+      </div>
+
+      {/* Closed items: one row each, showing realized P&L */}
+      <div className="mb-3">
+        <Panel>
+          <PanelHeader title={<span className="flex items-center gap-1"><CheckCircle2 size={14} /> 已清仓（按已实现盈亏排序）</span>} />
+          <table className="w-full font-mono text-xs">
+            <thead className="border-b border-terminal-border text-terminal-muted">
+              <tr>
+                <th className="p-2 text-left">物品</th>
+                <th className="p-2 text-right">已售</th>
+                <th className="p-2 text-right">净收入</th>
+                <th className="p-2 text-right">成本</th>
+                <th className="p-2 text-right">已实现盈亏</th>
+              </tr>
+            </thead>
+            <tbody>
+              {closedPos.length === 0 && (
+                <tr><td colSpan={5} className="p-3 text-terminal-muted">还没有完全卖出的物品。</td></tr>
+              )}
+              {closedPos.map((p) => (
+                <tr key={p.itemId} className="border-b border-terminal-border/50">
+                  <td className="p-2">{nameOf.get(p.itemId) ?? `item:${p.itemId}`}</td>
                   <td className="p-2 text-right">{p.soldQty}</td>
+                  <td className="p-2 text-right">{fmtCopper(Math.round(p.revenueNet))}</td>
+                  <td className="p-2 text-right">{fmtCopper(p.costOfSold)}</td>
                   <td className={`p-2 text-right ${p.realized >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
                     {fmtCopper(Math.round(p.realized))}
                   </td>
@@ -169,8 +204,9 @@ export default async function LedgerPage() {
         </Panel>
       </div>
 
+      {/* Recent transaction detail: last 100 */}
       <Panel>
-        <PanelHeader title="流水明细（最新在前）" />
+        <PanelHeader title={<span className="flex items-center gap-1"><Clock size={14} /> 最近交易（最新 100 条）</span>} />
         <table className="w-full font-mono text-xs">
           <thead className="border-b border-terminal-border text-terminal-muted">
             <tr>
@@ -183,11 +219,12 @@ export default async function LedgerPage() {
             </tr>
           </thead>
           <tbody>
-            {records.slice(0, 200).map((r) => (
+            {detailRows.length === 0 && (
+              <tr><td colSpan={6} className="p-3 text-terminal-muted">暂无流水。</td></tr>
+            )}
+            {detailRows.map((r) => (
               <tr key={r.uid} className="border-b border-terminal-border/50">
-                <td className="p-2 text-terminal-muted">
-                  <span className="flex items-center gap-1"><Clock size={10} />{r.ts.toLocaleString("zh-CN")}</span>
-                </td>
+                <td className="p-2 text-terminal-muted">{r.ts.toLocaleString("zh-CN")}</td>
                 <td className="p-2">
                   <span className={
                     r.kind === "buy" ? "text-terminal-green"
@@ -208,7 +245,7 @@ export default async function LedgerPage() {
 
       <div className="mt-3 flex items-center gap-2 font-mono text-xs text-terminal-muted">
         <Package size={14} />
-        卖出金额按扣 5% 拍卖行手续费后的净额计入已实现盈亏；流拍不计盈亏。
+        卖出金额按扣 5% 拍卖行手续费后计入已实现盈亏；用掉/消耗的物品不记录，保留在持仓中。
       </div>
     </main>
   );

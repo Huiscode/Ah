@@ -119,7 +119,11 @@ async function uploadLedger() {
   try {
     const parsed = parseSavedVariables(readFileSync(savedVarsPath!, "utf8"));
     const db = parsed.WoWderhoiAHDB as Record<string, unknown> | undefined;
-    const ledger = db?.ledger;
+    let ledger = db?.ledger;
+    // The SV parser returns numeric-keyed tables as plain objects, not arrays.
+    if (!Array.isArray(ledger) && ledger && typeof ledger === "object") {
+      ledger = Object.values(ledger as Record<string, unknown>);
+    }
     if (!Array.isArray(ledger) || ledger.length === 0) return;
     const res = await fetch(ledgerUrl, {
       method: "POST",

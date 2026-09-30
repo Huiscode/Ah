@@ -97,21 +97,28 @@ local function scanInbox()
   for index = 1, count do
     local info = headerInfo(index)
     if not info then break end
-    local money = info.money or 0
-    local itemCount = info.itemCount or 0
+    local money = tonumber(info.money) or 0
+    local itemCount = tonumber(info.itemCount) or 0
+    local subject = info.subject or ""
     -- Stable per-mail key: subject + money + itemCount + index is enough for a
     -- single-character inbox; re-scans of the same mail are deduped.
-    local key = string.format("%s|%d|%d|%d", tostring(info.subject), money, itemCount, index)
+    local key = string.format("%s|%d|%d|%d", tostring(subject), money, itemCount, index)
     if not seenMails[key] then
-      if money > 0 and itemCount == 0 then
-        -- Money-only mail: treat as a sale. total is gross (copper); the AH
-        -- cut is applied at the terminal when computing net.
-        record("sell", itemIdFromSubject(info.subject), 1, money, money, info.subject)
-        seenMails[key] = true
-      elseif itemCount > 0 then
-        -- Returned items: an expired / unsold lot.
-        record("expired", itemIdFromSubject(info.subject), itemCount, 0, 0, info.subject)
-        seenMails[key] = true
+      -- "竞拍获胜" / "物品购入" = a bought item arriving in mail. Buys are
+      -- already recorded at purchase-success time; skip these to avoid double
+      -- counting.
+      local isWin = subject:find("竞拍获胜") or subject:find("物品购入")
+      if not isWin then
+        if money > 0 and itemCount == 0 then
+          -- Money-only mail: treat as a sale. total is gross (copper); the AH
+          -- cut is applied at the terminal when computing net.
+          record("sell", itemIdFromSubject(subject), 1, money, money, subject)
+          seenMails[key] = true
+        elseif itemCount > 0 then
+          -- Returned items: an expired / unsold lot.
+          record("expired", itemIdFromSubject(subject), itemCount, 0, 0, subject)
+          seenMails[key] = true
+        end
       end
     end
   end
