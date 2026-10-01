@@ -1,0 +1,3076 @@
+{
+ "source": "https://foreverchanges.pro/zh-cn/professions/enchanting",
+ "fetchedAt": "2026-10-01",
+ "note": "装备附魔为无物品产出配方；craftedMissing 为本地配方库缺失的有产出附魔制造配方。",
+ "enchants": [
+  {
+   "name": "附魔护腕 - 劣质耐力",
+   "group": "Bracer",
+   "learn": 20,
+   "reagents": [
+    {
+     "id": 247786,
+     "count": 1,
+     "name": "魔法微粒"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 初级智力",
+   "group": "Chest",
+   "learn": 20,
+   "reagents": [
+    {
+     "id": 10938,
+     "count": 1,
+     "name": "次级魔法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 初级精神",
+   "group": "Bracer",
+   "learn": 60,
+   "reagents": [
+    {
+     "id": 10938,
+     "count": 1,
+     "name": "次级魔法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 劣质耐力",
+   "group": "Chest",
+   "learn": 15,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 1,
+     "name": "奇异之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 初级智力",
+   "group": "Bracer",
+   "learn": 70,
+   "reagents": [
+    {
+     "id": 10938,
+     "count": 1,
+     "name": "次级魔法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 初级偏斜",
+   "group": "Bracer",
+   "learn": 20,
+   "reagents": [
+    {
+     "id": 10938,
+     "count": 1,
+     "name": "次级魔法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 初级力量",
+   "group": "Bracer",
+   "learn": 80,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 3,
+     "name": "奇异之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 次级智力",
+   "group": "Chest",
+   "learn": 80,
+   "reagents": [
+    {
+     "id": 10938,
+     "count": 2,
+     "name": "次级魔法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 初级吸收",
+   "group": "Chest",
+   "learn": 40,
+   "reagents": [
+    {
+     "id": 10938,
+     "count": 1,
+     "name": "次级魔法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 初级防护",
+   "group": "Cloak",
+   "learn": 90,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 2,
+     "name": "奇异之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 初级治疗强度",
+   "group": "Bracer",
+   "learn": 90,
+   "reagents": [
+    {
+     "id": 10938,
+     "count": 2,
+     "name": "次级魔法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 初级屠兽",
+   "group": "Weapon",
+   "learn": 90,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 2,
+     "name": "奇异之尘"
+    },
+    {
+     "id": 10939,
+     "count": 1,
+     "name": "强效魔法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 初级抗性",
+   "group": "Cloak",
+   "learn": 45,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 1,
+     "name": "奇异之尘"
+    },
+    {
+     "id": 10938,
+     "count": 1,
+     "name": "次级魔法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 初级耐力",
+   "group": "Bracer",
+   "learn": 50,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 2,
+     "name": "奇异之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔双手武器 - 次级智力",
+   "group": "2H Weapon",
+   "learn": 100,
+   "reagents": [
+    {
+     "id": 10938,
+     "count": 4,
+     "name": "次级魔法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 次级耐力",
+   "group": "Chest",
+   "learn": 60,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 1,
+     "name": "奇异之尘"
+    },
+    {
+     "id": 10938,
+     "count": 1,
+     "name": "次级魔法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔双手武器 - 次级精神",
+   "group": "2H Weapon",
+   "learn": 110,
+   "reagents": [
+    {
+     "id": 10998,
+     "count": 1,
+     "name": "次级星界精华"
+    },
+    {
+     "id": 10940,
+     "count": 3,
+     "name": "奇异之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 初级敏捷",
+   "group": "Cloak",
+   "learn": 110,
+   "reagents": [
+    {
+     "id": 10998,
+     "count": 1,
+     "name": "次级星界精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 初级敏捷",
+   "group": "Bracer",
+   "learn": 80,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 1,
+     "name": "奇异之尘"
+    },
+    {
+     "id": 10938,
+     "count": 2,
+     "name": "次级魔法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔盾牌 - 次级防护",
+   "group": "Shield",
+   "learn": 115,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 1,
+     "name": "奇异之尘"
+    },
+    {
+     "id": 10978,
+     "count": 1,
+     "name": "小块微光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 初级攻击",
+   "group": "Weapon",
+   "learn": 90,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 1,
+     "name": "奇异之尘"
+    },
+    {
+     "id": 10938,
+     "count": 1,
+     "name": "次级魔法精华"
+    },
+    {
+     "id": 10978,
+     "count": 1,
+     "name": "小块微光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 次级精神",
+   "group": "Bracer",
+   "learn": 120,
+   "reagents": [
+    {
+     "id": 10998,
+     "count": 1,
+     "name": "次级星界精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔靴子 - 初级敏捷",
+   "group": "Boots",
+   "learn": 125,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 3,
+     "name": "奇异之尘"
+    },
+    {
+     "id": 10998,
+     "count": 1,
+     "name": "次级星界精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔靴子 - 初级耐力",
+   "group": "Boots",
+   "learn": 125,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 4,
+     "name": "奇异之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔双手武器 - 初级冲击",
+   "group": "2H Weapon",
+   "learn": 100,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 1,
+     "name": "奇异之尘"
+    },
+    {
+     "id": 10978,
+     "count": 1,
+     "name": "小块微光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔盾牌 - 初级耐力",
+   "group": "Shield",
+   "learn": 105,
+   "reagents": [
+    {
+     "id": 10998,
+     "count": 1,
+     "name": "次级星界精华"
+    },
+    {
+     "id": 10940,
+     "count": 1,
+     "name": "奇异之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 次级暗影抵抗",
+   "group": "Cloak",
+   "learn": 135,
+   "reagents": [
+    {
+     "id": 10998,
+     "count": 1,
+     "name": "次级星界精华"
+    },
+    {
+     "id": 6048,
+     "count": 1,
+     "name": "暗影防护药水"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 次级防护",
+   "group": "Cloak",
+   "learn": 115,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 3,
+     "name": "奇异之尘"
+    },
+    {
+     "id": 10978,
+     "count": 1,
+     "name": "小块微光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 洞察",
+   "group": "Weapon",
+   "learn": 140,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 10,
+     "name": "奇异之尘"
+    },
+    {
+     "id": 11084,
+     "count": 4,
+     "name": "大块微光碎片"
+    },
+    {
+     "id": 11082,
+     "count": 4,
+     "name": "强效星界精华"
+    },
+    {
+     "id": 249391,
+     "count": 4,
+     "name": "黄铁矿"
+    },
+    {
+     "id": 249399,
+     "count": 4,
+     "name": "褶皱地衣"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 恢复",
+   "group": "Weapon",
+   "learn": 140,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 6,
+     "name": "灵魂之尘"
+    },
+    {
+     "id": 11084,
+     "count": 4,
+     "name": "大块微光碎片"
+    },
+    {
+     "id": 11082,
+     "count": 6,
+     "name": "强效星界精华"
+    },
+    {
+     "id": 249391,
+     "count": 4,
+     "name": "黄铁矿"
+    },
+    {
+     "id": 2775,
+     "count": 4,
+     "name": "银矿石"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 启示",
+   "group": "Weapon",
+   "learn": 140,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 8,
+     "name": "灵魂之尘"
+    },
+    {
+     "id": 11084,
+     "count": 6,
+     "name": "大块微光碎片"
+    },
+    {
+     "id": 11082,
+     "count": 2,
+     "name": "强效星界精华"
+    },
+    {
+     "id": 249409,
+     "count": 4,
+     "name": "天蓝染料"
+    },
+    {
+     "id": 249410,
+     "count": 4,
+     "name": "硫酸"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 次级敏捷",
+   "group": "Bracer",
+   "learn": 140,
+   "reagents": [
+    {
+     "id": 11134,
+     "count": 1,
+     "name": "次级秘法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 次级力量",
+   "group": "Bracer",
+   "learn": 140,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 1,
+     "name": "灵魂之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 耐力",
+   "group": "Chest",
+   "learn": 120,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 2,
+     "name": "奇异之尘"
+    },
+    {
+     "id": 10998,
+     "count": 1,
+     "name": "次级星界精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 钓鱼",
+   "group": "Gloves",
+   "learn": 145,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 1,
+     "name": "灵魂之尘"
+    },
+    {
+     "id": 6370,
+     "count": 1,
+     "name": "黑口鱼油"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 草药学",
+   "group": "Gloves",
+   "learn": 145,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 1,
+     "name": "灵魂之尘"
+    },
+    {
+     "id": 3356,
+     "count": 1,
+     "name": "皇血草"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 采矿",
+   "group": "Gloves",
+   "learn": 145,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 1,
+     "name": "灵魂之尘"
+    },
+    {
+     "id": 2772,
+     "count": 1,
+     "name": "铁矿石"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 次级火焰抗性",
+   "group": "Cloak",
+   "learn": 125,
+   "reagents": [
+    {
+     "id": 6371,
+     "count": 1,
+     "name": "火焰之油"
+    },
+    {
+     "id": 10998,
+     "count": 1,
+     "name": "次级星界精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 次级耐力",
+   "group": "Bracer",
+   "learn": 130,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 1,
+     "name": "灵魂之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔盾牌 - 次级精神",
+   "group": "Shield",
+   "learn": 130,
+   "reagents": [
+    {
+     "id": 10998,
+     "count": 1,
+     "name": "次级星界精华"
+    },
+    {
+     "id": 10940,
+     "count": 2,
+     "name": "奇异之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 次级吸收",
+   "group": "Chest",
+   "learn": 140,
+   "reagents": [
+    {
+     "id": 10940,
+     "count": 1,
+     "name": "奇异之尘"
+    },
+    {
+     "id": 10998,
+     "count": 1,
+     "name": "次级星界精华"
+    },
+    {
+     "id": 11084,
+     "count": 1,
+     "name": "大块微光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 次级攻击",
+   "group": "Weapon",
+   "learn": 140,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 1,
+     "name": "灵魂之尘"
+    },
+    {
+     "id": 11084,
+     "count": 1,
+     "name": "大块微光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔双手武器 - 次级冲击",
+   "group": "2H Weapon",
+   "learn": 145,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 1,
+     "name": "灵魂之尘"
+    },
+    {
+     "id": 11084,
+     "count": 1,
+     "name": "大块微光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 智力",
+   "group": "Chest",
+   "learn": 145,
+   "reagents": [
+    {
+     "id": 11082,
+     "count": 1,
+     "name": "强效星界精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 次级偏斜",
+   "group": "Bracer",
+   "learn": 170,
+   "reagents": [
+    {
+     "id": 11134,
+     "count": 1,
+     "name": "次级秘法精华"
+    },
+    {
+     "id": 11083,
+     "count": 1,
+     "name": "灵魂之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 次级智力",
+   "group": "Bracer",
+   "learn": 150,
+   "reagents": [
+    {
+     "id": 11082,
+     "count": 1,
+     "name": "强效星界精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 初级属性",
+   "group": "Chest",
+   "learn": 150,
+   "reagents": [
+    {
+     "id": 10998,
+     "count": 1,
+     "name": "次级星界精华"
+    },
+    {
+     "id": 11083,
+     "count": 1,
+     "name": "灵魂之尘"
+    },
+    {
+     "id": 11084,
+     "count": 1,
+     "name": "大块微光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 防御",
+   "group": "Cloak",
+   "learn": 155,
+   "reagents": [
+    {
+     "id": 11138,
+     "count": 1,
+     "name": "小块闪光碎片"
+    },
+    {
+     "id": 11083,
+     "count": 1,
+     "name": "灵魂之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔盾牌 - 次级耐力",
+   "group": "Shield",
+   "learn": 155,
+   "reagents": [
+    {
+     "id": 11134,
+     "count": 1,
+     "name": "次级秘法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 次级屠兽",
+   "group": "Weapon",
+   "learn": 175,
+   "reagents": [
+    {
+     "id": 5637,
+     "count": 1,
+     "name": "大牙齿"
+    },
+    {
+     "id": 11138,
+     "count": 1,
+     "name": "小块闪光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 次级元素杀手",
+   "group": "Weapon",
+   "learn": 175,
+   "reagents": [
+    {
+     "id": 7067,
+     "count": 1,
+     "name": "元素之土"
+    },
+    {
+     "id": 11138,
+     "count": 1,
+     "name": "小块闪光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔靴子 - 次级敏捷",
+   "group": "Boots",
+   "learn": 160,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 1,
+     "name": "灵魂之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 强效耐力",
+   "group": "Chest",
+   "learn": 160,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 2,
+     "name": "灵魂之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 精神",
+   "group": "Bracer",
+   "learn": 165,
+   "reagents": [
+    {
+     "id": 11134,
+     "count": 1,
+     "name": "次级秘法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔靴子 - 次级耐力",
+   "group": "Boots",
+   "learn": 170,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 2,
+     "name": "灵魂之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 耐力",
+   "group": "Bracer",
+   "learn": 170,
+   "reagents": [
+    {
+     "id": 11083,
+     "count": 3,
+     "name": "灵魂之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔靴子 - 次级精神",
+   "group": "Boots",
+   "learn": 190,
+   "reagents": [
+    {
+     "id": 11134,
+     "count": 2,
+     "name": "次级秘法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 寒冬之力",
+   "group": "Weapon",
+   "learn": 190,
+   "reagents": [
+    {
+     "id": 11135,
+     "count": 1,
+     "name": "强效秘法精华"
+    },
+    {
+     "id": 11137,
+     "count": 1,
+     "name": "幻象之尘"
+    },
+    {
+     "id": 11139,
+     "count": 1,
+     "name": "大块闪光碎片"
+    },
+    {
+     "id": 3819,
+     "count": 1,
+     "name": "冬刺草"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 敏捷",
+   "group": "Bracer",
+   "learn": 190,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 1,
+     "name": "幻象之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 火焰抗性",
+   "group": "Cloak",
+   "learn": 175,
+   "reagents": [
+    {
+     "id": 11134,
+     "count": 1,
+     "name": "次级秘法精华"
+    },
+    {
+     "id": 7068,
+     "count": 1,
+     "name": "元素火焰"
+    }
+   ]
+  },
+  {
+   "name": "附魔盾牌 - 次级格挡",
+   "group": "Shield",
+   "learn": 195,
+   "reagents": [
+    {
+     "id": 11135,
+     "count": 1,
+     "name": "强效秘法精华"
+    },
+    {
+     "id": 11137,
+     "count": 1,
+     "name": "幻象之尘"
+    },
+    {
+     "id": 11139,
+     "count": 1,
+     "name": "大块闪光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 力量",
+   "group": "Bracer",
+   "learn": 180,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 1,
+     "name": "幻象之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔盾牌 - 精神",
+   "group": "Shield",
+   "learn": 180,
+   "reagents": [
+    {
+     "id": 11134,
+     "count": 1,
+     "name": "次级秘法精华"
+    },
+    {
+     "id": 11137,
+     "count": 1,
+     "name": "幻象之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 剥皮",
+   "group": "Gloves",
+   "learn": 200,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 1,
+     "name": "幻象之尘"
+    },
+    {
+     "id": 7392,
+     "count": 1,
+     "name": "绿色幼龙鳞片"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 强效智力",
+   "group": "Chest",
+   "learn": 185,
+   "reagents": [
+    {
+     "id": 11134,
+     "count": 1,
+     "name": "次级秘法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 次级治疗强度",
+   "group": "Bracer",
+   "learn": 205,
+   "reagents": [
+    {
+     "id": 11134,
+     "count": 2,
+     "name": "次级秘法精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔项链 - 敏捷",
+   "group": "Necklace",
+   "learn": 210,
+   "reagents": [
+    {
+     "id": 11175,
+     "count": 2,
+     "name": "强效虚空精华"
+    },
+    {
+     "id": 11178,
+     "count": 8,
+     "name": "大块强光碎片"
+    },
+    {
+     "id": 11176,
+     "count": 6,
+     "name": "梦境之尘"
+    },
+    {
+     "id": 249410,
+     "count": 4,
+     "name": "硫酸"
+    },
+    {
+     "id": 249430,
+     "count": 4,
+     "name": "品红染料"
+    }
+   ]
+  },
+  {
+   "name": "附魔项链 - 偏斜",
+   "group": "Necklace",
+   "learn": 210,
+   "reagents": [
+    {
+     "id": 11175,
+     "count": 8,
+     "name": "强效虚空精华"
+    },
+    {
+     "id": 11178,
+     "count": 2,
+     "name": "大块强光碎片"
+    },
+    {
+     "id": 11176,
+     "count": 2,
+     "name": "梦境之尘"
+    },
+    {
+     "id": 249409,
+     "count": 4,
+     "name": "天蓝染料"
+    },
+    {
+     "id": 249430,
+     "count": 4,
+     "name": "品红染料"
+    }
+   ]
+  },
+  {
+   "name": "附魔项链 - 治疗强度",
+   "group": "Necklace",
+   "learn": 210,
+   "reagents": [
+    {
+     "id": 11175,
+     "count": 3,
+     "name": "强效虚空精华"
+    },
+    {
+     "id": 11178,
+     "count": 5,
+     "name": "大块强光碎片"
+    },
+    {
+     "id": 11176,
+     "count": 4,
+     "name": "梦境之尘"
+    },
+    {
+     "id": 249391,
+     "count": 4,
+     "name": "黄铁矿"
+    },
+    {
+     "id": 249424,
+     "count": 4,
+     "name": "玫瑰盖菇"
+    }
+   ]
+  },
+  {
+   "name": "附魔项链 - 法术强度",
+   "group": "Necklace",
+   "learn": 210,
+   "reagents": [
+    {
+     "id": 11175,
+     "count": 5,
+     "name": "强效虚空精华"
+    },
+    {
+     "id": 11178,
+     "count": 3,
+     "name": "大块强光碎片"
+    },
+    {
+     "id": 11176,
+     "count": 8,
+     "name": "梦境之尘"
+    },
+    {
+     "id": 249409,
+     "count": 4,
+     "name": "天蓝染料"
+    },
+    {
+     "id": 249430,
+     "count": 4,
+     "name": "品红染料"
+    }
+   ]
+  },
+  {
+   "name": "附魔项链 - 力量",
+   "group": "Necklace",
+   "learn": 210,
+   "reagents": [
+    {
+     "id": 11175,
+     "count": 4,
+     "name": "强效虚空精华"
+    },
+    {
+     "id": 11178,
+     "count": 4,
+     "name": "大块强光碎片"
+    },
+    {
+     "id": 11176,
+     "count": 10,
+     "name": "梦境之尘"
+    },
+    {
+     "id": 249410,
+     "count": 4,
+     "name": "硫酸"
+    },
+    {
+     "id": 249425,
+     "count": 4,
+     "name": "铝土矿"
+    }
+   ]
+  },
+  {
+   "name": "Enchant 2H Weapon - Lesser Agility",
+   "group": "2H Weapon",
+   "learn": 210,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 2,
+     "name": "幻象之尘"
+    },
+    {
+     "id": 11139,
+     "count": 1,
+     "name": "大块闪光碎片"
+    },
+    {
+     "id": 11174,
+     "count": 1,
+     "name": "次级虚空精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔盾牌 - 耐力",
+   "group": "Shield",
+   "learn": 210,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 2,
+     "name": "幻象之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 攻击",
+   "group": "Weapon",
+   "learn": 195,
+   "reagents": [
+    {
+     "id": 11135,
+     "count": 1,
+     "name": "强效秘法精华"
+    },
+    {
+     "id": 11139,
+     "count": 1,
+     "name": "大块闪光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 高级采矿",
+   "group": "Gloves",
+   "learn": 215,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 2,
+     "name": "幻象之尘"
+    },
+    {
+     "id": 6037,
+     "count": 1,
+     "name": "真银锭"
+    }
+   ]
+  },
+  {
+   "name": "附魔双手武器 - 冲击",
+   "group": "2H Weapon",
+   "learn": 200,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 2,
+     "name": "幻象之尘"
+    },
+    {
+     "id": 11139,
+     "count": 1,
+     "name": "大块闪光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 次级状态",
+   "group": "Chest",
+   "learn": 200,
+   "reagents": [
+    {
+     "id": 11135,
+     "count": 1,
+     "name": "强效秘法精华"
+    },
+    {
+     "id": 11137,
+     "count": 1,
+     "name": "幻象之尘"
+    },
+    {
+     "id": 11139,
+     "count": 1,
+     "name": "大块闪光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 吸收",
+   "group": "Chest",
+   "learn": 220,
+   "reagents": [
+    {
+     "id": 11176,
+     "count": 10,
+     "name": "梦境之尘"
+    },
+    {
+     "id": 11175,
+     "count": 4,
+     "name": "强效虚空精华"
+    },
+    {
+     "id": 11178,
+     "count": 2,
+     "name": "大块强光碎片"
+    }
+   ]
+  },
+  {
+   "name": "Enchant 2H Weapon - Lesser Strength",
+   "group": "2H Weapon",
+   "learn": 220,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 1,
+     "name": "幻象之尘"
+    },
+    {
+     "id": 11139,
+     "count": 1,
+     "name": "大块闪光碎片"
+    },
+    {
+     "id": 11174,
+     "count": 2,
+     "name": "次级虚空精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 强效精神",
+   "group": "Bracer",
+   "learn": 220,
+   "reagents": [
+    {
+     "id": 11174,
+     "count": 1,
+     "name": "次级虚空精华"
+    },
+    {
+     "id": 11137,
+     "count": 1,
+     "name": "幻象之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 强效防御",
+   "group": "Cloak",
+   "learn": 205,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 1,
+     "name": "幻象之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 抗性",
+   "group": "Cloak",
+   "learn": 205,
+   "reagents": [
+    {
+     "id": 11174,
+     "count": 1,
+     "name": "次级虚空精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 次级敏捷",
+   "group": "Cloak",
+   "learn": 225,
+   "reagents": [
+    {
+     "id": 11174,
+     "count": 1,
+     "name": "次级虚空精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 高级草药学",
+   "group": "Gloves",
+   "learn": 225,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 2,
+     "name": "幻象之尘"
+    },
+    {
+     "id": 8838,
+     "count": 1,
+     "name": "太阳草"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 智力",
+   "group": "Bracer",
+   "learn": 210,
+   "reagents": [
+    {
+     "id": 11174,
+     "count": 1,
+     "name": "次级虚空精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 敏捷",
+   "group": "Gloves",
+   "learn": 210,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 1,
+     "name": "幻象之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 屠魔",
+   "group": "Weapon",
+   "learn": 230,
+   "reagents": [
+    {
+     "id": 11177,
+     "count": 1,
+     "name": "小块强光碎片"
+    },
+    {
+     "id": 11176,
+     "count": 1,
+     "name": "梦境之尘"
+    },
+    {
+     "id": 9224,
+     "count": 1,
+     "name": "屠魔药剂"
+    }
+   ]
+  },
+  {
+   "name": "附魔靴子 - 耐力",
+   "group": "Boots",
+   "learn": 215,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 2,
+     "name": "幻象之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 偏斜",
+   "group": "Bracer",
+   "learn": 235,
+   "reagents": [
+    {
+     "id": 11174,
+     "count": 2,
+     "name": "次级虚空精华"
+    },
+    {
+     "id": 11176,
+     "count": 1,
+     "name": "梦境之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔盾牌 - 冰霜抗性",
+   "group": "Shield",
+   "learn": 235,
+   "reagents": [
+    {
+     "id": 11178,
+     "count": 1,
+     "name": "大块强光碎片"
+    },
+    {
+     "id": 3829,
+     "count": 1,
+     "name": "冰霜之油"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 超强耐力",
+   "group": "Chest",
+   "learn": 220,
+   "reagents": [
+    {
+     "id": 11137,
+     "count": 3,
+     "name": "幻象之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 强效敏捷",
+   "group": "Bracer",
+   "learn": 240,
+   "reagents": [
+    {
+     "id": 11176,
+     "count": 3,
+     "name": "梦境之尘"
+    },
+    {
+     "id": 11174,
+     "count": 1,
+     "name": "次级虚空精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔靴子 - 初级速度",
+   "group": "Boots",
+   "learn": 225,
+   "reagents": [
+    {
+     "id": 11177,
+     "count": 1,
+     "name": "小块强光碎片"
+    },
+    {
+     "id": 7909,
+     "count": 1,
+     "name": "海蓝宝石"
+    },
+    {
+     "id": 11174,
+     "count": 1,
+     "name": "次级虚空精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 力量",
+   "group": "Gloves",
+   "learn": 225,
+   "reagents": [
+    {
+     "id": 11174,
+     "count": 1,
+     "name": "次级虚空精华"
+    },
+    {
+     "id": 11137,
+     "count": 2,
+     "name": "幻象之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 强效耐力",
+   "group": "Bracer",
+   "learn": 245,
+   "reagents": [
+    {
+     "id": 11176,
+     "count": 3,
+     "name": "梦境之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 超强智力",
+   "group": "Chest",
+   "learn": 230,
+   "reagents": [
+    {
+     "id": 11175,
+     "count": 1,
+     "name": "强效虚空精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔盾牌 - 强效精神",
+   "group": "Shield",
+   "learn": 230,
+   "reagents": [
+    {
+     "id": 11174,
+     "count": 2,
+     "name": "次级虚空精华"
+    },
+    {
+     "id": 11176,
+     "count": 1,
+     "name": "梦境之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 高级剥皮",
+   "group": "Gloves",
+   "learn": 250,
+   "reagents": [
+    {
+     "id": 11176,
+     "count": 2,
+     "name": "梦境之尘"
+    },
+    {
+     "id": 15407,
+     "count": 1,
+     "name": "熟化毛皮"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 骑乘",
+   "group": "Gloves",
+   "learn": 250,
+   "reagents": [
+    {
+     "id": 11178,
+     "count": 1,
+     "name": "大块强光碎片"
+    },
+    {
+     "id": 11176,
+     "count": 2,
+     "name": "梦境之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔靴子 - 敏捷",
+   "group": "Boots",
+   "learn": 235,
+   "reagents": [
+    {
+     "id": 11175,
+     "count": 1,
+     "name": "强效虚空精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 强效智力",
+   "group": "Bracer",
+   "learn": 255,
+   "reagents": [
+    {
+     "id": 16202,
+     "count": 2,
+     "name": "次级不灭精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔双手武器 - 强效冲击",
+   "group": "2H Weapon",
+   "learn": 240,
+   "reagents": [
+    {
+     "id": 11178,
+     "count": 1,
+     "name": "大块强光碎片"
+    },
+    {
+     "id": 11176,
+     "count": 1,
+     "name": "梦境之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 强效力量",
+   "group": "Bracer",
+   "learn": 240,
+   "reagents": [
+    {
+     "id": 11176,
+     "count": 1,
+     "name": "梦境之尘"
+    },
+    {
+     "id": 11174,
+     "count": 2,
+     "name": "次级虚空精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔靴子 - 强效耐力",
+   "group": "Boots",
+   "learn": 260,
+   "reagents": [
+    {
+     "id": 11176,
+     "count": 6,
+     "name": "梦境之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 状态",
+   "group": "Chest",
+   "learn": 245,
+   "reagents": [
+    {
+     "id": 11178,
+     "count": 1,
+     "name": "大块强光碎片"
+    },
+    {
+     "id": 11176,
+     "count": 1,
+     "name": "梦境之尘"
+    },
+    {
+     "id": 11175,
+     "count": 1,
+     "name": "强效虚空精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 强效攻击",
+   "group": "Weapon",
+   "learn": 245,
+   "reagents": [
+    {
+     "id": 11178,
+     "count": 1,
+     "name": "大块强光碎片"
+    },
+    {
+     "id": 11175,
+     "count": 1,
+     "name": "强效虚空精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 强效抗性",
+   "group": "Cloak",
+   "learn": 265,
+   "reagents": [
+    {
+     "id": 16202,
+     "count": 1,
+     "name": "次级不灭精华"
+    },
+    {
+     "id": 7077,
+     "count": 1,
+     "name": "火焰之心"
+    },
+    {
+     "id": 7075,
+     "count": 1,
+     "name": "大地之核"
+    },
+    {
+     "id": 7079,
+     "count": 1,
+     "name": "纯水之球"
+    },
+    {
+     "id": 7081,
+     "count": 1,
+     "name": "风之气息"
+    },
+    {
+     "id": 7972,
+     "count": 1,
+     "name": "亡灵腐液"
+    }
+   ]
+  },
+  {
+   "name": "附魔盾牌 - 强效耐力",
+   "group": "Shield",
+   "learn": 265,
+   "reagents": [
+    {
+     "id": 11176,
+     "count": 6,
+     "name": "梦境之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 烈焰",
+   "group": "Weapon",
+   "learn": 265,
+   "reagents": [
+    {
+     "id": 11177,
+     "count": 2,
+     "name": "小块强光碎片"
+    },
+    {
+     "id": 7078,
+     "count": 1,
+     "name": "火焰精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 初级加速",
+   "group": "Gloves",
+   "learn": 250,
+   "reagents": [
+    {
+     "id": 11178,
+     "count": 1,
+     "name": "大块强光碎片"
+    },
+    {
+     "id": 8153,
+     "count": 1,
+     "name": "野藤"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 超强精神",
+   "group": "Bracer",
+   "learn": 270,
+   "reagents": [
+    {
+     "id": 16202,
+     "count": 2,
+     "name": "次级不灭精华"
+    },
+    {
+     "id": 11176,
+     "count": 7,
+     "name": "梦境之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 强效敏捷",
+   "group": "Gloves",
+   "learn": 270,
+   "reagents": [
+    {
+     "id": 16202,
+     "count": 2,
+     "name": "次级不灭精华"
+    },
+    {
+     "id": 16204,
+     "count": 2,
+     "name": "幻影之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔靴子 - 精神",
+   "group": "Boots",
+   "learn": 275,
+   "reagents": [
+    {
+     "id": 16203,
+     "count": 2,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 16202,
+     "count": 1,
+     "name": "次级不灭精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 极效耐力",
+   "group": "Chest",
+   "learn": 275,
+   "reagents": [
+    {
+     "id": 16204,
+     "count": 6,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 14343,
+     "count": 1,
+     "name": "小块魔光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔盾牌 - 超强精神",
+   "group": "Shield",
+   "learn": 280,
+   "reagents": [
+    {
+     "id": 16203,
+     "count": 2,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 16204,
+     "count": 4,
+     "name": "幻影之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 超级防御",
+   "group": "Cloak",
+   "learn": 285,
+   "reagents": [
+    {
+     "id": 16204,
+     "count": 8,
+     "name": "幻影之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 冰寒",
+   "group": "Weapon",
+   "learn": 285,
+   "reagents": [
+    {
+     "id": 14343,
+     "count": 4,
+     "name": "小块魔光碎片"
+    },
+    {
+     "id": 7080,
+     "count": 1,
+     "name": "水之精华"
+    },
+    {
+     "id": 7082,
+     "count": 1,
+     "name": "空气精华"
+    },
+    {
+     "id": 13467,
+     "count": 1,
+     "name": "冰盖草"
+    }
+   ]
+  },
+  {
+   "name": "Enchant 2H Weapon - Strength",
+   "group": "2H Weapon",
+   "learn": 290,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 8,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16203,
+     "count": 10,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 16204,
+     "count": 8,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 12363,
+     "count": 4,
+     "name": "奥术水晶"
+    }
+   ]
+  },
+  {
+   "name": "附魔双手武器 - 敏捷",
+   "group": "2H Weapon",
+   "learn": 290,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 10,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16203,
+     "count": 6,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 16204,
+     "count": 14,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 7082,
+     "count": 4,
+     "name": "空气精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 法力回复",
+   "group": "Bracer",
+   "learn": 290,
+   "reagents": [
+    {
+     "id": 16204,
+     "count": 16,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 16203,
+     "count": 4,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 7080,
+     "count": 2,
+     "name": "水之精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 极效智力",
+   "group": "Chest",
+   "learn": 290,
+   "reagents": [
+    {
+     "id": 16203,
+     "count": 3,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 14343,
+     "count": 1,
+     "name": "小块魔光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 敏捷",
+   "group": "Weapon",
+   "learn": 290,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 6,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16203,
+     "count": 6,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 16204,
+     "count": 4,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 7082,
+     "count": 2,
+     "name": "空气精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 力量",
+   "group": "Weapon",
+   "learn": 290,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 6,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16203,
+     "count": 6,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 16204,
+     "count": 4,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 7076,
+     "count": 2,
+     "name": "大地精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 采莲之爪",
+   "group": "Gloves",
+   "learn": 295,
+   "reagents": [
+    {
+     "id": 248822,
+     "count": 1,
+     "name": "死亡莲花"
+    },
+    {
+     "id": 14343,
+     "count": 2,
+     "name": "小块魔光碎片"
+    },
+    {
+     "id": 16204,
+     "count": 12,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 16202,
+     "count": 4,
+     "name": "次级不灭精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔双手武器 - 超强冲击",
+   "group": "2H Weapon",
+   "learn": 295,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 4,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16204,
+     "count": 10,
+     "name": "幻影之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔靴子 - 强效敏捷",
+   "group": "Boots",
+   "learn": 295,
+   "reagents": [
+    {
+     "id": 16203,
+     "count": 8,
+     "name": "强效不灭精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 超强敏捷",
+   "group": "Bracer",
+   "learn": 295,
+   "reagents": [
+    {
+     "id": 16204,
+     "count": 3,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 16203,
+     "count": 3,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 14344,
+     "count": 1,
+     "name": "大块魔光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 超强力量",
+   "group": "Bracer",
+   "learn": 295,
+   "reagents": [
+    {
+     "id": 16204,
+     "count": 6,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 16203,
+     "count": 6,
+     "name": "强效不灭精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 强效力量",
+   "group": "Gloves",
+   "learn": 295,
+   "reagents": [
+    {
+     "id": 16203,
+     "count": 4,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 16204,
+     "count": 4,
+     "name": "幻影之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 邪恶武器",
+   "group": "Weapon",
+   "learn": 295,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 4,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 12808,
+     "count": 4,
+     "name": "死灵精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔双手武器 - 极效智力",
+   "group": "2H Weapon",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 16203,
+     "count": 12,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 14344,
+     "count": 2,
+     "name": "大块魔光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔双手武器 - 极效精神",
+   "group": "2H Weapon",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 16203,
+     "count": 12,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 14344,
+     "count": 2,
+     "name": "大块魔光碎片"
+    }
+   ]
+  },
+  {
+   "name": "Enchant 2H Weapon - Mighty Healing Power",
+   "group": "2H Weapon",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 248819,
+     "count": 4,
+     "name": "邪能水晶"
+    },
+    {
+     "id": 16203,
+     "count": 6,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 249726,
+     "count": 4,
+     "name": "艾泽拉斯金锭"
+    },
+    {
+     "id": 249274,
+     "count": 4,
+     "name": "窒息藤"
+    },
+    {
+     "id": 20725,
+     "count": 4,
+     "name": "连结水晶"
+    },
+    {
+     "id": 248820,
+     "count": 4,
+     "name": "铜铀云母"
+    }
+   ]
+  },
+  {
+   "name": "Enchant 2H Weapon - Mighty Spell Power",
+   "group": "2H Weapon",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 248819,
+     "count": 4,
+     "name": "邪能水晶"
+    },
+    {
+     "id": 16203,
+     "count": 6,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 7076,
+     "count": 4,
+     "name": "大地精华"
+    },
+    {
+     "id": 12808,
+     "count": 4,
+     "name": "死灵精华"
+    },
+    {
+     "id": 20725,
+     "count": 4,
+     "name": "连结水晶"
+    },
+    {
+     "id": 248820,
+     "count": 2,
+     "name": "铜铀云母"
+    }
+   ]
+  },
+  {
+   "name": "附魔双手武器 - 法术冲击",
+   "group": "2H Weapon",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 3,
+     "name": "连结水晶"
+    },
+    {
+     "id": 16204,
+     "count": 24,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 12938,
+     "count": 1,
+     "name": "英雄之血"
+    },
+    {
+     "id": 8831,
+     "count": 6,
+     "name": "紫莲花"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 强效法术能量",
+   "group": "Bracer",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 16203,
+     "count": 3,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 16204,
+     "count": 9,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 12808,
+     "count": 12,
+     "name": "死灵精华"
+    },
+    {
+     "id": 8831,
+     "count": 2,
+     "name": "紫莲花"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 治疗能力",
+   "group": "Bracer",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 2,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16204,
+     "count": 20,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 16203,
+     "count": 4,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 12803,
+     "count": 6,
+     "name": "生命精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 超强偏斜",
+   "group": "Bracer",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 3,
+     "name": "大块魔光碎片"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 超强智力",
+   "group": "Bracer",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 16203,
+     "count": 10,
+     "name": "强效不灭精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔护腕 - 超强耐力",
+   "group": "Bracer",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 16204,
+     "count": 15,
+     "name": "幻影之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔胸甲 - 强效属性",
+   "group": "Chest",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 4,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16204,
+     "count": 15,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 16203,
+     "count": 10,
+     "name": "强效不灭精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 敏捷",
+   "group": "Cloak",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 16203,
+     "count": 3,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 16204,
+     "count": 9,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 7078,
+     "count": 1,
+     "name": "火焰精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 躲闪",
+   "group": "Cloak",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 3,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 8,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 12809,
+     "count": 8,
+     "name": "守护之石"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 强效火焰抗性",
+   "group": "Cloak",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 3,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 8,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 7078,
+     "count": 4,
+     "name": "火焰精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 强效自然抗性",
+   "group": "Cloak",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 2,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 8,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 12803,
+     "count": 4,
+     "name": "生命精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 潜行",
+   "group": "Cloak",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 3,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 8,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 13468,
+     "count": 2,
+     "name": "黑莲花"
+    }
+   ]
+  },
+  {
+   "name": "附魔披风 - 狡诈",
+   "group": "Cloak",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 4,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 6,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 11754,
+     "count": 2,
+     "name": "黑钻石"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 奥术强化",
+   "group": "Gloves",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 2,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 5,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 12753,
+     "count": 2,
+     "name": "暗影之皮"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 火焰能量",
+   "group": "Gloves",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 2,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 10,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 7078,
+     "count": 4,
+     "name": "火焰精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 冰霜能量",
+   "group": "Gloves",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 3,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 10,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 7080,
+     "count": 4,
+     "name": "水之精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 治疗能量",
+   "group": "Gloves",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 3,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 8,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 12811,
+     "count": 1,
+     "name": "正义宝珠"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 神圣能量",
+   "group": "Gloves",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 2,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 5,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 13180,
+     "count": 5,
+     "name": "斯坦索姆圣水"
+    },
+    {
+     "id": 12735,
+     "count": 2,
+     "name": "磨损的憎恶缝合线"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 自然能量",
+   "group": "Gloves",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 2,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 5,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 248822,
+     "count": 4,
+     "name": "死亡莲花"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 暗影能量",
+   "group": "Gloves",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 3,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 10,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 12808,
+     "count": 6,
+     "name": "死灵精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 超强敏捷",
+   "group": "Gloves",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 3,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 8,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 7082,
+     "count": 4,
+     "name": "空气精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 超强力量",
+   "group": "Gloves",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 4,
+     "name": "连结水晶"
+    },
+    {
+     "id": 16203,
+     "count": 8,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 7076,
+     "count": 4,
+     "name": "大地精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔手套 - 威胁",
+   "group": "Gloves",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 20725,
+     "count": 4,
+     "name": "连结水晶"
+    },
+    {
+     "id": 14344,
+     "count": 6,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 18512,
+     "count": 8,
+     "name": "幼虫酸液"
+    }
+   ]
+  },
+  {
+   "name": "附魔副手 - 智慧",
+   "group": "Off-Hand",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 6,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16204,
+     "count": 18,
+     "name": "幻影之尘"
+    },
+    {
+     "id": 7082,
+     "count": 1,
+     "name": "空气精华"
+    },
+    {
+     "id": 7080,
+     "count": 1,
+     "name": "水之精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 十字军",
+   "group": "Weapon",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 4,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 12811,
+     "count": 2,
+     "name": "正义宝珠"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 治疗能量",
+   "group": "Weapon",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 4,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16203,
+     "count": 8,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 12803,
+     "count": 6,
+     "name": "生命精华"
+    },
+    {
+     "id": 7080,
+     "count": 6,
+     "name": "水之精华"
+    },
+    {
+     "id": 12811,
+     "count": 1,
+     "name": "正义宝珠"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 生命偷取",
+   "group": "Weapon",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 6,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 12808,
+     "count": 6,
+     "name": "死灵精华"
+    },
+    {
+     "id": 12803,
+     "count": 6,
+     "name": "生命精华"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 强效智力",
+   "group": "Weapon",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 15,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16203,
+     "count": 12,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 16204,
+     "count": 20,
+     "name": "幻影之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 强效精神",
+   "group": "Weapon",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 10,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16203,
+     "count": 8,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 16204,
+     "count": 15,
+     "name": "幻影之尘"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 法术能量",
+   "group": "Weapon",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 4,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16203,
+     "count": 12,
+     "name": "强效不灭精华"
+    },
+    {
+     "id": 7078,
+     "count": 4,
+     "name": "火焰精华"
+    },
+    {
+     "id": 7080,
+     "count": 4,
+     "name": "水之精华"
+    },
+    {
+     "id": 7082,
+     "count": 4,
+     "name": "空气精华"
+    },
+    {
+     "id": 13926,
+     "count": 2,
+     "name": "金珍珠"
+    }
+   ]
+  },
+  {
+   "name": "附魔武器 - 超强打击",
+   "group": "Weapon",
+   "learn": 300,
+   "reagents": [
+    {
+     "id": 14344,
+     "count": 2,
+     "name": "大块魔光碎片"
+    },
+    {
+     "id": 16203,
+     "count": 10,
+     "name": "强效不灭精华"
+    }
+   ]
+  }
+ ],
+ "craftedMissing": [
+  {
+   "name": "浓烟山脉之心",
+   "outputId": 11811,
+   "learn": 265,
+   "reagents": [
+    {
+     "id": 11382,
+     "count": 1,
+     "name": "山脉之血"
+    },
+    {
+     "id": 7078,
+     "count": 1,
+     "name": "火焰精华"
+    },
+    {
+     "id": 14343,
+     "count": 3,
+     "name": "小块魔光碎片"
+    }
+   ]
+  }
+ ]
+}
