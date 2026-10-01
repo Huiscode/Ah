@@ -202,7 +202,6 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                       : signal.turnoverScore > 0
                         ? <span className="ml-1.5 rounded bg-slate-500/15 px-1 py-0.5 align-middle text-[9px] text-slate-400" title="被 N 个配方使用">{signal.turnoverScore}§</span>
                         : null}
-                  {signal.source === "ahledger" && <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400">网站</span>}
                 </td>
                 <td className="px-3 py-2 text-right"><Coins copper={signal.price} /></td>
                 <td className="px-3 py-2 text-right"><Coins copper={signal.minPrice} /></td>

@@ -103,44 +103,71 @@ local function printReplicateProbe()
   chatMessage(string.format(L.SCAN_PROBE, #probe0, table.concat(parts, " | ")))
 end
 
--- Icon texture name (e.g. "inv_staff_13") for one itemId, resolved through
--- the retail texture API with a safe fallback. nil means the client has no
+-- Icon texture name (e.g. "inv_staff_13") for one itemId. On this client
+-- C_Item.GetItemIconByID returns a numeric FileDataID (verified by probe,
+-- e.g. 4370 -> 133709), not a path string; resolve the FileDataID to a
+-- path through the texture API when available, and strip the path down to
+-- the bare file name the terminal stores. nil means the client has no
 -- cache entry yet; GET_ITEM_INFO_RECEIVED backfills it once the info lands.
+local function resolveFileIDToIconName(fileID)
+  if type(fileID) ~= "number" then return nil end
+  local path
+  local ok = pcall(function()
+    if C_Texture and C_Texture.GetTexturePathByFileID then
+      path = C_Texture.GetTexturePathByFileID(fileID)
+    elseif GetTexturePathByFileID then
+      path = GetTexturePathByFileID(fileID)
+    elseif GetTexturePath then
+      path = GetTexturePath(fileID)
+    end
+  end)
+  if ok and type(path) == "string" and path ~= "" then
+    local file = path:match("([^\\/]+)$")
+    if file then return (file:gsub("%.blp$", "")) end
+  end
+  return nil
+end
+
 local function itemIconName(itemId)
   if C_Item and C_Item.GetItemIconByID then
     local t = C_Item.GetItemIconByID(itemId)
     if type(t) == "string" and t ~= "" then
       local file = t:match("([^\\]+)$")
       if file and file ~= "" then return file end
+    elseif type(t) == "number" then
+      local name = resolveFileIDToIconName(t)
+      if name then return name end
     end
   end
   return nil
 end
 
 -- Class/subclass + vendor price for one itemId, cached for the scan's
--- lifetime. Retail returns numeric classIDs; translate to localized names
--- (the terminal stores category strings) with a safe fallback when the
--- item is not cached yet or the legacy name API is gone.
+-- lifetime. The Forever client has no global GetItemInfo, no
+-- C_Item.GetItemInfoByID and no global GetItemClassInfo/GetItemSubClassInfo
+-- (all verified nil by probe); the working entry point is
+-- C_Item.GetItemInfo(itemId), whose layout (verified by probe) is:
+--   1 name  2 link  3 quality  4 itemLevel  5 requiredLevel
+--   6 itemType (localized string)  7 itemSubType (localized string)
+--   8 maxStack  9 equipLoc  10 iconFileDataID  11 sellPrice
+--   12 classID  13 subclassID
+-- The terminal stores category strings, so positions 6/7 feed it directly;
+-- position 11 is the NPC buyout/sell price the vendor-arbitrage radar needs.
+-- When the item is not cached yet the API returns nil values (no error), so
+-- callers flag it via RequestLoadItemDataByID and GET_ITEM_INFO_RECEIVED
+-- backfills the category in place (see recordAuction / refreshPendingCategories).
 local function itemCategoryAndVendor(itemId)
-  local classID, subclassID, vendorPrice
+  if not (C_Item and C_Item.GetItemInfo) then return "unknown", "unknown", 0 end
+  local itemType, itemSubType, sellPrice
   local ok = pcall(function()
-    local _, _, _, _, _, c, s = C_Item.GetItemInfoByID(itemId)
-    classID, subclassID = c, s
-    vendorPrice = select(11, C_Item.GetItemInfoByID(itemId))
+    local _, _, _, _, _, t, st, _, _, _, sp = C_Item.GetItemInfo(itemId)
+    itemType, itemSubType, sellPrice = t, st, sp
   end)
   if not ok then return "unknown", "unknown", 0 end
-  local className, subclassName = "unknown", "unknown"
-  if classID then
-    if GetItemClassInfo then
-      local cName = GetItemClassInfo(classID)
-      if cName and cName ~= "" then className = cName end
-    end
-    if classID and subclassID and GetItemSubClassInfo then
-      local sName = GetItemSubClassInfo(classID, subclassID)
-      if sName and sName ~= "" then subclassName = sName end
-    end
-  end
-  return className, subclassName, vendorPrice or 0
+  local className = (type(itemType) == "string" and itemType ~= "") and itemType or "unknown"
+  local subclassName = (type(itemSubType) == "string" and itemSubType ~= "") and itemSubType or "unknown"
+  local vendorPrice = (type(sellPrice) == "number" and sellPrice > 0) and sellPrice or 0
+  return className, subclassName, vendorPrice
 end
 
 -- Item info arrives asynchronously: when a category came back unknown during
@@ -268,6 +295,10 @@ local function finishScan(totalAuctions)
       itemClass = entry.itemClass,
       itemSubClass = entry.itemSubClass,
       minPrice = math.floor(entry.minPrice + 0.5),
+      -- P50 close alongside the P10 market price: the terminal charts both
+      -- curves from the same scan. P10 is the buyer's real price (bottom
+      -- decile); P50 is the market center and display-only on the web.
+      p50 = math.floor(weightedPercentile(entry.listings, entry.quantity, 0.50) + 0.5),
       vendorP = entry.vendorP,
       sellP = math.floor(sellFrontPrice(entry.listings, entry.quantity) + 0.5),
       p5 = math.floor(weightedPercentile(entry.listings, entry.quantity, 0.05) + 0.5),
@@ -304,9 +335,10 @@ local function finishScan(totalAuctions)
   local cutoff = nowTs - 7 * 24 * 3600
   for itemId, item in pairs(items) do
     local pts = WoWderhoiAH_Points[itemId] or {}
-    -- Each point carries the scan's close price (c) and the listed
-    -- quantity (q). c remains the only field any chart or median reads.
-    pts[#pts + 1] = { t = nowTs, c = item.marketPrice, q = item.quantity }
+    -- Each point carries the scan's P10 close (c) and P50 close (c50) plus
+    -- the listed quantity (q). c remains the only field any chart or median
+    -- reads; c50 feeds the display-only P50 curve on the item page.
+    pts[#pts + 1] = { t = nowTs, c = item.marketPrice, c50 = item.p50, q = item.quantity }
     WoWderhoiAH_Points[itemId] = pts
   end
   for itemId, pts in pairs(WoWderhoiAH_Points) do

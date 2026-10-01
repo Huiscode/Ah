@@ -37,9 +37,10 @@ model AuctionSnapshot {
   timestamp   DateTime
   server      String
   faction     String
-  source      String   @default("addon") // data channel: "addon" (game scan) | "ahledger" (AHledger API)
+  source      String   @default("addon") // data channel: "addon" (game scan) — website channel removed
   minPrice    BigInt   @map("min_price")
   marketPrice BigInt   @map("market_price")
+  altPrice    BigInt?  @map("alt_price") // display-only P50 close from the same scan; NULL on pre-P50 rows
   quantity    Int
   numAuctions Int      @map("num_auctions")
   rawPayload   Json?    @map("raw_payload")
@@ -105,8 +106,8 @@ model RadarRule {
   updatedAt DateTime @updatedAt @map("updated_at")
 }
 
-// Terminal-level settings (key-value). Keys: "ahledgerEnabled" ("1"|"0").
-// The web UI toggles website scanning here; the importer process polls it.
+// Terminal-level settings (key-value). The website-channel toggle lived here
+// until the channel was removed; the table stays for future terminal settings.
 model AppState {
   key       String   @id
   value     String

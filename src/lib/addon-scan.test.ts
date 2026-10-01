@@ -3,7 +3,7 @@ import { normalizeAddonRecipes, normalizeAddonScan, normalizeAddonPoints, normal
 
 const savedVariablesFixture = `
 WoWderhoiAH_ScanData = {
-\t["dataVersion"] = 3,
+\t["dataVersion"] = 4,
 \t["scannedAt"] = 1721700000,
 \t["server"] = "Anniversary",
 \t["faction"] = "Alliance",
@@ -15,6 +15,7 @@ WoWderhoiAH_ScanData = {
 \t\t\t["itemSubClass"] = "金属与矿石",
 \t\t\t["minPrice"] = 150,
 \t\t\t["marketPrice"] = 182.5,
+\t\t\t["p50"] = 210,
 \t\t\t["quantity"] = 240,
 \t\t\t["numAuctions"] = 12,
 \t\t\t["vendorP"] = 25,
@@ -70,6 +71,7 @@ describe("normalizeAddonScan", () => {
       subCategory: "金属与矿石",
       minPrice: 150,
       marketPrice: 183,
+      p50: 210,
       quantity: 240,
       numAuctions: 12,
       vendorPrice: 25
@@ -79,16 +81,19 @@ describe("normalizeAddonScan", () => {
     expect(blackLotus?.category).toBe("unknown");
     // Entries without vendorP (unsellable-to-NPC items) normalize to 0.
     expect(blackLotus?.vendorPrice).toBe(0);
+    // Entries without a P50 (pre-P50 scans) keep no p50 field; the curve
+    // simply starts when scans begin carrying it.
+    expect(blackLotus?.p50).toBeUndefined();
   });
 
   it("rejects payloads without items", () => {
-    expect(() => normalizeAddonScan({ dataVersion: 3, scannedAt: 1721700000, server: "A", faction: "Alliance", items: {} }))
+    expect(() => normalizeAddonScan({ dataVersion: 4, scannedAt: 1721700000, server: "A", faction: "Alliance", items: {} }))
       .toThrow(/items/i);
   });
 
   it("rejects entries with non-positive prices", () => {
     const broken = {
-      dataVersion: 3,
+      dataVersion: 4,
       scannedAt: 1721700000,
       server: "Anniversary",
       faction: "Horde",
@@ -113,6 +118,8 @@ describe("normalizeAddonScan", () => {
     // dataVersion 2 carried a P50 marketPrice; the P10 rework redefined that
     // field, so v2 scans must be rejected rather than silently mixed in.
     expect(() => normalizeAddonScan({ ...stale, dataVersion: 2 })).toThrow(/dataVersion/i);
+    // v3 predates the P50 close; only the current pipeline may enter.
+    expect(() => normalizeAddonScan({ ...stale, dataVersion: 3 })).toThrow(/dataVersion/i);
   });
 
   it("rides the in-game radar rules along with the scan", () => {
@@ -167,12 +174,20 @@ describe("normalizeAddonScan", () => {
 describe("normalizeAddonPoints", () => {
   it("normalizes per-item history points into rows", () => {
     expect(normalizeAddonPoints({
-      2770: { "1": { t: 1721700000, c: 150, q: 240 }, "2": { t: 1721700900, c: 140 } },
+      2770: { "1": { t: 1721700000, c: 150, c50: 180, q: 240 }, "2": { t: 1721700900, c: 140 } },
       13468: { "1": { t: 1721700000, c: 950000, q: 3 } }
     })).toEqual([
-      { itemId: 2770, timestamp: new Date(1721700000 * 1000), marketPrice: 150, quantity: 240 },
+      { itemId: 2770, timestamp: new Date(1721700000 * 1000), marketPrice: 150, p50: 180, quantity: 240 },
       { itemId: 2770, timestamp: new Date(1721700900 * 1000), marketPrice: 140, quantity: 0 },
       { itemId: 13468, timestamp: new Date(1721700000 * 1000), marketPrice: 950000, quantity: 3 }
+    ]);
+  });
+
+  it("drops malformed c50 without rejecting the good P10 point", () => {
+    expect(normalizeAddonPoints({
+      2770: { "1": { t: 1721700000, c: 150, c50: "bad", q: 240 } }
+    })).toEqual([
+      { itemId: 2770, timestamp: new Date(1721700000 * 1000), marketPrice: 150, quantity: 240 }
     ]);
   });
 

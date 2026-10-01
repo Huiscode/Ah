@@ -8,7 +8,7 @@
 // Pricing pipeline version, stamped into every scan. Consumers (tooltip,
 // deal radar, desktop importer) reject any other value: a bump means the
 // meaning of the stored prices changed, not just their values.
-export const SCAN_PIPELINE_VERSION = 3;
+export const SCAN_PIPELINE_VERSION = 4;
 
 // Auction house cut on a successful sale (5%). Vendor deals are exempt:
 // selling to an NPC charges no cut. Used to turn gross spreads into net profit.

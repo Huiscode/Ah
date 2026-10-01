@@ -285,14 +285,14 @@ function WoWderhoiAH_UpdateChart(itemId)
     chart:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
   end
   -- The Forever beta client dropped the global GetItemInfo; probe before
-  -- calling, then fall back to the retail API (same pattern as the
+  -- calling, then fall back to C_Item.GetItemInfo (same pattern as the
   -- GetCoinTextureString shim in WoWderhoiAH.lua).
   local itemName
   if GetItemInfo then
     itemName = GetItemInfo(itemId)
   end
-  if not itemName and C_Item and C_Item.GetItemInfoByID then
-    itemName = C_Item.GetItemInfoByID(itemId)
+  if not itemName and C_Item and C_Item.GetItemInfo then
+    itemName = C_Item.GetItemInfo(itemId)
   end
   chart.title:SetText(itemName or ("item:" .. itemId))
   chart.subtitle:SetText(string.format(L.CHART_SUBTITLE, #entry.pts, GetCoinTextureString(entry.latest)))

@@ -26,6 +26,7 @@ type SnapshotRaw = {
   source: string;
   min_price: bigint | number;
   market_price: bigint | number;
+  alt_price: bigint | number | null;
   quantity: number;
   num_auctions: number;
   raw_payload: string | null;
@@ -57,8 +58,50 @@ function toNumber(v: bigint | number): number {
 // daily summaries. Written as raw SQL because the Prisma include form pulls
 // ALL snapshot rows (37x10^4+) through the ORM just to truncate in JS —
 // measured ~5s; the window-function version is a few hundred ms.
+// 7d same-source median, computed at the SQL layer over ALL snapshots inside
+// the window (not the truncated chart arrays). One aggregate per item.
+// Median = JS median() convention: sorted[ceil(n/2)-1], i.e. the upper
+// middle element — implemented as rn = (cnt+1)/2 (integer division matches
+// ceil for the median index).
+type Med7Raw = { item_id: number; med7: bigint | number; samples: number; distinct_cnt: number };
+
+async function getMed7Aggregates(): Promise<Map<number, { med7: number; samples: number; distinct: number }>> {
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const rows = await prisma.$queryRaw<Med7Raw[]>`
+    WITH latest AS (
+      SELECT "item_id", "source",
+             ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "timestamp" DESC) AS rn
+      FROM "AuctionSnapshot"
+    ),
+    lsrc AS (SELECT "item_id", "source" FROM latest WHERE rn = 1),
+    win AS (
+      SELECT s."item_id", s."market_price"
+      FROM "AuctionSnapshot" s
+      JOIN lsrc ON lsrc."item_id" = s."item_id" AND lsrc."source" = s."source"
+      WHERE s."timestamp" >= ${cutoff}
+    ),
+    med AS (
+      SELECT "item_id", "market_price",
+             ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "market_price") AS rn,
+             COUNT(*) OVER (PARTITION BY "item_id") AS cnt
+      FROM win
+    )
+    SELECT "item_id",
+           MAX(CASE WHEN rn = (cnt + 1) / 2 THEN "market_price" END) AS "med7",
+           MAX(cnt) AS "samples",
+           COUNT(DISTINCT "market_price") AS "distinct_cnt"
+    FROM med
+    GROUP BY "item_id"
+  `;
+  const out = new Map<number, { med7: number; samples: number; distinct: number }>();
+  for (const r of rows) {
+    out.set(Number(r.item_id), { med7: toNumber(r.med7), samples: Number(r.samples), distinct: Number(r.distinct_cnt) });
+  }
+  return out;
+}
+
 export async function getMarketUniverse(): Promise<MarketHistory[]> {
-  const [items, snaps, dailies] = await Promise.all([
+  const [items, snaps, dailies, med7s] = await Promise.all([
     prisma.$queryRaw<ItemRaw[]>`SELECT * FROM "Item" ORDER BY "name" ASC`,
     prisma.$queryRaw<SnapshotRaw[]>`
       WITH ranked AS (
@@ -66,14 +109,15 @@ export async function getMarketUniverse(): Promise<MarketHistory[]> {
         FROM "AuctionSnapshot"
       )
       SELECT "id", "item_id", "timestamp", "server", "faction", "source",
-             "min_price", "market_price", "quantity", "num_auctions"
+             "min_price", "market_price", "alt_price", "quantity", "num_auctions"
       FROM ranked WHERE rn <= 48 ORDER BY "item_id", "timestamp" ASC`,
     prisma.$queryRaw<DailyRaw[]>`
       WITH ranked AS (
         SELECT *, ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "date" DESC) AS rn
         FROM "DailySummary"
       )
-      SELECT * FROM ranked WHERE rn <= 30 ORDER BY "item_id", "date" ASC`
+      SELECT * FROM ranked WHERE rn <= 30 ORDER BY "item_id", "date" ASC`,
+    getMed7Aggregates()
   ]);
 
   const snapsByItem = new Map<number, SnapshotRaw[]>();
@@ -102,6 +146,7 @@ export async function getMarketUniverse(): Promise<MarketHistory[]> {
     isVendorItem: Boolean(i.is_vendor_item),
     createdAt: toDate(i.created_at),
     updatedAt: toDate(i.updated_at),
+    med7Info: med7s.get(Number(i.item_id)),
     snapshots: (snapsByItem.get(Number(i.item_id)) ?? []).map((s) => ({
       id: s.id,
       itemId: Number(s.item_id),
@@ -111,9 +156,9 @@ export async function getMarketUniverse(): Promise<MarketHistory[]> {
       source: s.source,
       minPrice: toNumber(s.min_price),
       marketPrice: toNumber(s.market_price),
+      altPrice: s.alt_price === null ? undefined : toNumber(s.alt_price),
       quantity: toNumber(s.quantity),
-      numAuctions: toNumber(s.num_auctions),
-      rawPayload: (s.raw_payload ?? null) as unknown
+      numAuctions: toNumber(s.num_auctions)
     })),
     dailySummaries: (dailyByItem.get(Number(i.item_id)) ?? []).map((d) => ({
       id: d.id,
@@ -139,8 +184,10 @@ export async function getItemDetail(itemId: number): Promise<MarketHistory | nul
     }
   });
   if (row) {
-    for (const s of (row as any).snapshots) { s.minPrice = Number(s.minPrice); s.marketPrice = Number(s.marketPrice); }
+    for (const s of (row as any).snapshots) { s.minPrice = Number(s.minPrice); s.marketPrice = Number(s.marketPrice); s.altPrice = s.altPrice === null ? undefined : Number(s.altPrice); }
     for (const d of (row as any).dailySummaries) { d.openPrice = Number(d.openPrice); d.closePrice = Number(d.closePrice); d.highPrice = Number(d.highPrice); d.lowPrice = Number(d.lowPrice); }
+    const med7s = await getMed7Aggregates();
+    (row as any).med7Info = med7s.get(itemId) ?? null;
   }
   return row as any;
 }
@@ -180,8 +227,8 @@ export async function getItemMetaVersion(): Promise<number> {
 // iterates the items it just scanned, so the terminal's deal radar must do
 // the same: an item the game is not currently listing cannot be bought, and
 // offering it as a deal would promise a trade that does not exist. Returns
-// null when no addon scan has ever been imported — the website channel is
-// then the only data and its whole universe applies.
+// null when no addon scan has ever been imported — the radar then has no
+// universe and stays empty.
 export async function getLatestAddonRoundItemIds(): Promise<Set<number> | null> {
   const latest = await prisma.auctionSnapshot.findFirst({
     where: { source: "addon" },

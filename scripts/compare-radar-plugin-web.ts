@@ -61,7 +61,7 @@ async function main() {
   // Coerce BigInt price columns to numbers to match the domain MarketHistory type.
   const coerced = items.map((i) => ({
     ...i,
-    snapshots: i.snapshots.map((s) => ({ ...s, minPrice: Number(s.minPrice), marketPrice: Number(s.marketPrice) })),
+    snapshots: i.snapshots.map((s) => ({ ...s, minPrice: Number(s.minPrice), marketPrice: Number(s.marketPrice), altPrice: s.altPrice === null ? undefined : Number(s.altPrice) })),
     dailySummaries: i.dailySummaries.map((d) => ({
       ...d,
       openPrice: Number(d.openPrice), closePrice: Number(d.closePrice),

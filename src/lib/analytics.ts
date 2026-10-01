@@ -12,8 +12,8 @@ export type MarketSignal = {
   category: string;
   quality: string;
   icon?: string | null; // in-game icon texture name, when known
-  source?: SnapshotSource; // channel of the latest snapshot: "addon" (P10) | "ahledger" (median); absent = addon
-  price: number; // latest snapshot's unit price (addon P10 / ahledger median), copper
+  source?: SnapshotSource; // channel of the latest snapshot; only "addon" is produced now
+  price: number; // latest snapshot's P10 unit price, copper
   minPrice: number; // latest scan's minimum listed unit price
   quantity: number; // latest scan's listed quantity (supply, NOT sales)
   numAuctions: number;
@@ -47,18 +47,34 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
   }
   const latest = snapshots[snapshots.length - 1];
   const source = snapshotSource(latest);
-  // All statistics are scoped to the latest snapshot's channel: the two
-  // channels carry different price metrics (addon P10 vs ahledger median),
-  // so mixing them inside one med7 window would fabricate a reference no
-  // single observation ever produced. The reference follows whichever
-  // channel supplied the latest round.
+  // All statistics are scoped to the latest snapshot's channel: only the
+  // addon channel is produced now, but legacy ahledger rows may still sit
+  // in the window until purged, and mixing metrics inside one med7 window
+  // would fabricate a reference no single observation ever produced.
   const sameSource = snapshots.filter((snapshot) => snapshotSource(snapshot) === source);
   const previous = sameSource[sameSource.length - 2];
-  const windowStart = now.getTime() - MED_WINDOW_DAYS * DAY_MS;
-  const windowPrices = sameSource
-    .filter((snapshot) => snapshot.timestamp.getTime() >= windowStart)
-    .map((snapshot) => snapshot.marketPrice);
-  const med7 = windowPrices.length > 0 ? median(windowPrices) : latest.marketPrice;
+  // med7Info is the repository-level SQL aggregate over ALL same-source
+  // snapshots in the 7d window. The snapshots array here is truncated for
+  // chart rendering (48 rows on the homepage universe, 96 on the item page),
+  // so recomputing med7 from it would vary with the truncation depth; use
+  // the aggregate when present, fall back to snapshot math only for
+  // hand-built fixtures that carry no med7Info.
+  let med7: number;
+  let med7Samples: number;
+  let med7Distinct: number;
+  if (item.med7Info && item.med7Info.samples > 0) {
+    med7 = item.med7Info.med7;
+    med7Samples = item.med7Info.samples;
+    med7Distinct = item.med7Info.distinct;
+  } else {
+    const windowStart = now.getTime() - MED_WINDOW_DAYS * DAY_MS;
+    const windowPrices = sameSource
+      .filter((snapshot) => snapshot.timestamp.getTime() >= windowStart)
+      .map((snapshot) => snapshot.marketPrice);
+    med7 = windowPrices.length > 0 ? median(windowPrices) : latest.marketPrice;
+    med7Samples = windowPrices.length;
+    med7Distinct = new Set(windowPrices).size;
+  }
   return {
     itemId: item.itemId,
     name: item.name,
@@ -72,8 +88,8 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
     numAuctions: latest.numAuctions,
     vendorPrice: item.vendorPrice,
     med7,
-    med7Samples: windowPrices.length,
-    med7Distinct: new Set(windowPrices).size,
+    med7Samples,
+    med7Distinct,
     discountPercent: med7 > 0 ? (1 - latest.minPrice / med7) * 100 : 0,
     changePercent: previous && previous.marketPrice > 0 ? ((latest.marketPrice - previous.marketPrice) / previous.marketPrice) * 100 : 0,
     latestAt: latest.timestamp,
@@ -156,13 +172,10 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
     // last two conditions distrust med7 itself: a flat series is one
     // camper's ask, and a discount past the cap means the reference broke,
     // not that the listing is cheap. Neither applies to vendor deals above.
-    // The auction-count gate is addon-only: the AHledger pricetable carries
-    // no auctions field, so ahledger rows report 0 and the liquidity guard
-    // would otherwise block every website-sourced deal. Optional liquidity
-    // gates A (supply shrinking) and C (supply cap) tighten the pool when
-    // enabled; both only ever filter, never reorder.
+    // Optional liquidity gates A (supply shrinking) and C (supply cap)
+    // tighten the pool when enabled; both only ever filter, never reorder.
     } else if (signal.med7Samples >= RADAR_MIN_HISTORY && signal.med7 > 0 && signal.minPrice > 0
-      && (signal.source === "ahledger" || signal.numAuctions >= minAuctionsGate)
+      && signal.numAuctions >= minAuctionsGate
       && signal.med7 * (1 - AH_CUT) - signal.minPrice >= RADAR_MIN_PROFIT
       && signal.med7 * (1 - AH_CUT) - signal.minPrice >= signal.med7 * (1 - AH_CUT) * RADAR_MIN_PROFIT_RATIO
       && signal.minPrice <= signal.med7 * RADAR_DISCOUNT

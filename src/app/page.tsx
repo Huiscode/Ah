@@ -13,7 +13,6 @@ import {
   getWatchedItemIds
 } from "@/lib/repositories";
 import { getMarketSignals } from "@/lib/market-signals";
-import { getAppState } from "@/lib/app-state";
 import { describeFreshness } from "@/lib/freshness";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
 import { groupedCategoryOptions } from "@/lib/category-zh";
@@ -24,7 +23,6 @@ import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
 import { MarketTable } from "@/components/market-table";
 import { WatchStar } from "@/components/watch-star";
-import { AhledgerToggle } from "@/components/ahledger-toggle";
 import { DealRadarTable } from "@/components/deal-radar-table";
 import { getLatestLadders } from "@/lib/ladders";
 import { RadarParamsPanel } from "@/components/radar-params-panel";
@@ -45,14 +43,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     quantity: "在售量"
   };
   const view = parseMarketView(await searchParams);
-  const [{ signals, latestSnapshotAt }, upcomingEvents, watchedIds, alertRules, storedRules, latestAddonRound, ahledgerEnabled, recipes, vendorPrices, ladders] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, upcomingEvents, watchedIds, alertRules, storedRules, latestAddonRound, recipes, vendorPrices, ladders] = await Promise.all([
     getMarketSignals(),
     getUpcomingEvents(),
     getWatchedItemIds(),
     getAlertRules(),
     getRadarRules(),
     getLatestAddonRoundItemIds(),
-    getAppState("ahledgerEnabled"),
     // 首页制造利润面板只展示专业配方（craft）；商人青睐兑换（merchant）
     // 在 /recipes 配方库页独立呈现。
     getRecipes("craft"),
@@ -70,9 +67,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const allDeals = buildDealRadar(signals, radarRules);
   // The in-game scan round owns the radar's universe: the addon only ever
   // iterates the items it just scanned, so the terminal must not offer deals
-  // for items the game is not currently listing — an ahledger-only or stale
-  // row cannot be bought in game. With no addon scan at all the website
-  // channel is the only data and its whole universe applies.
+  // for items the game is not currently listing — a stale row cannot be
+  // bought in game. With no addon scan at all the radar has no universe.
   const deals = latestAddonRound === null ? allDeals : allDeals.filter((deal) => latestAddonRound.has(deal.itemId));
   const radarCategories = groupedCategoryOptions(Array.from(new Set(deals.map((deal) => deal.category))));
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
@@ -106,7 +102,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
             <RadioTower size={14} /> 数据更新于 {freshness.label}
           </span>
-          <AhledgerToggle initialEnabled={ahledgerEnabled !== "0"} />
           <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><Hammer size={14} /> 配方库</Link>
           <Link href="/ledger" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ArrowLeftRight size={14} /> 成交账本</Link>
           <span className="flex items-center gap-1"><Bell size={14} /> 预警就绪</span>
@@ -116,7 +111,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · NPC必赚 + 最低价 vs 7日参考价（自扫P10/网站P50，按最新来源自动选口径）</span>} />
+            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · NPC必赚 + 最低价 vs 7日参考价（自扫P10）</span>} />
             <div className="p-3 font-mono text-xs">
               {deals.length === 0 ? (
                 <div className="text-terminal-muted">
@@ -179,7 +174,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       </div>
       <InstructionsPanel />
       <footer className="mt-3 border border-terminal-border bg-terminal-panel px-4 py-2 font-mono text-[10px] leading-relaxed text-terminal-muted">
-        数据来源：游戏内插件扫描（自扫 · 7日P10 口径）与 <a href="https://ahledger.com" target="_blank" rel="noopener noreferrer" className="text-terminal-amber underline">AHledger</a> 公开 API（网站 · 7日P50 口径，免费使用按授权条款标注来源）。两通道独立运行互不影响，参考价按数据来源分别计算、绝不混算。
+        数据来源：游戏内插件扫描（自扫 · 7日P10 口径；P50 为同源展示曲线，不参与参考价计算）。扫描数据即时回传，参考价统一按 P10 口径计算。
       </footer>
     </main>
   );

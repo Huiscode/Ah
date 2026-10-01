@@ -357,8 +357,19 @@ C_AuctionHouse = {
     end
   end,
   ReplicateItems = function() bed.replicated = true end,
-  GetNumReplicateItems = function() return 0 end,
-  GetReplicateItemInfo = function() return nil end,
+  GetNumReplicateItems = function() return bed.replicate and #bed.replicate or 0 end,
+  -- 0-based layout as on the Forever client: [0]=name [1]=texture [2]=count
+  -- [3]=qualityID [4]=usable [5]=level [6]=levelType [7]=minBid
+  -- [8]=minIncrement [9]=buyoutPrice [10]=bidAmount [11]=highBidder
+  -- [12]=owner [13]=saleStatus [14..15]=extras [16]=itemID [17]=hasAllInfo
+  GetReplicateItemInfo = function(index)
+    local item = bed.replicate and bed.replicate[index + 1]
+    if not item then return nil end
+    return item.name, item.texture, item.count, item.qualityID, item.usable, item.level,
+      item.levelType, item.minBid, item.minIncrement, item.buyoutPrice, item.bidAmount,
+      item.highBidder, item.owner, item.saleStatus, item.extra1, item.extra2,
+      item.itemID, item.hasAllInfo
+  end,
   GetReplicateItemLink = function() return nil end
 }
 
@@ -367,6 +378,33 @@ C_AuctionHouse = {
 -- to land ITEM_SEARCH_RESULTS_UPDATED. Rows mirror the retail shape of
 -- GetItemSearchResultInfo.
 function bed.setSearchResults(itemId, rows) bed.searchResults[itemId] = rows end
+
+-- Replicate-stream items the /wahscan scan path reads (0-based layout, see
+-- GetReplicateItemInfo above). Exercises the real recordAuction -> 
+-- itemCategoryAndVendor path instead of bed.setScan's direct injection.
+function bed.setReplicate(items) bed.replicate = items end
+
+-- Runs every frame's OnUpdate handler once with a small fixed elapsed (the
+-- real client passes per-frame time; 0.1 keeps any accumulator-based poll
+-- from firing while the scanner's chunk drain sees no time budget).
+function bed.runOnUpdate()
+  for _, frame in ipairs(bed.frames) do
+    if frame._scripts.OnUpdate then
+      frame._scripts.OnUpdate(frame, 0.1)
+    end
+  end
+end
+
+-- The full-house scan is gated on the replicate cooldown; a test that drives
+-- it needs the cooldown cleared.
+function bed.clearReplicateCooldown()
+  if bed.ns and bed.ns.settings then bed.ns.settings.replicateReadyAt = nil end
+end
+
+-- Item-info cache the C_Item.GetItemInfo stub reads; mirrors the fields the
+-- addon's itemCategoryAndVendor consumes (positions 6/7 localized type
+-- strings, position 11 sell price, 12/13 class IDs).
+function bed.setItemInfo(itemId, info) bed.itemInfo[itemId] = info end
 
 -- ===== Commodity quantity dialog test surface =====
 function bed.setCommodityResults(itemId, rungs) bed.commodityResults[itemId] = rungs end
@@ -384,17 +422,31 @@ function bed.confirmBuyDialog()
   dlg.confirm._scripts.OnClick(dlg.confirm)
 end
 
--- Retail item info: C_Item.GetItemInfoByID returns class/subclass as IDs
--- and vendor price in the same slot the addon reads (11). The addon
--- translates the IDs through GetItemClassInfo/GetItemSubClassInfo.
+-- Retail item info (Forever client layout, verified by probe): the working
+-- entry point is C_Item.GetItemInfo(itemId) — there is no
+-- GetItemInfoByID and no global GetItemClassInfo/GetItemSubClassInfo. Layout
+-- (1-based): 1 name, 2 link, 3 quality, 4 itemLevel, 5 requiredLevel,
+-- 6 itemType (localized string), 7 itemSubType (localized string),
+-- 8 maxStack, 9 equipLoc, 10 iconFileDataID, 11 sellPrice, 12 classID,
+-- 13 subclassID.
 C_Item = {
-  GetItemInfoByID = function(itemId)
-    local info = bed.itemInfo[itemId] or {}
-    return info.name, nil, nil, nil, nil, info.classID or 6, info.subClassID or 0,
-      nil, nil, nil, info.vendorP or 0
+  GetItemInfo = function(itemId)
+    local info = bed.itemInfo[itemId]
+    -- Uncached items return nil values on the real client (the addon then
+    -- flags them for RequestLoadItemDataByID), not defaults.
+    if not info then return nil end
+    return info.name, nil, nil, nil, nil, info.itemType,
+      info.itemSubType, nil, nil, nil, info.vendorP,
+      info.classID, info.subClassID
   end,
-  -- Mirrors the real API; a fake ItemLocation carries _exists=false once the
-  -- item has been taken back out of the sell slot.
+  -- Mirrors the real API (returns a FileDataID number on the Forever
+  -- client); a fake ItemLocation carries _exists=false once the item has
+  -- been taken back out of the sell slot.
+  GetItemIconByID = function(itemId)
+    local info = bed.itemInfo[itemId] or {}
+    return info.iconFileID
+  end,
+  RequestLoadItemDataByID = function() end,
   DoesItemExist = function(loc)
     return type(loc) == "table" and loc._exists ~= false
   end
@@ -432,7 +484,7 @@ function GetItemSubClassInfo(classID, subClassID)
 end
 -- Legacy global retail keeps for compatibility (deprecated but present);
 -- the addon's chart-title fallback calls it, so it must exist here too.
-function GetItemInfo(itemId) return C_Item.GetItemInfoByID(itemId) end
+function GetItemInfo(itemId) return C_Item.GetItemInfo(itemId) end
 
 -- ============ Trade-skill window (classic API, P0-B /wahrecipes) ======
 -- The recipes module reads the currently open profession window through
@@ -621,6 +673,7 @@ function bed.setScan(items)
       minPrice = item.minPrice,
       vendorP = item.vendorP or 0,
       sellP = item.sellP or item.minPrice,
+      p50 = item.p50 or item.marketPrice or item.minPrice,
       marketPrice = item.marketPrice or item.minPrice,
       quantity = item.quantity or 0,
       numAuctions = item.numAuctions or 0
@@ -646,6 +699,7 @@ function bed.setPoints(entries)
       points[index] = {
         t = NOW - (#entry.closes - index) * 900,
         c = close,
+        c50 = entry.closes50 and entry.closes50[index] or close,
         q = entry.qs and entry.qs[index]
       }
     end
@@ -735,6 +789,14 @@ end
 function bed.scanAuctions(itemId)
   local entry = scanEntry(itemId)
   return entry and entry.numAuctions
+end
+function bed.scanVendorP(itemId)
+  local entry = scanEntry(itemId)
+  return entry and entry.vendorP
+end
+function bed.scanClass(itemId)
+  local entry = scanEntry(itemId)
+  return entry and entry.itemClass
 end
 
 function bed.rowName(index) return bed.plain(tradeFrame().rows[index].name._text) end

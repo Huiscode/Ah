@@ -1,9 +1,8 @@
-// Shared import pipeline for both data channels. The addon-scan route
-// (game plugin) and the ahledger route (AHledger public API) both land here;
-// `source` is stamped on every AuctionSnapshot/DailySummary row so the two
-// channels stay separate price metrics (addon P10 vs ahledger median) and
-// can never pollute each other's med7 window or OHLCV row. Dedupe, item-row
-// backfill, history-point fencing and the daily fold are identical for both.
+// Shared import pipeline for the in-game scan channel. `source` is stamped
+// on every AuctionSnapshot/DailySummary row so rows stay scoped to the
+// channel; with the website channel removed, "addon" is the only source the
+// pipeline ever writes. Dedupe, item-row backfill, history-point fencing and
+// the daily fold are all handled here.
 import type { PrismaPromise } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { diffScanItems, type ExistingItemRow, type ItemUpdateData } from "@/lib/scan-import";
@@ -13,23 +12,23 @@ import type { SnapshotSource } from "@/lib/market-data";
 
 export type ImportScanItem = {
   itemId: number;
-  // addon scans carry the full metadata; ahledger rows only carry prices,
-  // so name/quality/category/subCategory/vendorPrice are optional here and
-  // the ahledger channel creates placeholder Item rows instead.
+  // addon scans carry the full metadata; name/quality/category/
+  // subCategory/vendorPrice are optional here only for hand-built payloads.
   name?: string;
   quality?: string;
   category?: string;
   subCategory?: string;
   vendorPrice?: number;
-  icon?: string; // in-game icon texture name from addon scans; absent for ahledger rows
+  icon?: string; // in-game icon texture name from addon scans
   minPrice: number;
   marketPrice: number;
+  p50?: number; // display-only P50 close; absent on pre-P50 scans
   quantity: number;
   numAuctions: number;
   ladder?: Array<{ price: number; count: number }>;
 };
 
-export type ImportPoint = { itemId: number; timestamp: Date; marketPrice: number; quantity: number };
+export type ImportPoint = { itemId: number; timestamp: Date; marketPrice: number; p50?: number; quantity: number };
 
 export type ImportPayload = {
   source: SnapshotSource;
@@ -37,15 +36,16 @@ export type ImportPayload = {
   server: string;
   faction: string;
   items: ImportScanItem[];
-  // addon-only: the accumulated in-game 7-day point series riding along
-  // with the snapshot; ahledger imports have no history points.
+  // the accumulated in-game 7-day point series riding along with the
+  // snapshot; each point carries the P10 close and (newer scans) the P50
+  // display close.
   points?: ImportPoint[];
-  // addon-only: deprecated — the watcher still sends it, but the import no
+  // deprecated — the watcher still sends it, but the import no
   // longer trusts it as "already imported" (see the self-healing fence below).
   after?: number;
-  // addon-only: replay of the in-game radar thresholds (route-2 authority).
+  // replay of the in-game radar thresholds (route-2 authority).
   rules?: AddonRadarRules;
-  // addon-only: crafting recipes dumped by /wahrecipes (P0-B). Upserted in
+  // crafting recipes dumped by /wahrecipes (P0-B). Upserted in
   // the same transaction, keyed by (name, profession).
   recipes?: AddonRecipe[];
 };
@@ -109,30 +109,17 @@ export function planRecipeMigrations(
 
 export async function importSnapshot(payload: ImportPayload): Promise<ImportResult> {
   const { source, scannedAt, server, faction, rules } = payload;
-  let items = payload.items;
+  const items = payload.items;
   const points = payload.points ?? [];
 
-  // Channel-scoped dedupe: the same wall-clock timestamp can legitimately
-  // exist once per source (a game scan and an ahledger round are different
-  // observations even at the same minute), so source joins the key.
+  // Timestamp-scoped dedupe: the same wall-clock scan time is one import;
+  // source joins the key for legacy rows from the removed website channel.
   const duplicate = await prisma.auctionSnapshot.findFirst({
     where: { timestamp: scannedAt, server, faction, source },
     select: { id: true }
   });
   if (duplicate) {
     throw new ImportConflictError(`Scan at ${scannedAt.toISOString()} already imported`);
-  }
-
-  // P50-only policy: the website channel is only a reference for items the
-  // in-game scanner has actually seen. An item that exists solely on the
-  // website cannot be bought in game, so it is filtered out at the door -
-  // the terminal never prices something the game cannot list. Items that
-  // are scanned later automatically enter the P50 channel on the next
-  // ahledger round.
-  if (source === "ahledger") {
-    const addonItemIds = await prisma.auctionSnapshot.findMany({ where: { source: "addon" }, distinct: ["itemId"], select: { itemId: true } });
-    const known = new Set(addonItemIds.map((row) => row.itemId));
-    items = items.filter((item) => known.has(item.itemId));
   }
 
   // In-game history points (one per item per completed scan, 7-day window).
@@ -174,33 +161,15 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
   const existingItems = await prisma.item.findMany({ select: { itemId: true, name: true, quality: true, category: true, subCategory: true, vendorPrice: true, icon: true } });
   const existingItemIdSet = new Set(existingItems.map((row) => row.itemId));
 
-  // Item-table policy differs by channel:
-  // - addon: create missing rows with real metadata and backfill name/
-  //   quality/vendorPrice changes (diffScanItems).
-  // - ahledger: rows carry no metadata, so they may only create placeholder
-  //   Item rows (name "Item {id}", unknown quality) for items the store has
-  //   never seen; they must never overwrite a real name the addon recorded.
-  //   The next addon scan backfills placeholders via diffScanItems.
+  // Item-table policy: create missing rows with real metadata and backfill
+  // name/quality/vendorPrice changes (diffScanItems). Placeholder rows only
+  // exist for items whose history points reference an id the store has never
+  // seen (below).
   const creates: Array<{ itemId: number; name: string; quality: string; category: string; subCategory: string; vendorPrice: number; icon?: string }> = [];
   const updates: Array<{ itemId: number; data: ItemUpdateData }> = [];
-  if (source === "addon") {
-    const diff = diffScanItems(items as Parameters<typeof diffScanItems>[0], existingItems as ExistingItemRow[]);
-    creates.push(...diff.creates);
-    updates.push(...diff.updates);
-  } else {
-    for (const item of items) {
-      if (!existingItemIdSet.has(item.itemId)) {
-        creates.push({
-          itemId: item.itemId,
-          name: `Item ${item.itemId}`,
-          quality: "unknown",
-          category: "unknown",
-          subCategory: "unknown",
-          vendorPrice: 0
-        });
-      }
-    }
-  }
+  const diff = diffScanItems(items as Parameters<typeof diffScanItems>[0], existingItems as ExistingItemRow[]);
+  creates.push(...diff.creates);
+  updates.push(...diff.updates);
 
   // History points can reference items that were listed in an earlier round
   // but had expired before this scan and are unknown to the store. Their
@@ -251,9 +220,8 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
 
   // Route 2: replay the in-game radar rules (single authority row id=1) in
   // the same commit as the scan, so the terminal's deal radar can never
-  // drift from what the addon is actually using. Only the addon channel has
-  // a game panel; ahledger imports leave the stored rules untouched.
-  const rulesPayload = source === "addon" && rules !== undefined
+  // drift from what the addon is actually using.
+  const rulesPayload = rules !== undefined
     ? [prisma.radarRule.upsert({
         where: { id: 1 },
         update: { rules: rules as object },
@@ -263,12 +231,11 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
 
   // P0-B: /wahrecipes dumps ride along with the scan. Each recipe is
   // upserted on (name, profession, category="craft") so a re-scan overwrites
-  // the same-name recipe instead of duplicating it; recipes are addon-channel
-  // only and never touch "merchant" rows (merchant-favor exchanges).
-  // Before that, seed migration deletes craft rows whose identity (same
-  // outputs/reagents/profession) arrives under a different name.
+  // the same-name recipe instead of duplicating it. Before that, seed
+  // migration deletes craft rows whose identity (same outputs/reagents/
+  // profession) arrives under a different name.
   const recipeMigrations: PrismaPromise<unknown>[] = [];
-  if (source === "addon" && payload.recipes !== undefined && payload.recipes.length > 0) {
+  if (payload.recipes !== undefined && payload.recipes.length > 0) {
     const existingRecipes = await prisma.recipe.findMany({
       where: { category: "craft" },
       select: { id: true, name: true, profession: true, reagents: true, outputs: true }
@@ -278,7 +245,7 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
       recipeMigrations.push(prisma.recipe.deleteMany({ where: { id: { in: deleteIds } } }));
     }
   }
-  const recipePayload = source === "addon" && payload.recipes !== undefined && payload.recipes.length > 0
+  const recipePayload = payload.recipes !== undefined && payload.recipes.length > 0
     ? payload.recipes.map((recipe) => prisma.recipe.upsert({
         where: { name_profession_category: { name: recipe.name, profession: recipe.profession, category: "craft" } },
         update: { skillLevel: recipe.skillLevel, reagents: recipe.reagents as object, outputs: recipe.outputs as object },
@@ -303,6 +270,7 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
           source,
           minPrice: item.minPrice,
           marketPrice: item.marketPrice,
+          altPrice: item.p50 ?? null,
           quantity: item.quantity,
           numAuctions: item.numAuctions,
           ...(item.ladder ? { rawPayload: { ladder: item.ladder } } : {})
@@ -322,6 +290,7 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
           // these older points.
           minPrice: point.marketPrice,
           marketPrice: point.marketPrice,
+          altPrice: point.p50 ?? null,
           quantity: point.quantity,
           numAuctions: 0
         }))

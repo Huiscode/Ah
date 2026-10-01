@@ -70,7 +70,7 @@ local function itemIcon(itemId)
   if C_Item and C_Item.GetItemIconByID then
     local texture = C_Item.GetItemIconByID(itemId)
     if texture then return texture end
-    if C_Item.GetItemInfoByID then C_Item.GetItemInfoByID(itemId) end
+    if C_Item.GetItemInfo then C_Item.GetItemInfo(itemId) end
   end
   if GetItemIcon then
     local texture = GetItemIcon(itemId)

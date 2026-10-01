@@ -10,12 +10,6 @@ for /f "tokens=2" %%a in ('powershell -NoProfile -Command "Get-CimInstance Win32
     taskkill /PID %%a /F >nul 2>&1
 )
 
-REM Stop ahledger importer
-for /f "tokens=2" %%a in ('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*ahledger-importer*' } | Select-Object -ExpandProperty ProcessId"') do (
-    echo Stopping AHledger sync PID %%a
-    taskkill /PID %%a /F >nul 2>&1
-)
-
 REM Stop dev server (find node on next dev)
 for /f "tokens=2" %%a in ('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*next*dev*' } | Select-Object -ExpandProperty ProcessId"') do (
     echo Stopping web server PID %%a

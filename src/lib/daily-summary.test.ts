@@ -22,9 +22,9 @@ describe("mergeScanIntoDailySummaries", () => {
       [{ itemId: 2770, marketPrice: 125, quantity: 5000 }],
       scannedAt,
       [],
-      "ahledger"
+      "custom"
     );
-    expect(creates[0].source).toBe("ahledger");
+    expect(creates[0].source).toBe("custom");
   });
 
   it("updates close and stretches high/low for repeat scans in a day", () => {

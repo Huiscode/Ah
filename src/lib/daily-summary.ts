@@ -1,9 +1,8 @@
 // Folds one addon scan into the day's OHLCV rows. The import routes are the
 // single callers and writers; DailySummary feeds every chart, moving average,
 // and seasonality view, so scans must land here or the terminal stays empty.
-// `source` keeps the two data channels in separate OHLCV rows: a day's row
-// is always one price metric (addon P10 or ahledger median), never a blend.
-
+// `source` scopes rows by channel; with the website channel removed, every
+// row is the addon's P10 metric — a day's row is never a blend.
 type ScanPriceRow = { itemId: number; marketPrice: number; quantity: number };
 type ExistingDayRow = { itemId: number; highPrice: number; lowPrice: number };
 

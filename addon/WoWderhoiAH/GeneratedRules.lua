@@ -4,7 +4,7 @@
 -- and the in-game radar can never classify the same scan differently.
 local ADDON_NAME, WAH = ...
 
-WAH.PIPELINE_VERSION = 3
+WAH.PIPELINE_VERSION = 4
 
 -- Auction house cut on a successful sale; vendor deals are exempt.
 WAH.AH_CUT = 0.05

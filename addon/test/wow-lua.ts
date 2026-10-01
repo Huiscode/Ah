@@ -102,8 +102,14 @@ export function loadAddon(options?: { locale?: string }) {
     number: (expression: string) => Number(evaluate(expression)),
 
     setScan: (items: unknown[]) => exec(`WowTest.setScan(${toLua(items)})`),
+    setReplicate: (items: unknown[]) => exec(`WowTest.setReplicate(${toLua(items)})`),
+    runOnUpdate: () => exec("WowTest.runOnUpdate()"),
+    clearReplicateCooldown: () => exec("WowTest.clearReplicateCooldown()"),
+    runScan: () => exec('SlashCmdList["WOWDERHOIAH"]()'),
     setPoints: (entries: unknown[]) => exec(`WowTest.setPoints(${toLua(entries)})`),
     setTradeSkills: (entries: unknown[]) => exec(`WowTest.setTradeSkills(${toLua(entries)})`),
+    setItemInfo: (itemId: number, info: { name?: string; itemType?: string; itemSubType?: string; vendorP?: number; classID?: number; subClassID?: number; iconFileID?: number }) =>
+      exec(`WowTest.setItemInfo(${itemId}, ${toLua(info)})`),
     // Runs the /wahrecipes slash handler exactly as a player's chat input
     // would: through the SlashCmdList table the addon registered into.
     dumpRecipes: () => exec('SlashCmdList["WOWDERHOIAHRECIPES"]()'),
@@ -160,6 +166,8 @@ export function loadAddon(options?: { locale?: string }) {
     scanned: (itemId: number) => Boolean(evaluate(`WowTest.scanned(${itemId})`)),
     scanMin: (itemId: number) => evaluate(`WowTest.scanMin(${itemId})`),
     scanAuctions: (itemId: number) => evaluate(`WowTest.scanAuctions(${itemId})`),
+    scanVendorP: (itemId: number) => evaluate(`WowTest.scanVendorP(${itemId})`),
+    scanClass: (itemId: number) => evaluate(`WowTest.scanClass(${itemId})`),
     ahSearchText: () => String(evaluate("WowTest.ahSearchText()")),
 
     setSellItem: (itemId: number, name: string, count?: number) =>

@@ -15,6 +15,7 @@ export type AddonScanItem = {
   icon?: string; // in-game icon texture name, e.g. "inv_staff_13"; absent when the client had no cache entry
   minPrice: number;
   marketPrice: number; // quantity-weighted P10 unit price, copper
+  p50?: number; // quantity-weighted P50 unit price, copper; display-only curve on the item page
   quantity: number;
   numAuctions: number;
   vendorPrice: number; // NPC sell price in copper; 0 = unsellable to vendors
@@ -50,14 +51,17 @@ export type AddonScan = {
 };
 
 // One accumulated in-game history point: the P10 close (c) of a completed
-// scan and the listed quantity (q) at that scan. The addon appends a point
-// per item on every scan and keeps a rolling 7-day window, so a night of
-// auto-rescans carries the full per-round price series to the terminal in
-// one import — no per-round disk flush required.
+// scan, the P50 close (c50) of the same scan, and the listed quantity (q)
+// at that scan. The addon appends a point per item on every scan and keeps
+// a rolling 7-day window, so a night of auto-rescans carries the full
+// per-round price series to the terminal in one import — no per-round disk
+// flush required. c remains the only field any chart or median reads; c50
+// feeds the display-only P50 curve.
 export type AddonPoint = {
   itemId: number;
   timestamp: Date; // seconds -> epoch ms at normalization
   marketPrice: number; // P10 close, copper
+  p50?: number; // P50 close, copper; absent on points predating the P50 curve
   quantity: number; // listed quantity at that scan; 0 when absent
 };
 
@@ -309,6 +313,13 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
         ...(typeof entry.icon === "string" && entry.icon !== "" ? { icon: entry.icon } : {}),
         minPrice: requirePositiveInt(entry.minPrice, "minPrice", key),
         marketPrice: requirePositiveInt(entry.marketPrice, "marketPrice", key),
+        // P50 rides along as an auxiliary display curve (never a reference):
+        // a malformed or absent value must never reject a good scan.
+        ...(() => {
+          const raw = entry.p50;
+          if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) return {};
+          return { p50: Math.round(raw) };
+        })(),
         quantity: requirePositiveInt(entry.quantity, "quantity", key),
         numAuctions: requirePositiveInt(entry.numAuctions, "numAuctions", key),
         vendorPrice: normalizeVendorPrice(entry.vendorP, key),
@@ -406,10 +417,14 @@ export function normalizeAddonPoints(raw: unknown): AddonPoint[] | undefined {
       if (typeof point.t !== "number" || !Number.isFinite(point.t) || point.t <= 0) continue;
       if (typeof point.c !== "number" || !Number.isFinite(point.c) || point.c <= 0) continue;
       const quantity = typeof point.q === "number" && Number.isFinite(point.q) && point.q >= 0 ? Math.round(point.q) : 0;
+      // c50 is the display-only P50 close; absent on old points, and a bad
+      // value must not reject the good P10 point it rides with.
+      const p50 = typeof point.c50 === "number" && Number.isFinite(point.c50) && point.c50 > 0 ? Math.round(point.c50) : undefined;
       points.push({
         itemId,
         timestamp: new Date(point.t * 1000),
         marketPrice: Math.round(point.c),
+        ...(p50 !== undefined ? { p50 } : {}),
         quantity
       });
     }

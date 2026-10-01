@@ -6,7 +6,6 @@
 # output redirected to a log file:
 #   web           Next.js dev server  (http://localhost:3000)
 #   addon-watch   SavedVariables watcher (game scan -> web)
-#   ahledger-sync ahledger.com public API poller
 #
 # The companion .bat just invokes this script. Logs are in <root>\logs so a
 # failed start is diagnosable instead of a silent hidden window.
@@ -69,17 +68,6 @@ if (Test-NodeRunning 'watch-savedvars') {
     (Join-Path (Join-Path (Join-Path 'node_modules' 'tsx') 'dist') 'cli.mjs'),
     (Join-Path 'scripts' 'watch-savedvars.ts')
   ) 'watch-savedvars'
-}
-
-# --- AHledger sync ---
-if (Test-NodeRunning 'ahledger-importer') {
-  Write-Host '[ok] AHledger sync already running - skip.'
-} else {
-  Write-Host '[..] Starting AHledger sync (hidden)...'
-  Start-ServiceNode 'ahledger-sync' @(
-    (Join-Path (Join-Path (Join-Path 'node_modules' 'tsx') 'dist') 'cli.mjs'),
-    (Join-Path 'scripts' 'ahledger-importer.ts')
-  ) 'ahledger-importer'
 }
 
 # --- Wait for the web server (port + HTTP) ---
