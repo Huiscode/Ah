@@ -83,4 +83,42 @@ describe("mailbox scan on the Forever-shifted header layout", () => {
     expect(ledger.filter((r) => r.kind === "sell")).toHaveLength(1);
     expect(ledger.filter((r) => r.kind === "buy")).toHaveLength(0);
   });
+
+  it("prunes legacy qty>10000 expired garbage once SavedVariables load on ADDON_LOADED", () => {
+    const lua = page();
+    // Simulate the ledger restored from SavedVariables containing the garbage rows
+    // an older build wrote (qty 133890/133907 "expired" entries). The bridge fires
+    // ADDON_LOADED once at load (when the ledger is empty); re-fire it now so the
+    // prune runs against the restored list.
+    lua.exec(`WoWderhoiAHDB.ledger = {
+      { uid = "1790826407-4", kind = "expired", itemId = 0, qty = 133890, unitPrice = 0, total = 0, ts = 1790826407, note = "联盟拍卖行" },
+      { uid = "1790708472-1", kind = "buy", itemId = ${BOMB}, qty = 1, unitPrice = 225, total = 225, ts = 1790708472, note = "大型铜壳炸弹" }
+    }`);
+    lua.exec(`WowTest.fireEvent('ADDON_LOADED', 'WoWderhoiAH')`);
+    const ledger = lua.ledger();
+    expect(ledger.filter((r) => r.kind === "expired")).toHaveLength(0);
+    expect(ledger.filter((r) => r.kind === "buy")).toEqual([
+      expect.objectContaining({ kind: "buy", itemId: BOMB, qty: 1, total: 225 })
+    ]);
+  });
+
+  it("recovers the real stack size from the subject when the raw itemCount slot is implausibly large", () => {
+    const lua = page();
+    // Forever's GetInboxHeaderInfo puts a large message/invoice number right
+    // before the sender, so vals[senderIdx-1] reads ~134939 instead of the real
+    // returned qty. The "(N)" suffix in the subject is the ground truth.
+    lua.setInbox([
+      { id: 134939, itemCount: 134939, sender: "联盟拍卖行", subject: "拍卖已到期：石鳞鳕鱼 (2)", money: 0 },
+      { id: 133890, itemCount: 0, sender: "联盟拍卖行", subject: "拍卖成功：大型铜壳炸弹", money: 300 }
+    ]);
+    lua.fireMailUpdate();
+    lua.flushQueries();
+    const ledger = lua.ledger();
+    expect(ledger.filter((r) => r.kind === "expired")).toEqual([
+      expect.objectContaining({ kind: "expired", qty: 2, total: 0 })
+    ]);
+    expect(ledger.filter((r) => r.kind === "sell")).toEqual([
+      expect.objectContaining({ kind: "sell", itemId: BOMB, qty: 1, total: 300 })
+    ]);
+  });
 });

@@ -6,6 +6,7 @@ coverage
 .env.local
 prisma/dev.db
 prisma/dev.db-*
+prisma/dev.db.bak-*
 prisma/perf.db
 prisma/perf.db-*
 scripts/perf/reports/

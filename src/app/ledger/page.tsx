@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeftRight, Package, Coins, TrendingUp, Clock, Wallet, CheckCircle2 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { Panel, PanelHeader } from "@/components/ui/panel";
+import { ClearLedgerButton } from "@/components/clear-ledger-button";
 
 export const dynamic = "force-dynamic";
 
@@ -122,7 +123,10 @@ export default async function LedgerPage() {
           <h1 className="font-mono text-lg font-semibold uppercase text-terminal-amber">成交账本</h1>
           <p className="font-mono text-xs text-terminal-muted">买入实时记录 · 卖出来自邮箱扫描 · FIFO 成本与已实现盈亏</p>
         </div>
-        <Link href="/" className="font-mono text-xs text-terminal-amber hover:underline">← 返回终端</Link>
+        <div className="flex items-center gap-3">
+          <ClearLedgerButton />
+          <Link href="/" className="font-mono text-xs text-terminal-amber hover:underline">← 返回终端</Link>
+        </div>
       </div>
 
       <div className="mb-3 grid gap-3 font-mono text-xs md:grid-cols-4">

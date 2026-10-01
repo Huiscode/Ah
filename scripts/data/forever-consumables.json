@@ -1,0 +1,26 @@
+{
+ "source": "https://foreverchanges.pro/zh-cn/professions/engineering",
+ "fetchedAt": "2026-10-01",
+ "note": "本地 Recipe 缺失的消耗品制造配方（流通分覆盖审计缺口，见 docs/consumables-turnover-audit.md），材料按 itemId 计入流通分，与 Recipe 表同一口径。",
+ "consumables": [
+  {
+   "name": "劣质炸药",
+   "profession": "Engineering",
+   "outputId": 4365,
+   "reagents": [
+    { "id": 4364, "count": 3, "name": "粗制火药粉" },
+    { "id": 2589, "count": 1, "name": "亚麻布" }
+   ]
+  },
+  {
+   "name": "9-60电池组",
+   "profession": "Engineering",
+   "outputId": 274048,
+   "reagents": [
+    { "id": 249409, "count": 1, "name": "天蓝染料" },
+    { "id": 249391, "count": 1, "name": "黄铁矿" },
+    { "id": 3575, "count": 1, "name": "铁锭" }
+   ]
+  }
+ ]
+}

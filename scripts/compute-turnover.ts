@@ -7,15 +7,25 @@
  *     工程/制皮/裁缝/烹饪/急救/钓鱼）；
  *   - scripts/data/forever-enchants.json（ForeverChanges 抓取的装备附魔
  *     配方 165 个 + 本地配方库缺失的附魔制造配方，均为无物品产出或
- *     本地缺失的配方，单独维护避免污染 Recipe 表）。
+ *     本地缺失的配方，单独维护避免污染 Recipe 表）；
+ *   - scripts/data/forever-consumables.json（本地 Recipe 缺失的消耗品
+ *     制造配方，如工程「劣质炸药 4365」「9-60电池组 274048」，材料按
+ *     itemId 计入流通分，与 Recipe 表同一口径）。
  *
  * 同时标记 NPC 商人常驻出售的容器/耗材（空瓶、铅瓶、水晶瓶、染料、
- * 细线、丝线等）——这些物品拍卖行价不会超过 NPC 价，不适合捡漏，
+ * 粗线、丝线等）——这些物品拍卖行价不会超过 NPC 价，不适合捡漏，
  * 且流通分归零（货源是 NPC，流通分没有业务意义）。
  *
+ * 2026-10-01 修正（消耗品覆盖审计，见 docs/consumables-turnover-audit.md）：
+ *   - VENDOR_ITEM_IDS 移除 7 个误标 id：2589 亚麻布、2592 毛料、3713 舒心草、
+ *     10940 奇异之尘、12808 死灵精华、3373 碎料护腕、2576 白色亚麻衬衣
+ *     （均非商人货，此前被错误归零）；保留项注释更正为真实名称。
+ *   - VENDOR_NAME_PATTERNS 删除 /瓶$/（真商人瓶 3371/3372/8925 已按 id
+ *     捕获；灌魔之瓶 18256 为炼金制造品，不应归零）。
+ *
  * 可重复运行：每次全量重算 turnoverScore 并重置 isVendorItem，幂等。
- * foreverchanges.pro 补完露营等专业后，把新配方写入 Recipe 表或
- * forever-enchants.json，再跑一次本脚本即可更新流通分。
+ * foreverchanges.pro 补完露营等专业后，把新配方写入 Recipe 表、
+ * forever-enchants.json 或 forever-consumables.json，再跑一次本脚本即可更新流通分。
  */
 import { PrismaClient } from "@prisma/client";
 import * as fs from "node:fs";
@@ -39,41 +49,54 @@ function loadEnchantData(): EnchantData | null {
   }
 }
 
+// ForeverChanges 消耗品制造配方（本地 Recipe 缺失的有产出消耗品配方，
+// 如工程「劣质炸药 4365」「9-60电池组 274048」），材料按 itemId 计入
+// 流通分，与 Recipe 表材料同一口径（每配方计一次）。
+const CONSUMABLE_DATA_PATH = path.join(process.cwd(), "scripts", "data", "forever-consumables.json");
+type ConsumableData = {
+  consumables: Array<{
+    name: string;
+    profession: string;
+    outputId: number;
+    reagents: Array<{ id: number; count: number; name: string }>;
+  }>;
+};
+function loadConsumableData(): ConsumableData | null {
+  try {
+    return JSON.parse(fs.readFileSync(CONSUMABLE_DATA_PATH, "utf8")) as ConsumableData;
+  } catch (e) {
+    console.warn(`  无法读取 ${CONSUMABLE_DATA_PATH}（${(e as Error).message}），跳过消耗品配方。`);
+    return null;
+  }
+}
+
 // 常驻商人出售的容器/耗材（itemId 或名字关键词）。
 // 这些在各大主城商业用品商人处几个铜币一个，AH 价天花板就是 NPC 价。
 const VENDOR_ITEM_IDS = new Set<number>([
   3371, // 空瓶
   3372, // 铅瓶
   8925, // 水晶瓶
-  3713, // 墨囊
-  2320, // // 细线
-  2592, // 细小羊毛线团
-  2589, // 红色染料
-  2590, // 蓝色染料
-  2594, // 黄色染料
-  2595, // 绿色染料
-  3857, // 黑色染料
-  4289, // 棕色染料
-  2605, // 橙色染料
-  2604, // 紫色染料
-  3373, // 煤块
-  2678, // 木料
-  6260, // 石头
-  10940, // 强效魔法精华（不是商人，跳过）
-  159, // 面粉
-  2588, // 香料
-  1708, // 清凉的泉水
-  12808, // 冰水
-  1463, // 辣椒
-  3466, // 燧石
-  2576, // 弱效符文带
+  2320, // 粗线
+  2594, // 壶装矮人蜜酒
+  2604, // 红色染料
+  2605, // 绿色染料
+  6260, // 蓝色染料
+  3857, // 煤块
+  4289, // 盐
+  2678, // 甜香料
+  159, // 清凉的泉水
+  1708, // 蜂蜜饮料
+  3466, // 强效助熔剂
   14341, // 符文线
   4291, // 丝线（裁缝用品商人常驻出售）
   8343, // 粗丝线（裁缝用品商人常驻出售）
+  2588, // 无数据且从不作为材料，保持不动
+  1463, // 无数据且从不作为材料，保持不动
+  2590, // 森林蜘蛛网（保留原 id；从不作为材料，不影响流通分）
+  2595, // 罐装荒芜之地波本酒（保留原 id；从不作为材料，不影响流通分）
 ]);
 
 const VENDOR_NAME_PATTERNS = [
-  /瓶$/,
   /^墨囊$/,
   /^细线$/,
   /线团$/,
@@ -178,6 +201,27 @@ async function main() {
     }
   }
   console.log(`  + ${enchantRecipes} enchant recipes from forever-enchants.json`);
+
+  // 1c. 合并 ForeverChanges 消耗品制造配方（本地 Recipe 缺失的有产出消耗品
+  //     配方，如工程「劣质炸药 4365」「9-60电池组 274048」），同一口径：
+  //     每个配方里每种材料计一次。
+  const consumableData = loadConsumableData();
+  let consumableRecipes = 0;
+  if (consumableData) {
+    const extraRecipes = consumableData.consumables ?? [];
+    consumableRecipes = extraRecipes.length;
+    for (const r of extraRecipes) {
+      const seenInRecipe = new Set<number>();
+      for (const reg of r.reagents ?? []) {
+        if (!reg?.id || seenInRecipe.has(reg.id)) continue;
+        seenInRecipe.add(reg.id);
+        const cur = freq.get(reg.id);
+        if (cur) cur.count++;
+        else freq.set(reg.id, { name: reg.name, count: 1 });
+      }
+    }
+  }
+  console.log(`  + ${consumableRecipes} consumable recipes from forever-consumables.json`);
   console.log(`Materials used in recipes: ${freq.size}`);
 
   // 2. 重置所有物品的 turnoverScore / isVendorItem

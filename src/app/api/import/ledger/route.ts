@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAppState } from "@/lib/app-state";
 
 // Ledger import (Stage D). The addon appends buy/sell/expired records to
 // WoWderhoiAHDB.ledger and the SavedVariables watcher forwards them here.
@@ -35,6 +36,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ imported: 0, skipped: 0 });
   }
 
+  // A web-side "clear ledger" records ledgerClearedAt (unix seconds). Records
+  // stamped at or before it are treated as wiped and never re-imported, even
+  // though the watcher re-uploads the whole ledger on every game flush.
+  const clearedAt = Number((await getAppState("ledgerClearedAt")) ?? "0") || 0;
+
   let imported = 0;
   let skipped = 0;
   for (const row of rows) {
@@ -43,6 +49,7 @@ export async function POST(request: Request) {
     const kind = typeof row.kind === "string" ? row.kind : "";
     if (!uid || !["buy", "sell", "expired"].includes(kind)) { skipped++; continue; }
     const ts = asInt(row.ts);
+    if (clearedAt > 0 && ts > 0 && ts <= clearedAt) { skipped++; continue; }
     try {
       await prisma.tradeRecord.upsert({
         where: { uid },

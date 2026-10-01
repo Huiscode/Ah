@@ -53,7 +53,7 @@ SQLite（Prisma）：prisma\dev.db
 | SavedVariables（AQT_SAVEDVARS_PATH） | `C:\Program Files (x86)\World of Warcraft\_classic_beta_\WTF\Account\1120133458#1\SavedVariables\WoWderhoiAH.lua` |
 | 数据库 | **`prisma\dev.db`**（~90MB；根目录 `dev.db` 是 0 字节空文件，勿用） |
 | watcher 状态 | `scripts\.watch-state.json`（`lastImportedScanAt`） |
-| 日志 | `logs\`（addon-watch / web 的 out/err.log；node stdout 是文件缓冲，0 字节≠没跑，stderr 空才说明无错误） |
+| 日志 | `logs\`（addon-watch / web 的 out/err.log；node stdout 是文件缓冲，0 字节≠没跑，stderr 空才说明无错误）；历史遗留日志归档在 `logs\archive\` |
 | 插件测试 | `addon\test\`（wow-lua.ts 桥 + wow-stub.lua 桩 + 各 *.test.ts） |
 | 启动服务 | `scripts\launch-services.ps1`（幂等，重复运行不会重复启动） |
 | 环境变量 | `.env`：DATABASE_URL(file:./dev.db→实际 prisma/dev.db)、AQT_SAVEDVARS_PATH、AQT_IMPORT_URL（AHL_* 为已移除通道的残留配置，无代码读取） |
@@ -164,12 +164,40 @@ P10/P50 两条 close，P50 仅作展示**。实施：
 - watcher 没导入：先确认进程启动时间早于 SCAN_PIPELINE_VERSION 改动 → 重启 watcher；
 - API 报 `Unknown argument`：删 `.next` + `npx prisma generate` + 重启 next dev。
 
+### 6.11 账本一键清空（二次确认）（2026-10-01，已实现，**未提交未推送**）
+用户要求"持仓账本页面一键清空账本且有二次确认"。坑：watcher 每次 SV 落盘都会把整本账本重新
+POST /api/import/ledger（upsert by uid），只删 DB 会被下一次上传灌回来。方案：
+- 新增 `POST /api/ledger/clear`（`src\app\api\ledger\clear\route.ts`）：**先**写 AppState
+  `ledgerClearedAt`（unix 秒）**再** `tradeRecord.deleteMany`；
+- 导入路由 `src\app\api\import\ledger\route.ts` POST 开头读 `ledgerClearedAt`，跳过 `ts <= clearedAt`
+  的记录（清空后旧记录永不回流，新流水 ts 更大照常导入）；
+- 账本页新增 `src\components\clear-ledger-button.tsx`（"use client"）：页头"清空账本"按钮 →
+  模态框二次确认（提示不可恢复 + 旧记录不再导入）→ POST → `router.refresh()`；
+- 验证：tsc 0 错、全量 189 用例通过；用 dev.db 副本跑链路（导入旧记录→清空→旧记录重传
+  imported=0/skipped=2→新记录 imported=1→GET 仅剩新记录）；真实库未动（6 条无测试行无标记）；
+  页面 HTTP 200 含按钮、GET 该路由 405（仅 POST）。
+- 已知小竞态（已注释）：清空瞬间若恰好有上传在途，可能回流少量旧记录，再点一次清空即可；本地单机可接受。
+- 游戏内 SavedVariables 里的旧账本不会删除，只是导入时被 `ledgerClearedAt` 过滤。
+
+### 6.12 项目结构整理（2026-10-01，已执行，**未提交未推送**）
+用户要求"用项目经理方法整理整个 AH 结构"。全部为移动/归档，不改代码：
+- **根目录清理**：18 个历史遗留日志（addon-watch/dev/WAH-*/watcher.log 等旧进程产物）→ `logs\archive\`；
+  `.inspect.cjs`、`.tmp-luacheck\`（luaparse 临时依赖）→ `docs\archive\`。当前服务日志只写 `logs\`
+  （launch-services.ps1），不受影响。
+- **docs 分层**：`docs\reports\`（favor / consumables 两份审计报告移入）；`docs\archive\`（全部 `.tmp-*`
+  一次性产物，新增索引 `README.md`）；新增 `docs\README.md` 文档索引；`HANDOFF.md` 仍为入口。
+- **引用同步**：两份审计报告中指向"项目根 / scripts"的 `.tmp-*` 路径已改为 `docs\archive\` 实际位置。
+- **未动**：`src\`、`addon\`、`prisma\`、`public\`、`scripts\`（生产脚本）、根 README/CHANGELOG/CONTRIBUTING/SECURITY
+  （GitHub 惯例 + README 内部相对链接）、一键启动/停止 bat、根 `dev.db` 0 字节陷阱（保留以免误用，见 §8）。
+- 验证：服务未中断（watcher 21204→4464、next dev 21080→20588）、`npx vitest run` 189 用例全过、
+  `tsc --noEmit` 0 错。
+
 ## 7. 当前状态与待办（重要）
 
 1. **游戏内 /reload + 重新扫描已执行且数据已导入**（10-01 09:27:08 CEST，v4 扫描 1991 items，`alt_price` 1991 行已落库）。P50 曲线从该轮起积累，约 2 天形成完整曲线。
 2. **用户需浏览器硬刷新（Ctrl+F5）一次**：next dev 重启 + 删 .next 后旧 JS chunk 缓存会失效，普通刷新可能仍显示旧页面。
 3. **主页"数据更新于"机制（已查清）**：`latestSnapshotAt = MAX(AuctionSnapshot.timestamp)`，现在只有 addon 单通道，无跨通道歧义。
-4. 6.5/6.6/6.7/6.8/6.9 全部改动**未提交未推送**，等待用户指示（规则见 9）。
+4. 6.5/6.6/6.7/6.8/6.9/6.11/6.12 全部改动**未提交未推送**，等待用户指示（规则见 9）。
 
 ## 8. 已知坑 / 机制限制（务必记住）
 
@@ -199,4 +227,4 @@ P10/P50 两条 close，P50 仅作展示**。实施：
   DB `MAX(timestamp) GROUP BY source`。结论几乎总是"游戏没落盘"，按第 7 节答复。
 - **动插件逻辑** → 读 `addon\WoWderhoiAH\` 对应 .lua；测试改 `addon\test\`（桥/桩：wow-lua.ts、wow-stub.lua）；改完跑 vitest + tsc，复制到游戏目录并比对哈希。
 - **动网页** → 读 `src\lib\` + `src\app\` 对应文件；页面/组件改动跑 tsc；DB 结构改动需注意 prisma/dev.db 与 schema 一致性（加列用 `npx prisma db push`，勿忘同时改 `addon-scan.ts`/`import-common.ts`/`repositories.ts`/`market-data.ts` 的类型与 SQL SELECT 列）。
-- **查账本** → `GET http://localhost:3000/api/import/ledger`。
+- **查账本** → `GET http://localhost:3000/api/import/ledger`；**清空账本** → 账本页页头按钮（二次确认，`POST /api/ledger/clear`）。

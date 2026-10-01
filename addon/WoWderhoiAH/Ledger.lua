@@ -62,7 +62,10 @@ local function pruneGarbage()
   end
   if #kept ~= #list then WoWderhoiAHDB.ledger = kept end
 end
-pruneGarbage()
+-- NB: pruneGarbage() also runs at the top of every scanInbox() call. The
+-- ADDON_LOADED handler alone proved unreliable on Forever (event timing / Saved
+-- Variables restore order), so clearing is tied to the mailbox-open path where
+-- the DB is definitely populated.
 
 -- --------------------------------------------------------------------------
 -- Mailbox scan
@@ -109,11 +112,20 @@ local function headerInfo(index)
             subject = v
           end
         end
+        -- The slot immediately before the sender is NOT reliably the item count
+        -- on Forever (it reads as a large message/invoice number ~134xxx). When
+        -- the parsed count is implausibly large, pull the real stack size from
+        -- the "(N)" suffix in the auction subject ("拍卖已到期：石鳞鳕鱼 (2)").
+        local rawCount = tonumber(vals[senderIdx - 1]) or 0
+        if rawCount > 1000 and subject then
+          local n = subject:match("%((%d+)%)")
+          rawCount = n and tonumber(n) or 0
+        end
         -- The shifted layout carries a per-mail id right before itemCount;
         -- use it as the dedup key when present.
         local id = vals[senderIdx - 2]
         return {
-          itemCount = tonumber(vals[senderIdx - 1]) or 0,
+          itemCount = rawCount,
           subject = subject,
           money = tonumber(money) or 0,
           cod = 0,
@@ -182,6 +194,9 @@ local function itemIdFromSubject(subject)
 end
 
 local function scanInbox()
+  -- Clear legacy qty>10000 expired garbage before scanning; the ADDON_LOADED
+  -- call alone proved unreliable on Forever's event timing.
+  pruneGarbage()
   local count = inboxCount()
   local keyCounts = {}
   for index = 1, count do
@@ -237,9 +252,16 @@ local function scanInbox()
 end
 
 local mailFrame = CreateFrame("Frame")
+mailFrame:RegisterEvent("ADDON_LOADED")
 mailFrame:RegisterEvent("MAIL_INBOX_UPDATE")
 mailFrame:RegisterEvent("MAIL_SHOW")
-mailFrame:SetScript("OnEvent", function(_, event)
+mailFrame:SetScript("OnEvent", function(_, event, arg1)
+  if event == "ADDON_LOADED" then
+    -- SavedVariables exist only now; drop any legacy qty>10000 expired garbage
+    -- that an older build left in the ledger before it gets re-uploaded.
+    if arg1 == ADDON_NAME then pruneGarbage() end
+    return
+  end
   -- Defer a tick so header data is populated. seenMails is deliberately NOT
   -- reset here: reopening the mailbox must not re-record mails that are
   -- already recorded (per-mail ids / per-key counts handle new and twin mail).

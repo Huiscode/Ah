@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/logo-256.png" width="128" alt="WoWderhoi AHelper logo"/>
-
 # WoWderhoi AHelper
 
 [![Release](https://img.shields.io/github/v/release/BrandNewJimZhang/wowderhoi-ah?color=f0479e)](https://github.com/BrandNewJimZhang/wowderhoi-ah/releases)

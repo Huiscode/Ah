@@ -37,6 +37,7 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
   const [fMaxPrice, setFMaxPrice] = usePersistedState<number>("wah:filter:maxPrice", 0);
   const [fGap1, setFGap1] = usePersistedState<number>("wah:filter:gap1", 0);
   const [fGap2, setFGap2] = usePersistedState<number>("wah:filter:gap2", 0);
+  const [fVendorMinProfit, setFVendorMinProfit] = usePersistedState<number>("wah:filter:vendorMinProfit", 0);
   useEffect(() => {
     const h = () => {
       try {
@@ -44,6 +45,7 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
         const x = localStorage.getItem("wah:filter:maxPrice"); if (x) setFMaxPrice(JSON.parse(x));
         const g1 = localStorage.getItem("wah:filter:gap1"); if (g1) setFGap1(JSON.parse(g1));
         const g2 = localStorage.getItem("wah:filter:gap2"); if (g2) setFGap2(JSON.parse(g2));
+        const vp = localStorage.getItem("wah:filter:vendorMinProfit"); if (vp) setFVendorMinProfit(JSON.parse(vp));
       } catch {}
       force((n) => n + 1);
     };
@@ -63,6 +65,7 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
   // Client-side secondary filters (from radar params panel).
   if (fMinPrice > 0) rows = rows.filter((d) => d.minPrice >= fMinPrice);
   if (fMaxPrice > 0) rows = rows.filter((d) => d.minPrice <= fMaxPrice);
+  if (fVendorMinProfit > 0) rows = rows.filter((d) => !d.vendor || d.profit >= fVendorMinProfit);
   if (fGap1 > 0 || fGap2 > 0) {
     rows = rows.filter((deal) => {
       const ladder = ladders.get(deal.itemId);
@@ -169,13 +172,17 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
                   <ItemIcon itemId={deal.itemId} icon={deal.icon} />
                   <span className="truncate">{deal.name}</span>
                 </Link>
-                {deal.turnoverScore >= 50
-                  ? <span className="ml-1.5 rounded bg-green-500/15 px-1 py-0.5 align-middle text-[9px] text-green-400" title="被 N 个配方使用，流通快">{deal.turnoverScore}§</span>
-                  : deal.turnoverScore >= 15
-                    ? <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400" title="被 N 个配方使用">{deal.turnoverScore}§</span>
-                    : deal.turnoverScore > 0
-                      ? <span className="ml-1.5 rounded bg-slate-500/15 px-1 py-0.5 align-middle text-[9px] text-slate-400" title="被 N 个配方使用">{deal.turnoverScore}§</span>
-                      : null}
+                {deal.turnoverScore >= 100
+                  ? <span className="ml-1.5 rounded bg-[#ff8000]/15 px-1 py-0.5 align-middle text-[9px] text-[#ff8000]" title="被 N 个配方使用">{deal.turnoverScore}</span>
+                  : deal.turnoverScore >= 50
+                    ? <span className="ml-1.5 rounded bg-[#a335ee]/15 px-1 py-0.5 align-middle text-[9px] text-[#a335ee]" title="被 N 个配方使用">{deal.turnoverScore}</span>
+                    : deal.turnoverScore >= 15
+                      ? <span className="ml-1.5 rounded bg-[#0070dd]/15 px-1 py-0.5 align-middle text-[9px] text-[#0070dd]" title="被 N 个配方使用">{deal.turnoverScore}</span>
+                      : deal.turnoverScore >= 5
+                        ? <span className="ml-1.5 rounded bg-[#1eff00]/15 px-1 py-0.5 align-middle text-[9px] text-[#1eff00]" title="被 N 个配方使用">{deal.turnoverScore}</span>
+                        : deal.turnoverScore > 0
+                          ? <span className="ml-1.5 rounded bg-white/15 px-1 py-0.5 align-middle text-[9px] text-white" title="被 N 个配方使用">{deal.turnoverScore}</span>
+                          : null}
               </td>
               <td className="px-3 py-2 text-right"><Coins copper={deal.minPrice} /></td>
               <td className="px-3 py-2 text-right"><Coins copper={prices.get(deal.itemId) ?? 0} /></td>

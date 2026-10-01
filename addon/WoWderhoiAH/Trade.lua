@@ -851,6 +851,20 @@ local function buyAverageCost(itemId)
   return math.floor(totalCost / totalQty + 0.5), totalQty
 end
 
+-- NPC vendor sell price for an item. Prefers the live GetItemInfo (return #11),
+-- falls back to the scan cache's vendorP so the panel works even before the
+-- item's info has finished caching.
+local function vendorPrice(itemId)
+  if C_Item and C_Item.GetItemInfo then
+    local ok, info = pcall(function() return { C_Item.GetItemInfo(itemId) } end)
+    if ok and info and tonumber(info[11]) and info[11] > 0 then return info[11] end
+  end
+  local scan = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.items
+    and WoWderhoiAH_ScanData.items[itemId]
+  if scan and scan.vendorP and scan.vendorP > 0 then return scan.vendorP end
+  return nil
+end
+
 -- Aggregate live commodity results into price->qty tiers, sorted asc.
 local function readCommodityTiers(itemId)
   if not C_AuctionHouse then return nil end
@@ -966,12 +980,21 @@ renderSellAssist = function()
     end
     table.insert(lines, " ")
     local cheapest = tiers[1].price
+    local vendorP = vendorPrice(itemId)
     if avgCost then
       local profitEach = cheapest - avgCost
       local color = profitEach >= 0 and "|cff33ff33" or "|cffff5555"
       table.insert(lines, string.format("|cffffffff成本 %s · 持有 %d · 单档盈亏 %s%s|r",
         GetCoinTextureString(avgCost), holdingQty,
         color, GetCoinTextureString(profitEach)))
+    end
+    if vendorP then
+      if cheapest and vendorP > cheapest then
+        table.insert(lines, string.format("|cff33ff33NPC收购 %s · 低于此价直接卖NPC更赚|r",
+          GetCoinTextureString(vendorP)))
+      else
+        table.insert(lines, string.format("|cffccccccNPC收购 %s|r", GetCoinTextureString(vendorP)))
+      end
     end
   else
     table.insert(lines, " ")
@@ -1499,6 +1522,9 @@ tradeEvents:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     -- category that came back unknown during the scan, then repaint.
     if WAH.refreshPendingCategories then WAH.refreshPendingCategories(arg1) end
     if trade and trade:IsShown() then renderRows() end
+    -- Re-render the sell-assist panel too: the first C_Item.GetItemInfo call for
+    -- a freshly-placed item returns nil and only resolves when this event fires.
+    if sellAssist and sellAssist.itemId and sellAssist.itemId == arg1 then renderSellAssist() end
   elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
     finalizeItemBuy(arg1)
   elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" then

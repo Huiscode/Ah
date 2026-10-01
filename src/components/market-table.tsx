@@ -18,6 +18,7 @@ import { ItemIcon } from "@/components/item-icon";
 import { usePersistedState } from "@/lib/use-persisted-state";
 
 const sortableColumns: Array<{ key: SignalSortKey; heading: string }> = [
+  { key: "turnoverScore", heading: "流通" },
   { key: "minPrice", heading: "最低价" },
   { key: "price", heading: "市场价" },
   { key: "med7", heading: "7日参考" },
@@ -26,6 +27,22 @@ const sortableColumns: Array<{ key: SignalSortKey; heading: string }> = [
   { key: "quantity", heading: "在售量" },
   { key: "numAuctions", heading: "挂单数" }
 ];
+
+// 流通分徽章：被多少个配方当材料使用（越高周转越快）。单独一列展示。
+function TurnoverBadge({ score }: { score: number }) {
+  if (score <= 0) {
+    return <span className="text-terminal-muted">—</span>;
+  }
+  const cls =
+    score >= 50
+      ? "bg-green-500/15 text-green-400"
+      : score >= 15
+        ? "bg-amber-500/15 text-amber-400"
+        : "bg-slate-500/15 text-slate-400";
+  return (
+    <span className={`inline-block rounded px-1 py-0.5 text-[9px] ${cls}`} title="被 N 个配方使用">{score}</span>
+  );
+}
 
 export function MarketTable({ rows, watchedItemIds, view, categories, totalCount, filteredCount, page, pageCount }: {
   rows: MarketSignal[];
@@ -196,11 +213,11 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                     {signal.name}
                   </Link>
                   {signal.turnoverScore >= 50
-                    ? <span className="ml-1.5 rounded bg-green-500/15 px-1 py-0.5 align-middle text-[9px] text-green-400" title="被 N 个配方使用，流通快">{signal.turnoverScore}§</span>
+                    ? <span className="ml-1.5 rounded bg-green-500/15 px-1 py-0.5 align-middle text-[9px] text-green-400" title="被 N 个配方使用，流通快">{signal.turnoverScore}</span>
                     : signal.turnoverScore >= 15
-                      ? <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400" title="被 N 个配方使用">{signal.turnoverScore}§</span>
+                      ? <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400" title="被 N 个配方使用">{signal.turnoverScore}</span>
                       : signal.turnoverScore > 0
-                        ? <span className="ml-1.5 rounded bg-slate-500/15 px-1 py-0.5 align-middle text-[9px] text-slate-400" title="被 N 个配方使用">{signal.turnoverScore}§</span>
+                        ? <span className="ml-1.5 rounded bg-slate-500/15 px-1 py-0.5 align-middle text-[9px] text-slate-400" title="被 N 个配方使用">{signal.turnoverScore}</span>
                         : null}
                 </td>
                 <td className="px-3 py-2 text-right"><Coins copper={signal.price} /></td>

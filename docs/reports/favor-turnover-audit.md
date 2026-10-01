@@ -5,7 +5,7 @@
 
 ## 1. 核验方法
 
-- 数据源：每个专业页面的 Next.js RSC payload（已下载并解码保存为项目根的 `.tmp-probe-<slug>-decoded.txt`，原始 HTML 为 `.tmp-page-<slug>.html`）。用 `"key":` 定位 + 括号配对 + `JSON.parse` 提取 `favor`（商人青睐数组）、`rows`/`crafted`（全量配方，含 reagents）、`enchants`（装备附魔）、`items`（物品中文名）。
+- 数据源：每个专业页面的 Next.js RSC payload（已下载并解码保存为 `docs/archive/` 下的 `.tmp-probe-<slug>-decoded.txt`，原始 HTML 为 `.tmp-page-<slug>.html`）。用 `"key":` 定位 + 括号配对 + `JSON.parse` 提取 `favor`（商人青睐数组）、`rows`/`crafted`（全量配方，含 reagents）、`enchants`（装备附魔）、`items`（物品中文名）。
 - 流通分口径（与 `scripts/compute-turnover.ts` 一致）：本地 Recipe 表**全部行** reagents 中出现的每个 itemId + `forever-enchants.json` 的 `enchants`/`craftedMissing` reagents 中的每个 id，每配方每材料计一次。
 - favor 条目三类：
   - `recipe.makes` 非空：制造配方 → 材料取自页面 rows/crafted 中 `id==makes` 的元素；
@@ -48,12 +48,12 @@
 
 | 脚本 | 作用 |
 |---|---|
-| `scripts/decode-pages.mjs` | 从已下载页面 HTML 解码 RSC payload 到 `.tmp-probe-<slug>-decoded.txt` |
+| `scripts/decode-pages.mjs` | 从已下载页面 HTML 解码 RSC payload 到 `.tmp-probe-<slug>-decoded.txt`（产物已归档至 `docs/archive/`） |
 | `scripts/audit-favor.mjs` | 单专业 favor 覆盖审计（按名称 + 产出物品 ID 匹配本地，材料一致性交叉验证） |
 | `scripts/audit-all.mjs` | 批量运行全部专业审计 |
 | `scripts/union-check.mjs` | 并集检查：favor 材料 ⊆ 本地 Recipe reagents ∪ forever-enchants.json reagents |
-| `scripts/.tmp-verify-union-self.mjs` | 独立核验（Subagent A 自写实现）：并集检查，0 缺失 |
-| `.tmp-verify-favor-consistency.cjs` | 独立核验（Subagent B 自写实现）：本地↔页面材料一致性，286 条仅 1 条已知差异 |
-| `.tmp-verify-favor-report.json` | Subagent B 的结构化报告 |
+| `scripts/.tmp-verify-union-self.mjs` → 已归档 | 独立核验（Subagent A 自写实现）：并集检查，0 缺失（现位于 `docs/archive/.tmp-verify-union-self.mjs`） |
+| `.tmp-verify-favor-consistency.cjs` → 已归档 | 独立核验（Subagent B 自写实现）：本地↔页面材料一致性，286 条仅 1 条已知差异（现位于 `docs/archive/.tmp-verify-favor-consistency.cjs`） |
+| `.tmp-verify-favor-report.json` → 已归档 | Subagent B 的结构化报告（现位于 `docs/archive/.tmp-verify-favor-report.json`） |
 
 两套独立实现（Subagent A/B，均禁止查看对方/既有脚本实现）与本文 §2 结论完全一致。核验全程只读：未写 prisma/dev.db、未改 scripts/data/ 与任何源文件。

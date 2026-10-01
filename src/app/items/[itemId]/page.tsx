@@ -78,11 +78,11 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
           <h1 className={`flex items-center gap-2 font-mono text-2xl font-semibold ${qualityColorClass(item.quality)}`}>
             <ItemIcon itemId={item.itemId} icon={item.icon} size={28} />{item.name}
             {item.turnoverScore >= 50
-              ? <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-xs font-normal text-green-400">{item.turnoverScore}§</span>
+              ? <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-xs font-normal text-green-400">{item.turnoverScore}</span>
               : item.turnoverScore >= 15
-                ? <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-normal text-amber-400">{item.turnoverScore}§</span>
+                ? <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-normal text-amber-400">{item.turnoverScore}</span>
                 : item.turnoverScore > 0
-                  ? <span className="rounded bg-slate-500/15 px-1.5 py-0.5 text-xs font-normal text-slate-400">{item.turnoverScore}§</span>
+                  ? <span className="rounded bg-slate-500/15 px-1.5 py-0.5 text-xs font-normal text-slate-400">{item.turnoverScore}</span>
                   : null}
           </h1>
           <div className={freshness.stale ? "font-mono text-xs text-terminal-red" : "font-mono text-xs text-terminal-green"}>
