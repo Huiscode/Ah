@@ -9,6 +9,10 @@
 --   * money-only header (money > 0, itemCount == 0)  -> a completed sale
 --   * header with returned items                    -> an expired / unsold lot
 -- Each record gets a stable uid so the importer can dedup on the web side.
+--
+-- Forever quirk: its GetInboxHeaderInfo prepends an extra value to the classic
+-- return list, shifting every field by one. headerInfo() therefore locates the
+-- fields by content (the sender name is the anchor) instead of by position.
 
 local ADDON_NAME, WAH = ...
 local L = WAH.L
@@ -16,7 +20,11 @@ local L = WAH.L
 WAH.ledger = WAH.ledger or {}
 
 local LEDGER_CAP = 20000 -- hard ceiling; oldest records trimmed to bound SavedVariables
-local seenMails = {}    -- inbox uid -> true, so we don't re-record the same mail
+-- Dedup key -> records made for it. When the client exposes a per-mail id we
+-- key on that (exact identity); otherwise we key on subject+money+itemCount
+-- and store how many identical mails were recorded, so twin sales at the same
+-- price still all count.
+local seenMails = {}
 
 -- Append a record. kind: "buy" | "sell" | "expired".
 local function record(kind, itemId, qty, unitPrice, total, note)
@@ -38,33 +46,95 @@ local function record(kind, itemId, qty, unitPrice, total, note)
 end
 WAH.LedgerRecord = record
 
+-- A mailbox-scan bug on Forever once misparsed the shifted GetInboxHeaderInfo
+-- layout and wrote expired records with absurd quantities (133890 instead of
+-- 0) and the sender name as the subject. Drop those on load so they stop
+-- re-uploading to the terminal.
+local function pruneGarbage()
+  local list = WoWderhoiAHDB and WoWderhoiAHDB.ledger
+  if not list or #list == 0 then return end
+  local kept = {}
+  for i = 1, #list do
+    local r = list[i]
+    if not (r and r.kind == "expired" and (tonumber(r.qty) or 0) > 10000) then
+      kept[#kept + 1] = r
+    end
+  end
+  if #kept ~= #list then WoWderhoiAHDB.ledger = kept end
+end
+pruneGarbage()
+
 -- --------------------------------------------------------------------------
 -- Mailbox scan
 -- --------------------------------------------------------------------------
 -- Normalize a header for either the C_Inbox table API or the legacy
--- GetInboxHeaderInfo multi-return form. Returns { itemCount, subject, money }.
+-- GetInboxHeaderInfo multi-return form. Returns
+-- { itemCount, subject, money, cod, mailId }.
 local function headerInfo(index)
   if C_Inbox and C_Inbox.GetInboxHeaderInfo then
     local ok, info = pcall(C_Inbox.GetInboxHeaderInfo, index)
     if ok and type(info) == "table" then
       return {
-        itemCount = info.itemCount or 0,
+        itemCount = tonumber(info.itemCount) or 0,
         subject = info.subject,
-        money = info.money or 0,
-        cod = info.cod or 0
+        money = tonumber(info.money) or 0,
+        cod = tonumber(info.cod) or 0
       }
     end
   end
   if type(GetInboxHeaderInfo) == "function" then
-    -- Legacy returns: itemCount, sender, subject, money, cod, ...
-    local ok, itemCount, sender, subject, money, cod = pcall(GetInboxHeaderInfo, index)
-    if ok then
-      return {
-        itemCount = type(itemCount) == "number" and itemCount or 0,
-        subject = subject,
-        money = money or 0,
-        cod = cod or 0
-      }
+    local vals = { pcall(GetInboxHeaderInfo, index) }
+    if vals[1] then
+      -- Forever prepends an extra value to the classic return list, shifting
+      -- every field by one. The sender name ("联盟拍卖行" / "Auction House")
+      -- is the anchor: it always sits one slot before the subject in both
+      -- layouts, so locate it by content and derive the rest from there.
+      local senderIdx
+      for i = 2, #vals do
+        local v = vals[i]
+        if type(v) == "string" and (v:find("拍卖行") or v:find("Auction House")) then
+          senderIdx = i
+          break
+        end
+      end
+      if senderIdx then
+        local subject, money
+        for i = senderIdx + 1, #vals do
+          local v = vals[i]
+          local n = tonumber(v)
+          if n ~= nil then
+            money = n
+            break
+          elseif not subject and type(v) == "string" then
+            subject = v
+          end
+        end
+        -- The shifted layout carries a per-mail id right before itemCount;
+        -- use it as the dedup key when present.
+        local id = vals[senderIdx - 2]
+        return {
+          itemCount = tonumber(vals[senderIdx - 1]) or 0,
+          subject = subject,
+          money = tonumber(money) or 0,
+          cod = 0,
+          mailId = type(id) == "number" and id or nil
+        }
+      end
+      -- No recognizable sender: classic positional order, but only when the
+      -- subject looks like an auction-mail subject -- otherwise the shifted
+      -- layout would fabricate records from a player's mail.
+      local fallbackSubject = vals[4]
+      if type(fallbackSubject) == "string"
+        and (fallbackSubject:find("拍卖") or fallbackSubject:find("Auction")
+          or fallbackSubject:find("sold") or fallbackSubject:find("won")
+          or fallbackSubject:find("expired") or fallbackSubject:find("bought")) then
+        return {
+          itemCount = tonumber(vals[2]) or 0,
+          subject = fallbackSubject,
+          money = tonumber(vals[5]) or 0,
+          cod = tonumber(vals[6]) or 0
+        }
+      end
     end
   end
   return nil
@@ -83,41 +153,83 @@ local function inboxCount()
 end
 
 -- Try to recover an itemID from a mail subject (best-effort). The AH sale
--- subject usually names the item; match it against the addon's scan cache.
+-- subject usually names the item; match it against the addon's scan cache,
+-- then against our own buy records.
 local function itemIdFromSubject(subject)
-  if not subject or WAH.itemIdByName == nil then return nil end
-  for name, id in pairs(WAH.itemIdByName) do
-    if name and subject:find(name, 1, true) then return id end
+  if not subject then return nil end
+  if WAH.itemIdByName then
+    for name, id in pairs(WAH.itemIdByName) do
+      if name and subject:find(name, 1, true) then return id end
+    end
+  end
+  local scan = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.items
+  if scan then
+    for id, info in pairs(scan) do
+      local name = type(info) == "table" and info.name
+      if name and subject:find(name, 1, true) then return tonumber(id) end
+    end
+  end
+  local list = WoWderhoiAHDB and WoWderhoiAHDB.ledger
+  if list then
+    for i = #list, 1, -1 do
+      local r = list[i]
+      if r and r.kind == "buy" and r.note and r.itemId and subject:find(r.note, 1, true) then
+        return r.itemId
+      end
+    end
   end
   return nil
 end
 
 local function scanInbox()
   local count = inboxCount()
+  local keyCounts = {}
   for index = 1, count do
     local info = headerInfo(index)
     if not info then break end
     local money = tonumber(info.money) or 0
     local itemCount = tonumber(info.itemCount) or 0
     local subject = info.subject or ""
-    -- Stable per-mail key: subject + money + itemCount + index is enough for a
-    -- single-character inbox; re-scans of the same mail are deduped.
-    local key = string.format("%s|%d|%d|%d", tostring(subject), money, itemCount, index)
-    if not seenMails[key] then
-      -- "竞拍获胜" / "物品购入" = a bought item arriving in mail. Buys are
-      -- already recorded at purchase-success time; skip these to avoid double
-      -- counting.
-      local isWin = subject:find("竞拍获胜") or subject:find("物品购入")
-      if not isWin then
-        if money > 0 and itemCount == 0 then
-          -- Money-only mail: treat as a sale. total is gross (copper); the AH
-          -- cut is applied at the terminal when computing net.
-          record("sell", itemIdFromSubject(subject), 1, money, money, subject)
-          seenMails[key] = true
-        elseif itemCount > 0 then
-          -- Returned items: an expired / unsold lot.
-          record("expired", itemIdFromSubject(subject), itemCount, 0, 0, subject)
-          seenMails[key] = true
+    -- "竞拍获胜" / "物品购入" = a bought item arriving in mail. Buys are
+    -- already recorded at purchase-success time; skip these to avoid double
+    -- counting.
+    if not (subject:find("竞拍获胜") or subject:find("物品购入")) then
+      local kind
+      if money > 0 and itemCount == 0 then
+        kind = "sell"
+      elseif itemCount > 0 then
+        kind = "expired"
+      end
+      if kind then
+        local want = false
+        if info.mailId then
+          -- Per-mail id from the shifted layout: exact dedup. Twin mails for
+          -- the same item at the same price carry different ids, so they are
+          -- all recorded.
+          local key = "mail:" .. tostring(info.mailId)
+          if not seenMails[key] then
+            seenMails[key] = true
+            want = true
+          end
+        else
+          -- No per-mail id (classic layout): count identical mails so twin
+          -- sales still all get recorded, while re-opens stay deduped.
+          local key = string.format("content:%s|%d|%d", tostring(subject), money, itemCount)
+          local n = (keyCounts[key] or 0) + 1
+          keyCounts[key] = n
+          if n > (seenMails[key] or 0) then
+            seenMails[key] = n
+            want = true
+          end
+        end
+        if want then
+          if kind == "sell" then
+            -- total is gross (copper); the AH cut is applied at the terminal
+            -- when computing net.
+            record("sell", itemIdFromSubject(subject), 1, money, money, subject)
+          else
+            record("expired", itemIdFromSubject(subject), itemCount, 0, 0, subject)
+          end
         end
       end
     end
@@ -128,7 +240,8 @@ local mailFrame = CreateFrame("Frame")
 mailFrame:RegisterEvent("MAIL_INBOX_UPDATE")
 mailFrame:RegisterEvent("MAIL_SHOW")
 mailFrame:SetScript("OnEvent", function(_, event)
-  if event == "MAIL_SHOW" then seenMails = {} end
-  -- Defer a tick so header data is populated.
+  -- Defer a tick so header data is populated. seenMails is deliberately NOT
+  -- reset here: reopening the mailbox must not re-record mails that are
+  -- already recorded (per-mail ids / per-key counts handle new and twin mail).
   C_Timer.After(0.2, scanInbox)
 end)

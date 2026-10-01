@@ -47,6 +47,9 @@ local pendingBuyCommodity = false
 local pendingItemAuction = nil -- non-commodity: { auctionID, buyout, quantity } chosen at search time
 -- Commodity buy-dialog state.
 local buyDialog = nil
+-- Assigned after the sell-assist frame is built; purchase-success handlers
+-- call it so a won deal immediately clears and closes the assist panel.
+local closeSellAssist
 local commodityRungs = {} -- cached cheapest-first rungs { unitPrice, quantity }
 local commodityTotalAvailable = 0
 local commodityDialogState = "idle" -- idle | ready | quote
@@ -589,6 +592,7 @@ local function onCommodityPurchaseSucceeded(itemID)
     WAH.LedgerRecord("buy", targetId, qty, qty > 0 and math.floor(total / qty) or 0, total, name)
   end
   clearPendingBuy()
+  if closeSellAssist then closeSellAssist() end
   chatMessage(string.format(L.BOUGHT, name or targetId, qty, GetCoinTextureString(total)))
   repriceAfterPurchase(targetId, newMin)
 end
@@ -614,6 +618,7 @@ local function onItemPurchaseCompleted(auctionID)
       itemCost or 0, itemName)
   end
   clearPendingBuy()
+  if closeSellAssist then closeSellAssist() end
   chatMessage(string.format(L.BOUGHT, itemName or targetId, itemQty or 1,
     GetCoinTextureString(itemCost or 0)))
   repriceAfterPurchase(targetId, runnerUnit)
@@ -695,6 +700,446 @@ sellPoll:SetScript("OnUpdate", function(self, elapsed)
   pollSellSlot()
 end)
 sellPoll:Hide()
+
+-- Hook SetItem/ClearPost on the sell frames themselves (not ItemDisplay) so
+-- we know the moment an item is placed OR removed. GetItemID/GetItemLink keep
+-- stale values after removal, so the poll trusts this state table -- with the
+-- captured ItemLocation re-verified via DoesItemExist -- instead of the
+-- ItemDisplay's cached ID.
+-- Forward declarations: the SetItem/ClearPost handlers defined inside
+-- hookSellFrame must capture these locals, but the frame is built and the
+-- renderer defined later in the file. Without this, the handlers would bind
+-- to nil globals and every close path would die inside its pcall.
+local sellAssist, renderSellAssist
+local sellFrameHooked = {}
+local sellSlotState = {} -- [sellFrame] = { itemId, link, commodity, loc } or absent
+local function hookSellFrame(frame, commodity)
+  if not frame then return end
+  if not sellFrameHooked[frame] then
+    sellFrameHooked[frame] = true
+    if type(frame.SetItem) == "function" then
+      hooksecurefunc(frame, "SetItem", function(self, item, fromDrag)
+        pcall(function()
+          -- item is an ItemLocation when placed; nil when cleared.
+          local validItem = false
+          if type(item) == "table" and item.IsValid then
+            pcall(function()
+              if item:IsValid() then
+                if C_Item and C_Item.DoesItemExist then
+                  validItem = C_Item.DoesItemExist(item)
+                else
+                  validItem = true
+                end
+              end
+            end)
+          end
+          if not validItem then
+            sellSlotState[self] = nil
+            sellAssist.itemId = nil
+            sellAssist.itemName = nil
+            sellAssist.isCommodity = nil
+            sellAssist.title:SetText("")
+            sellAssist.body:SetText("")
+            sellAssist:Hide()
+          else
+            sellAssist.slotEmpty = nil
+            local id = self.ItemDisplay and self.ItemDisplay.GetItemID and self.ItemDisplay:GetItemID()
+            local lk = self.ItemDisplay and self.ItemDisplay.GetItemLink and self.ItemDisplay:GetItemLink()
+            if id and id ~= 0 then
+              sellSlotState[self] = { itemId = id, link = lk, commodity = commodity, loc = item }
+              sellAssist.itemId = id
+              sellAssist.itemName = lk and lk:match("%[(.-)%]") or nil
+              sellAssist.isCommodity = commodity
+            end
+            renderSellAssist()
+          end
+        end)
+      end)
+    end
+    if type(frame.ClearPost) == "function" then
+      hooksecurefunc(frame, "ClearPost", function(self)
+        pcall(function()
+          sellSlotState[self] = nil
+          sellAssist.itemId = nil
+          sellAssist.itemName = nil
+          sellAssist.isCommodity = nil
+          renderSellAssist()
+        end)
+      end)
+    end
+    -- Backfill: SetItem may have fired once before this hook existed.
+    pcall(function()
+      local id = frame.ItemDisplay and frame.ItemDisplay.GetItemID and frame.ItemDisplay:GetItemID()
+      local lk = frame.ItemDisplay and frame.ItemDisplay.GetItemLink and frame.ItemDisplay:GetItemLink()
+      if id and id ~= 0 and lk and lk ~= "" then
+        sellSlotState[frame] = { itemId = id, link = lk, commodity = commodity, loc = nil }
+      end
+    end)
+  end
+end
+-- When an item sits in the sell slot, show up to 5 real-time price tiers
+-- (aggregated by price) plus our FIFO average buy cost from the ledger.
+-- Parent is UIParent at creation because `trade` isn't built yet; we anchor
+-- it to trade lazily on first render.
+sellAssist = CreateFrame("Frame", "WoWderhoiAHSellAssist", UIParent, "BackdropTemplate")
+sellAssist:SetBackdrop({
+  bgFile = "Interface\\Buttons\\WHITE8x8",
+  edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+  tile = true, tileSize = 16, edgeSize = 16,
+  insets = { left = 4, right = 4, top = 4, bottom = 4 }
+})
+sellAssist:SetBackdropColor(0.08, 0.08, 0.08, 0.92)
+sellAssist:SetBackdropBorderColor(1, 0.82, 0, 0.8)
+sellAssist:SetWidth(380)
+sellAssist:SetHeight(140)
+sellAssist:Hide()
+
+sellAssist.title = sellAssist:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+sellAssist.title:SetPoint("TOPLEFT", 8, -8)
+sellAssist.title:SetTextColor(1, 0.82, 0)
+sellAssist.title:SetFont(sellAssist.title:GetFont(), 18, "OUTLINE")
+
+-- Manual close button: when the slot visual state desyncs from our detection,
+-- the user can dismiss the sell assist panel to bring the radar back.
+sellAssist.close = CreateFrame("Button", nil, sellAssist)
+sellAssist.close:SetSize(22, 22)
+sellAssist.close:SetPoint("TOPRIGHT", -6, -6)
+sellAssist.close:SetText("|cffff5555X|r")
+sellAssist.close:SetNormalFontObject(GameFontNormal)
+sellAssist.close:SetScript("OnClick", function()
+  sellAssist.dismissedFor = sellAssist.itemId
+  sellAssist.itemId = nil
+  sellAssist.itemName = nil
+  sellAssist.isCommodity = nil
+  sellAssist.title:SetText("")
+  sellAssist.body:SetText("")
+  sellAssist:Hide()
+end)
+
+sellAssist.body = sellAssist:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+sellAssist.body:SetPoint("TOPLEFT", 8, -32)
+sellAssist.body:SetJustifyH("LEFT")
+sellAssist.body:SetFont(sellAssist.body:GetFont(), 16, "OUTLINE")
+
+-- FIFO average buy cost for an itemId from the local ledger.
+local function buyAverageCost(itemId)
+  local list = WoWderhoiAHDB and WoWderhoiAHDB.ledger
+  if not list then return nil, 0 end
+  local queue = {} -- {qty, unitPrice}
+  for _, rec in ipairs(list) do
+    if rec.itemId == itemId then
+      if rec.kind == "buy" and rec.qty and rec.qty > 0 then
+        table.insert(queue, { qty = rec.qty, unitPrice = rec.unitPrice or 0 })
+      elseif rec.kind == "sell" and rec.qty and rec.qty > 0 then
+        local remaining = rec.qty
+        while remaining > 0 and queue[1] do
+          local head = queue[1]
+          local take = math.min(head.qty, remaining)
+          head.qty = head.qty - take
+          remaining = remaining - take
+          if head.qty <= 0 then table.remove(queue, 1) end
+        end
+      end
+    end
+  end
+  local totalQty, totalCost = 0, 0
+  for _, lot in ipairs(queue) do
+    totalQty = totalQty + lot.qty
+    totalCost = totalCost + lot.qty * lot.unitPrice
+  end
+  if totalQty == 0 then return nil, 0 end
+  return math.floor(totalCost / totalQty + 0.5), totalQty
+end
+
+-- Aggregate live commodity results into price->qty tiers, sorted asc.
+local function readCommodityTiers(itemId)
+  if not C_AuctionHouse then return nil end
+  local getNum = C_AuctionHouse.GetNumCommoditySearchResults
+  if not getNum then return nil end
+  local ok, num = pcall(getNum, itemId)
+  if not ok or not num or num == 0 then return nil end
+  local tiers = {}
+  local getInfo = C_AuctionHouse.GetCommoditySearchResultInfo
+  for i = 1, num do
+    local info
+    if getInfo then
+      ok, info = pcall(getInfo, itemId, i)
+    end
+    if ok and info then
+      local price = info.unitPrice or info.minPrice or 0
+      local qty = info.quantity or info.totalQuantity or 0
+      if price > 0 then
+        tiers[price] = (tiers[price] or 0) + qty
+      end
+    end
+  end
+  local arr = {}
+  for price, qty in pairs(tiers) do table.insert(arr, { price = price, qty = qty }) end
+  table.sort(arr, function(a, b) return a.price < b.price end)
+  return arr
+end
+
+-- Item (non-commodity) results.
+local function readItemTiers(itemId)
+  if not C_AuctionHouse then return nil end
+  -- Try item search results first, then browse results.
+  local tiers = {}
+  local function ingest(info)
+    if not info then return end
+    local price = info.buyoutAmount or info.buyoutPrice or info.minBid or 0
+    local qty = info.quantity or info.totalQuantity or 1
+    if price > 0 then tiers[price] = (tiers[price] or 0) + qty end
+  end
+  -- Item search results (needs itemKey, not itemID)
+  local itemKey = nil
+  if C_AuctionHouse.MakeItemKey then
+    pcall(function() itemKey = C_AuctionHouse.MakeItemKey(itemId) end)
+  end
+  if not itemKey then itemKey = { itemID = itemId } end
+  if C_AuctionHouse.GetNumItemSearchResults then
+    local ok, num = pcall(C_AuctionHouse.GetNumItemSearchResults, itemKey)
+    if ok and num and num > 0 and C_AuctionHouse.GetItemSearchResultInfo then
+      for i = 1, num do
+        local ok2, info = pcall(C_AuctionHouse.GetItemSearchResultInfo, itemKey, i)
+        if ok2 then ingest(info) end
+      end
+    end
+  end
+  -- Browse results (fallback)
+  if not next(tiers) and C_AuctionHouse.GetNumBrowseResults then
+    local ok, num = pcall(C_AuctionHouse.GetNumBrowseResults)
+    if ok and num and num > 0 and C_AuctionHouse.GetBrowseResults then
+      for i = 1, num do
+        local ok2, info = pcall(C_AuctionHouse.GetBrowseResults, i)
+        if ok2 and info and (not info.itemKey or not info.itemKey.itemID or info.itemKey.itemID == itemId) then
+          ingest(info)
+        end
+      end
+    end
+  end
+  if not next(tiers) then return nil end
+  local arr = {}
+  for price, qty in pairs(tiers) do table.insert(arr, { price = price, qty = qty }) end
+  table.sort(arr, function(a, b) return a.price < b.price end)
+  return arr
+end
+
+renderSellAssist = function()
+  if not sellAssist.itemId or sellAssist.itemId == sellAssist.dismissedFor then
+    sellAssist.title:SetText("")
+    sellAssist.body:SetText("")
+    sellAssist:Hide()
+    return
+  end
+  -- Keep the radar window visible; stack sell-assist to its right.
+  sellAssist:ClearAllPoints()
+  sellAssist:SetParent(UIParent)
+  if trade and trade:IsShown() then
+    sellAssist:SetPoint("TOPLEFT", trade, "TOPRIGHT", 6, 0)
+  elseif AuctionHouseFrame then
+    sellAssist:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPRIGHT", 10, 0)
+  else
+    sellAssist:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -30, -120)
+  end
+  sellAssist:SetWidth(380)
+  sellAssist:SetBackdropColor(0.08, 0.08, 0.08, 0.92)
+  sellAssist:SetFrameLevel(100)
+  local itemId = sellAssist.itemId
+  local name = sellAssist.itemName or "?"
+  local tiers = nil
+  if sellAssist.isCommodity == false then
+    tiers = readItemTiers(itemId)
+  else
+    tiers = readCommodityTiers(itemId) or readItemTiers(itemId)
+  end
+  local avgCost, holdingQty = buyAverageCost(itemId)
+  local lines = {}
+  if tiers and #tiers > 0 then
+    table.insert(lines, " ")
+    for i = 1, math.min(5, #tiers) do
+      local t = tiers[i]
+      local marker = (i == 1) and "|cffffcc00" or "|cffaaaaaa"
+      table.insert(lines, string.format("%s第%d档 %s × %d|r", marker, i, GetCoinTextureString(t.price), t.qty))
+    end
+    if #tiers > 5 then
+      table.insert(lines, string.format("|cff888888…共 %d 档|r", #tiers))
+    end
+    table.insert(lines, " ")
+    local cheapest = tiers[1].price
+    if avgCost then
+      local profitEach = cheapest - avgCost
+      local color = profitEach >= 0 and "|cff33ff33" or "|cffff5555"
+      table.insert(lines, string.format("|cffffffff成本 %s · 持有 %d · 单档盈亏 %s%s|r",
+        GetCoinTextureString(avgCost), holdingQty,
+        color, GetCoinTextureString(profitEach)))
+    end
+  else
+    table.insert(lines, " ")
+    table.insert(lines, "|cff888888等待实时报价…|r")
+    if avgCost then
+      table.insert(lines, " ")
+      table.insert(lines, string.format("|cffffffff你的成本: %s (持有 %d)|r", GetCoinTextureString(avgCost), holdingQty))
+    end
+  end
+  sellAssist.title:SetText(string.format("出售助手: %s", name))
+  sellAssist.body:SetText(table.concat(lines, "\n"))
+  local lineCount = #lines
+  sellAssist:SetHeight(48 + lineCount * 26)
+  sellAssist:Show()
+end
+
+-- Watch for sell-slot changes and trigger a fresh query.
+local sellAssistPoll = CreateFrame("Frame")
+local lastAssistItemId = nil
+local function pollSellAssist()
+  if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then
+    sellAssist:Hide()
+    lastAssistItemId = nil
+    return
+  end
+  -- Classic sell-slot API (present on some Forever builds).
+  local classicName, classicCount, classicLink
+  pcall(function()
+    if GetAuctionSellItemInfo then classicName, _, classicCount = GetAuctionSellItemInfo() end
+    if GetAuctionSellItemLink then classicLink = GetAuctionSellItemLink() end
+  end)
+  -- Attach placement/removal hooks (idempotent) so changes are caught
+  -- instantly; hookSellFrame also backfills the current slot state.
+  local csf, isf
+  pcall(function()
+    csf = AuctionHouseFrame.CommoditiesSellFrame
+    isf = AuctionHouseFrame.ItemSellFrame
+    if csf then hookSellFrame(csf, true) end
+    if isf then hookSellFrame(isf, false) end
+  end)
+  -- Re-verify each hook-maintained state via its captured ItemLocation:
+  -- GetItemID keeps a stale ID after the item is taken back, but the
+  -- location stops existing at that moment.
+  local slotItemId, slotLink, slotCommodity
+  for frame, st in pairs(sellSlotState) do
+    if st.loc then
+      local stillExists = true
+      pcall(function()
+        if not st.loc:IsValid() then
+          stillExists = false
+        elseif C_Item and C_Item.DoesItemExist and not C_Item.DoesItemExist(st.loc) then
+          stillExists = false
+        end
+      end)
+      if not stillExists then sellSlotState[frame] = nil end
+    end
+    st = sellSlotState[frame]
+    if st and not slotItemId then
+      slotItemId, slotLink, slotCommodity = st.itemId, st.link, st.commodity
+    end
+  end
+  -- Classic API is authoritative when it reports an item.
+  local itemId, name, count, link
+  if classicLink then
+    itemId = tonumber(classicLink:match("item:(%d+)"))
+    if itemId then
+      name, count, link = classicName, classicCount, classicLink
+    end
+  end
+  -- Otherwise take the hook state.
+  if not itemId and slotItemId then
+    itemId, link = slotItemId, slotLink
+  end
+  -- Last-resort fallback: only when no sell frame was found (so an empty
+  -- state table cannot itself mean "empty slot"), read ItemDisplay's ID.
+  if not itemId and not (csf or isf) then
+    pcall(function()
+      for _, dispInfo in ipairs({
+        { frame = csf and csf.ItemDisplay, commodity = true },
+        { frame = isf and isf.ItemDisplay, commodity = false },
+      }) do
+        if dispInfo.frame then
+          local id = dispInfo.frame.GetItemID and dispInfo.frame:GetItemID()
+          local lk = dispInfo.frame.GetItemLink and dispInfo.frame:GetItemLink()
+          if id and id ~= 0 and lk and lk ~= "" then
+            itemId, link, slotCommodity = id, lk, dispInfo.commodity
+          end
+        end
+      end
+    end)
+  end
+  if not itemId or itemId == sellAssist.dismissedFor then
+    sellAssist.itemId = nil
+    sellAssist.itemName = nil
+    sellAssist.isCommodity = nil
+    sellAssist.title:SetText("")
+    sellAssist.body:SetText("")
+    sellAssist:Hide()
+    lastAssistItemId = nil
+    return
+  end
+  -- Name/count fallbacks.
+  if not name then
+    name = (link and link:match("%[(.-)%]")) or sellAssist.itemName or "物品"
+  end
+  count = count or 1
+  local isCommodity = slotCommodity
+  if isCommodity == nil then isCommodity = (count or 1) > 1 end
+  sellAssist.itemId = itemId
+  sellAssist.itemName = name
+  sellAssist.isCommodity = isCommodity
+  -- Trigger a fresh query when the item changes.
+  if itemId ~= lastAssistItemId then
+    lastAssistItemId = itemId
+    if C_AuctionHouse then
+      pcall(function()
+        if isCommodity and C_AuctionHouse.StartCommoditiesSearch then
+          C_AuctionHouse.StartCommoditiesSearch(itemId)
+        else
+          local ik = C_AuctionHouse.MakeItemKey and C_AuctionHouse.MakeItemKey(itemId, 0, 0, 0) or { itemID = itemId }
+          if C_AuctionHouse.SendSearchQuery then
+            C_AuctionHouse.SendSearchQuery(ik, {}, false)
+          elseif C_AuctionHouse.SearchForItem then
+            C_AuctionHouse.SearchForItem(ik)
+          elseif C_AuctionHouse.QueryForItem then
+            C_AuctionHouse.QueryForItem(ik)
+          end
+        end
+      end)
+    end
+  end
+  renderSellAssist()
+end
+sellAssistPoll:SetScript("OnUpdate", function(self, elapsed)
+  self.accum = (self.accum or 0) + elapsed
+  if self.accum < 0.8 then return end
+  self.accum = 0
+  pollSellAssist()
+end)
+sellAssistPoll:Show()
+
+-- Clear the assist panel's text and close it. Called the moment a deal is
+-- won (item or commodity path) so the panel never lingers on a gone slot.
+closeSellAssist = function()
+  sellAssist.itemId = nil
+  sellAssist.itemName = nil
+  sellAssist.isCommodity = nil
+  sellAssist.title:SetText("")
+  sellAssist.body:SetText("")
+  sellAssist:Hide()
+  lastAssistItemId = nil
+end
+-- Exposed for the headless test harness; harmless in the real client.
+WAH._sellAssist = sellAssist
+WAH._pollSellAssist = pollSellAssist
+
+-- Refresh tiers when results arrive.
+if C_AuctionHouse then
+  local eventFrame = CreateFrame("Frame")
+  pcall(function() eventFrame:RegisterEvent("COMMODITY_SEARCH_RESULTS_UPDATED") end)
+  pcall(function() eventFrame:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED") end)
+  pcall(function() eventFrame:RegisterEvent("BROWSE_SEARCH_RESULTS_UPDATED") end)
+  pcall(function() eventFrame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED") end)
+  pcall(function() eventFrame:RegisterEvent("COMMODITY_PRICE_UPDATED") end)
+  eventFrame:SetScript("OnEvent", function()
+    if sellAssist.itemId then renderSellAssist() end
+  end)
+end
 
 -- ============================== Frame =================================
 
@@ -1040,6 +1485,15 @@ tradeEvents:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
   elseif event == "AUCTION_HOUSE_CLOSED" then
     if trade then trade:Hide() end
     sellPoll:Hide()
+    sellAssist.itemId = nil
+    sellAssist.itemName = nil
+    sellAssist.isCommodity = nil
+    sellAssist.slotEmpty = nil
+    sellAssist.dismissed = nil
+    sellAssist.dismissedFor = nil
+    sellAssist:Hide()
+    lastAssistItemId = nil
+    for frame in pairs(sellSlotState) do sellSlotState[frame] = nil end
   elseif event == "GET_ITEM_INFO_RECEIVED" then
     -- Item info landed (itemIcon or the scanner asked for it): backfill a
     -- category that came back unknown during the scan, then repaint.
@@ -1049,6 +1503,7 @@ tradeEvents:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     finalizeItemBuy(arg1)
   elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" then
     finalizeCommodityBuy(arg1)
+    if sellAssist and sellAssist.itemId then renderSellAssist() end
   elseif event == "COMMODITY_PRICE_UPDATED" then
     -- payload: itemID, unitPrice, totalPrice
     onCommodityPriceUpdated(arg1, arg2, arg3)

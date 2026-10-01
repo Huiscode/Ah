@@ -28,7 +28,13 @@ frameMeta.__index = frameMeta
 -- are all PascalCase while frame *fields* are not: returning a function for
 -- an unset field would turn every `frame.thing or default` into a function.
 setmetatable(frameMeta, { __index = function(_, key)
-  if type(key) == "string" and key:match("^%u") then return noop end
+  -- PascalCase methods fall through to noop, but PascalCase *child frames*
+  -- (CommoditiesSellFrame, ItemSellFrame, ItemDisplay...) must read as nil
+  -- when absent -- the real client reports nil, never a function.
+  if type(key) == "string" and key:match("^%u")
+    and not key:match("Frame$") and not key:match("Display$") then
+    return noop
+  end
   return nil
 end })
 
@@ -386,8 +392,37 @@ C_Item = {
     local info = bed.itemInfo[itemId] or {}
     return info.name, nil, nil, nil, nil, info.classID or 6, info.subClassID or 0,
       nil, nil, nil, info.vendorP or 0
+  end,
+  -- Mirrors the real API; a fake ItemLocation carries _exists=false once the
+  -- item has been taken back out of the sell slot.
+  DoesItemExist = function(loc)
+    return type(loc) == "table" and loc._exists ~= false
   end
 }
+
+-- Build a mock retail ItemSellFrame whose ItemDisplay keeps returning its
+-- cached ID after the item is removed (the real stale-GetItemID behavior),
+-- and wire it onto the AuctionHouseFrame so the hook/poll path is testable.
+function bed.installItemSellFrame(itemId, name)
+  local link = "|Hitem:" .. itemId .. ":0:0:0|h[" .. name .. "]|h"
+  local isf = newFrame(nil, AuctionHouseFrame)
+  local display = newFrame(nil, isf)
+  local id, lk = itemId, link
+  function display:GetItemID() return id end
+  function display:GetItemLink() return lk end
+  -- Raw methods the addon hooks; as on the real client, ClearPost routes
+  -- through SetItem(nil).
+  isf.SetItem = function() end
+  isf.ClearPost = function(self) self:SetItem(nil) end
+  isf.ItemDisplay = display
+  AuctionHouseFrame.ItemSellFrame = isf
+  return isf
+end
+
+-- Fake ItemLocation; exists=false models an item already taken back.
+function bed.itemLocation(exists)
+  return { IsValid = function() return true end, _exists = exists }
+end
 local ITEM_CLASS_NAMES = { [6] = "Trade Goods", [7] = "Item Enhancement", [15] = "Battle Pets" }
 local ITEM_SUBCLASS_NAMES = { [6] = { [0] = "Other" }, [7] = { [0] = "Other" } }
 function GetItemClassInfo(classID) return ITEM_CLASS_NAMES[classID] or "Miscellaneous" end
@@ -443,6 +478,59 @@ end
 function GetAuctionSellItemInfo() return bed.sellItem and bed.sellItem.name, nil, bed.sellItem and bed.sellItem.count end
 function GetAuctionSellItemLink()
   return bed.sellItem and ("|Hitem:" .. bed.sellItem.itemId .. ":0:0:0|h[" .. bed.sellItem.name .. "]|h")
+end
+-- Test control for the classic sell-slot API and the assist panel.
+function bed.setSellItem(itemId, name, count)
+  bed.sellItem = { itemId = itemId, name = name, count = count or 1 }
+end
+function bed.clearSellItem()
+  bed.sellItem = nil
+end
+function bed.sellAssistVisible()
+  local frame = _G.WoWderhoiAHSellAssist
+  return (frame ~= nil) and frame:IsShown() or false
+end
+function bed.sellAssistTitle()
+  local frame = _G.WoWderhoiAHSellAssist
+  return frame and bed.plain(frame.title._text) or ""
+end
+
+-- ============================== Mailbox stub ==============================
+-- Ledger.lua scans the inbox through GetInboxNumItems/GetInboxHeaderInfo. The
+-- Forever client prepends an extra value to the classic header return list,
+-- so each row's `id` is emitted as the first return exactly the way the live
+-- client does; pass classic=true to emit the classic order instead.
+bed.inbox = {}
+function bed.setInbox(rows, classic)
+  bed.inbox = { rows = rows or {}, classic = classic or false }
+end
+function GetInboxNumItems() return #(bed.inbox.rows or {}) end
+function GetInboxHeaderInfo(index)
+  local row = bed.inbox.rows and bed.inbox.rows[index]
+  if not row then return nil end
+  if bed.inbox.classic then
+    return row.itemCount, row.sender, row.subject, row.money
+  end
+  return row.id or 0, row.itemCount, row.sender, row.subject, row.money
+end
+function bed.fireMailUpdate() bed.fireEvent("MAIL_INBOX_UPDATE") end
+function bed.ledgerJson()
+  local list = WoWderhoiAHDB and WoWderhoiAHDB.ledger or {}
+  local parts = {}
+  for i = 1, #list do
+    local r = list[i]
+    local function q(v)
+      return v ~= nil and ('"' .. tostring(v):gsub('"', '\\"') .. '"') or "null"
+    end
+    parts[#parts + 1] = string.format(
+      '{"uid":%s,"kind":%s,"itemId":%d,"qty":%d,"unitPrice":%d,"total":%d,"note":%s}',
+      q(r.uid), q(r.kind),
+      tonumber(r.itemId) or 0, tonumber(r.qty) or 0,
+      tonumber(r.unitPrice) or 0, tonumber(r.total) or 0,
+      q(r.note)
+    )
+  end
+  return "[" .. table.concat(parts, ",") .. "]"
 end
 
 -- ============================== Test bed ==============================

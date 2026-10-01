@@ -160,6 +160,32 @@ export function loadAddon(options?: { locale?: string }) {
     scanned: (itemId: number) => Boolean(evaluate(`WowTest.scanned(${itemId})`)),
     scanMin: (itemId: number) => evaluate(`WowTest.scanMin(${itemId})`),
     scanAuctions: (itemId: number) => evaluate(`WowTest.scanAuctions(${itemId})`),
-    ahSearchText: () => String(evaluate("WowTest.ahSearchText()"))
+    ahSearchText: () => String(evaluate("WowTest.ahSearchText()")),
+
+    setSellItem: (itemId: number, name: string, count?: number) =>
+      exec(`WowTest.setSellItem(${itemId}, ${toLua(name)}, ${count ?? 1})`),
+    clearSellItem: () => exec("WowTest.clearSellItem()"),
+    sellAssistVisible: () => Boolean(evaluate("WowTest.sellAssistVisible()")),
+    sellAssistTitle: () => String(evaluate("WowTest.sellAssistTitle()")),
+    pollSellAssist: () => exec("WowTest.ns._pollSellAssist()"),
+    installItemSellFrame: (itemId: number, name: string) =>
+      exec(`WowTest.installItemSellFrame(${itemId}, ${toLua(name)})`),
+    sellFrameSetItem: (arg: "nil" | "ok" | "gone") =>
+      exec(`AuctionHouseFrame.ItemSellFrame:SetItem(${arg === "nil" ? "nil" : `WowTest.itemLocation(${arg === "ok"})`})`),
+    sellFrameClearPost: () =>
+      exec("AuctionHouseFrame.ItemSellFrame:ClearPost()"),
+
+    setInbox: (rows: unknown[], classic?: boolean) =>
+      exec(`WowTest.setInbox(${toLua(rows)}, ${classic ? "true" : "false"})`),
+    fireMailUpdate: () => exec("WowTest.fireMailUpdate()"),
+    ledger: () => JSON.parse(String(evaluate("WowTest.ledgerJson()"))) as Array<{
+      uid: string | null;
+      kind: string | null;
+      itemId: number;
+      qty: number;
+      unitPrice: number;
+      total: number;
+      note: string | null;
+    }>
   };
 }
