@@ -10,7 +10,6 @@ import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
 import { describeFreshness } from "@/lib/freshness";
 import { CandlestickChart, TimeSeriesChart } from "@/components/charts";
-import { AlertRulePanel } from "@/components/trader-panels";
 import { WatchStar } from "@/components/watch-star";
 import { CloseTabButton } from "@/components/close-tab-button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -20,9 +19,9 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const numericItemId = Number(itemId);
   const item = await getItemDetail(numericItemId);
   if (!item) notFound();
-  const [watchedIds, alertRules] = await Promise.all([
-    getWatchedItemIds(),
-    prisma.alertRule.findMany({ where: { itemId: numericItemId } })
+
+  const [watchedIds] = await Promise.all([
+    getWatchedItemIds()
   ]);
   const now = new Date();
   const hasSnapshots = item.snapshots.length > 0;
@@ -90,7 +89,16 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
       <div className="relative mb-3 flex items-center justify-between border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
           <div className="font-mono text-xs uppercase text-terminal-muted">商品终端</div>
-          <h1 className={`flex items-center gap-2 font-mono text-2xl font-semibold ${qualityColorClass(item.quality)}`}><ItemIcon itemId={item.itemId} icon={item.icon} size={28} />{item.name}</h1>
+          <h1 className={`flex items-center gap-2 font-mono text-2xl font-semibold ${qualityColorClass(item.quality)}`}>
+            <ItemIcon itemId={item.itemId} icon={item.icon} size={28} />{item.name}
+            {item.turnoverScore >= 50
+              ? <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-xs font-normal text-green-400">{item.turnoverScore}§</span>
+              : item.turnoverScore >= 15
+                ? <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-normal text-amber-400">{item.turnoverScore}§</span>
+                : item.turnoverScore > 0
+                  ? <span className="rounded bg-slate-500/15 px-1.5 py-0.5 text-xs font-normal text-slate-400">{item.turnoverScore}§</span>
+                  : null}
+          </h1>
           <div className={freshness.stale ? "font-mono text-xs text-terminal-red" : "font-mono text-xs text-terminal-green"}>
             数据更新于 {freshness.label}
           </div>
@@ -100,7 +108,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
         </div>
         <div className="absolute left-1/2 -translate-x-1/2"><CloseTabButton /></div>
       </div>
-      <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
+      <div className="grid gap-3 xl:grid-cols-[1fr_420px]">
         <div className="space-y-3">
           <Panel>
             <PanelHeader title="盘中走势 (逐次扫描)" />
@@ -176,7 +184,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                       <tr><td className="py-1">价格</td><td className="text-right">数量</td><td className="text-right">累计</td></tr>
                     </thead>
                     <tbody>
-                      {ladder.map((row, i) => {
+                      {ladder.slice(0, 5).map((row, i) => {
                         const cum = ladder.slice(0, i + 1).reduce((s, r) => s + r.count, 0);
                         return (
                           <tr key={i} className={i === 0 ? "text-terminal-amber" : ""}>
@@ -191,10 +199,6 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                 );
               })()}
             </div>
-          </Panel>
-          <Panel>
-            <PanelHeader title="价格预警" />
-            <AlertRulePanel itemId={item.itemId} rules={alertRules} />
           </Panel>
         </div>
       </div>

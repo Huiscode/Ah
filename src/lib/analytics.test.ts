@@ -17,6 +17,8 @@ function history(
     subCategory: "采矿",
     vendorPrice: overrides?.vendorPrice ?? 0,
     icon: null,
+    turnoverScore: 0,
+    isVendorItem: false,
     snapshots: snapshots.map((snap) => ({
       timestamp: new Date(now.getTime() - snap.daysAgo * DAY),
       server: "Anniversary",

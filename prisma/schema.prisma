@@ -16,6 +16,11 @@ model Item {
   subCategory      String            @map("sub_category")
   icon             String?           // in-game icon texture name (e.g. "inv_staff_13"); set from addon scans
   vendorPrice      Int               @default(0) @map("vendor_price") // NPC sell price in copper; 0 = unsellable
+  // 流通分：该物品作为材料被多少个配方使用。越高表示需求越广、周转越快。
+  turnoverScore    Int               @default(0) @map("turnover_score")
+  // 是否为 NPC 商人常驻出售的容器/耗材（空瓶/铅瓶/水晶瓶/染料/细线等）。
+  // 这类物品拍卖行价不会超过 NPC 价，不适合捡漏。
+  isVendorItem     Boolean           @default(false) @map("is_vendor_item")
   snapshots        AuctionSnapshot[]
   dailySummaries   DailySummary[]
   alerts           AlertRule[]

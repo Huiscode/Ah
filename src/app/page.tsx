@@ -30,6 +30,7 @@ import { getLatestLadders } from "@/lib/ladders";
 import { RadarParamsPanel } from "@/components/radar-params-panel";
 import { PriceLadderPanel } from "@/components/price-ladder-panel";
 import { RecipeProfitPanel } from "@/components/recipe-profit-panel";
+import { InstructionsPanel } from "@/components/instructions-panel";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import Link from "next/link";
 
@@ -145,20 +146,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <RadarParamsPanel initialRules={radarRules} />
           <RecipeProfitPanel rows={conversionRows} prices={priceByItemId} floorPrices={floorPriceIndex} limitPerProfession={8} />
           <Panel>
-            <PanelHeader title="触发的预警" action={<Bell size={13} className={triggeredAlerts.length > 0 ? "text-terminal-red" : "text-terminal-muted"} />} />
-            <div className="space-y-2 p-3 font-mono text-xs">
-              {triggeredAlerts.length === 0 && <div className="text-terminal-muted">无触发预警</div>}
-              {triggeredAlerts.map((hit) => (
-                <div key={hit.rule.id} className="flex items-center justify-between gap-2">
-                  <Link href={`/items/${hit.signal.itemId}`} target="_blank" className="text-slate-100 hover:text-terminal-amber">{hit.signal.name}</Link>
-                  <span className="text-terminal-red">
-                    {alertMetricLabels[hit.rule.metric] ?? hit.rule.metric} {hit.rule.operator === "gt" ? ">" : "<"} {hit.rule.threshold}（现 {hit.actual.toFixed(2)}）
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Panel>
-          <Panel>
             <PanelHeader title="关注列表" action={<Star size={13} className="text-terminal-amber" />} />
             <div className="space-y-2 p-3 font-mono text-xs">
               {watchedSignals.length === 0 && <div className="text-terminal-muted">市场表中点 ☆ 添加关注</div>}
@@ -190,6 +177,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </Panel>
         </div>
       </div>
+      <InstructionsPanel />
       <footer className="mt-3 border border-terminal-border bg-terminal-panel px-4 py-2 font-mono text-[10px] leading-relaxed text-terminal-muted">
         数据来源：游戏内插件扫描（自扫 · 7日P10 口径）与 <a href="https://ahledger.com" target="_blank" rel="noopener noreferrer" className="text-terminal-amber underline">AHledger</a> 公开 API（网站 · 7日P50 口径，免费使用按授权条款标注来源）。两通道独立运行互不影响，参考价按数据来源分别计算、绝不混算。
       </footer>

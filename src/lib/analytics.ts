@@ -24,6 +24,8 @@ export type MarketSignal = {
   discountPercent: number; // how far the current min sits below med7
   changePercent: number; // latest close vs the previous same-source close
   latestAt: Date; // timestamp of the latest observation backing this signal
+  turnoverScore: number; // #recipes that use this item as a reagent (higher = faster turnover)
+  isVendorItem: boolean; // true = NPC sells this container/consumable (bottles, dyes, thread)
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -74,7 +76,9 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
     med7Distinct: new Set(windowPrices).size,
     discountPercent: med7 > 0 ? (1 - latest.minPrice / med7) * 100 : 0,
     changePercent: previous && previous.marketPrice > 0 ? ((latest.marketPrice - previous.marketPrice) / previous.marketPrice) * 100 : 0,
-    latestAt: latest.timestamp
+    latestAt: latest.timestamp,
+    turnoverScore: item.turnoverScore ?? 0,
+    isVendorItem: item.isVendorItem ?? false
   };
 }
 
@@ -93,6 +97,7 @@ export type DealRadarRow = {
   changePercent: number;
   quantity: number;
   numAuctions: number;
+  turnoverScore: number; // #recipes that use this item as reagent; higher = faster sell-through
 };
 
 // Deal radar, mirroring addon/WoWderhoiAH/Trade.lua refreshDeals: the two
@@ -115,6 +120,10 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
   const minAuctionsGate = RADAR_MIN_AUCTIONS;
   const deals: DealRadarRow[] = [];
   for (const signal of signals) {
+    // Skip NPC-sold containers/consumables (empty vials, lead vials, dyes,
+    // thread). Their AH price is capped at the vendor floor, so flipping them
+    // never makes money; the radar should never surface them.
+    if (signal.isVendorItem) continue;
     // Freshness gate: skip deals whose latest observation is older than the
     // 2h stale window, so the radar never points at a price that already moved.
     if (isStale(signal.latestAt, now)) continue;
@@ -138,7 +147,8 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         discountPercent: (1 - signal.minPrice / signal.vendorPrice) * 100,
         changePercent: signal.changePercent,
         quantity: signal.quantity,
-        numAuctions: signal.numAuctions
+        numAuctions: signal.numAuctions,
+        turnoverScore: signal.turnoverScore
       });
     // Class 2: median discount. Requires history depth (3+ scans) AND a
     // live market (3+ auctions) AND a worthwhile absolute spread —
@@ -173,13 +183,17 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         discountPercent: signal.discountPercent,
         changePercent: signal.changePercent,
         quantity: signal.quantity,
-        numAuctions: signal.numAuctions
+        numAuctions: signal.numAuctions,
+        turnoverScore: signal.turnoverScore
       });
     }
   }
-  // Vendor deals first (risk-free), then by absolute profit.
+  // Vendor deals first (risk-free), then by turnover score (faster sellers),
+  // then by absolute profit. High-turnover items liquidate quickly; stacking
+  // profit on a slow mover ties up gold that could be rotating on a fast one.
   return deals.sort((left, right) => {
     if (left.vendor !== right.vendor) return left.vendor ? -1 : 1;
+    if (left.turnoverScore !== right.turnoverScore) return right.turnoverScore - left.turnoverScore;
     return right.profit - left.profit;
   });
 }

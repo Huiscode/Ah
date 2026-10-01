@@ -17,6 +17,8 @@ function signal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId" | "
     discountPercent: 0,
     changePercent: 0,
     latestAt: new Date(),
+    turnoverScore: 0,
+    isVendorItem: false,
     ...partial
   };
 }

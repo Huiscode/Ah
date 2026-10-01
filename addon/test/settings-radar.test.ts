@@ -63,6 +63,8 @@ function webWith(candidates: Candidate[], rules: Partial<DealRadarRules>): strin
       subCategory: "其他",
       icon: null,
       vendorPrice: 0,
+      turnoverScore: 0,
+      isVendorItem: false,
       snapshots: candidate.closes.map((price, index) => ({
         timestamp: new Date(NOW.getTime() - (last - index) * DAY),
         server: "TestRealm",

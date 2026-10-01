@@ -69,6 +69,8 @@ function classifiedByWeb(candidates: Candidate[]) {
       subCategory: "采矿",
       icon: null,
       vendorPrice: candidate.vendorPrice ?? 0,
+      turnoverScore: 0,
+      isVendorItem: false,
       snapshots: candidate.closes.map((price, index) => ({
         timestamp: new Date(NOW.getTime() - (last - index) * DAY),
         server: "TestRealm",
