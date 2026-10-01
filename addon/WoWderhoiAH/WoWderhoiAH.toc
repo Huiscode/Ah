@@ -3,7 +3,6 @@
 ## Notes: Auction house scanner and price intelligence for WoW: Forever (Infinite) 1.60.1 and retail 12.x. Port of the TBC Anniversary build to the C_AuctionHouse API.
 ## Author: Jim Zhang
 ## Version: 0.3.0
-## IconTexture: Interface\AddOns\WoWderhoiAH\logo.tga
 ## Category: Auctions
 ## Category-zhCN: 拍卖
 ## SavedVariables: WoWderhoiAHDB

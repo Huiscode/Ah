@@ -1,7 +1,7 @@
 # AH 项目跟进文件（HANDOFF）
 
 > **本文件是进入本项目工作的唯一必读入口**：先读它，再按需精读具体文件，不要通读整个代码库。
-> 最后更新：2026-10-01（本地 UTC+2）。对应 git HEAD：`ac7e8ca`（已 push）。
+> 最后更新：2026-10-01（本地 UTC+2）。对应 git HEAD：`b0a3dca`（已 push）。
 > 语言：与用户用中文交流；代码/标识符保持英文。
 
 ## 1. 项目是什么
@@ -192,12 +192,20 @@ POST /api/import/ledger（upsert by uid），只删 DB 会被下一次上传灌�
 - 验证：服务未中断（watcher 21204→4464、next dev 21080→20588）、`npx vitest run` 189 用例全过、
   `tsc --noEmit` 0 错。
 
+### 6.13 移除 logo + 推一版（2026-10-01，已推送）
+- 用户指示：删除 `docs/logo-256.png`、`docs/logo.svg`（确认网页 src/ 与 public/ 均无引用）→ 已删；
+  同步移除 README.md 头部 `<img src="docs/logo-256.png">` 与 docs/README.md 的品牌资源行（否则 GitHub 首页破图）。
+- **后续（见 6.14）**：用户确认后，`logo.tga` / `render-logo.ts` / `logo:render` / TOC `IconTexture` 已一并清除，游戏目录副本同步删除。
+- 推送：commit `b0a3dca`（34 文件，87183+/80-），内容为"推一版"快照——6.5~6.12 全部未提交改动 + 结构整理 +
+  logo 移除 + 账本清空 + 流通分审计报告/数据/脚本；已 push origin main，本地=远端。
+- **防护**：`.gitignore` 新增 `prisma/dev.db.bak-*`，97MB 的 `prisma/dev.db.bak-20261001-consumables` 未入库。
+
 ## 7. 当前状态与待办（重要）
 
 1. **游戏内 /reload + 重新扫描已执行且数据已导入**（10-01 09:27:08 CEST，v4 扫描 1991 items，`alt_price` 1991 行已落库）。P50 曲线从该轮起积累，约 2 天形成完整曲线。
 2. **用户需浏览器硬刷新（Ctrl+F5）一次**：next dev 重启 + 删 .next 后旧 JS chunk 缓存会失效，普通刷新可能仍显示旧页面。
 3. **主页"数据更新于"机制（已查清）**：`latestSnapshotAt = MAX(AuctionSnapshot.timestamp)`，现在只有 addon 单通道，无跨通道歧义。
-4. 6.5/6.6/6.7/6.8/6.9/6.11/6.12 全部改动**未提交未推送**，等待用户指示（规则见 9）。
+4. 6.5~6.12 全部改动已随 `b0a3dca` 提交并推送（见 6.13）；当前唯一未提交改动为本 HANDOFF 的记录更新。
 
 ## 8. 已知坑 / 机制限制（务必记住）
 

@@ -16,7 +16,6 @@
     "addon:watch": "tsx scripts/watch-savedvars.ts",
     "gen:lua-rules": "tsx scripts/gen-lua-rules.ts",
     "icons:fetch": "tsx scripts/fetch-icons.ts",
-    "logo:render": "tsx scripts/render-logo.ts",
     "perf:seed": "tsx scripts/perf/seed.ts",
     "perf:run": "tsx scripts/perf/run.ts",
     "perf:sweep": "tsx scripts/perf/sweep.ts",
