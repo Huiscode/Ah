@@ -82,6 +82,11 @@ describe("parseMarketView", () => {
   it("uses the first value when a param repeats", () => {
     expect(parseMarketView({ q: ["a", "b"], sort: ["med7", "price"] })).toMatchObject({ query: "a", sortKey: "med7" });
   });
+
+  it("maps legacy Gathering/布皮草矿 filter values to the materials group", () => {
+    expect(parseMarketView({ cat: "Gathering" }).category).toBe("材料");
+    expect(parseMarketView({ cat: "布皮草矿" }).category).toBe("材料");
+  });
 });
 
 describe("paginate", () => {
