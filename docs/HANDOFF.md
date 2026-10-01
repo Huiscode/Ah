@@ -23,23 +23,25 @@ WoW Forever 私服（`C:\Program Files (x86)\World of Warcraft\_classic_beta_\`�
 
 ```
 游戏内插件（WoWderhoiAH.lua 扫描 AH + Ledger.lua 扫邮箱）
-   │  ① 内存表：WoWderhoiAH_ScanData（全局，SCAN_PIPELINE_VERSION=3）、WoWderhoiAHDB.ledger
+   │  ① 内存表：WoWderhoiAH_ScanData（全局，SCAN_PIPELINE_VERSION=4）、WoWderhoiAHDB.ledger
    │  ② 只有登出 / /reload 时客户端才把 SavedVariables 落盘（插件无法强制写盘）
    ▼
 SavedVariables 文件（AQT_SAVEDVARS_PATH）
    │  ③ scripts\watch-savedvars.ts 轮询文件（每 tick）：
-   │     - importLatestScan：dataVersion===3 且 scannedAt 严格 > lastImportedScanAt 才导入
+   │     - importLatestScan：dataVersion===4 且 scannedAt 严格 > lastImportedScanAt 才导入
    │       → POST /api/import/addon-scan（写 AuctionSnapshot，source="addon"）
    │     - uploadLedger：每 tick 上传账本 → POST /api/import/ledger（upsert by uid，幂等）
    ▼
 SQLite（Prisma）：prisma\dev.db
-   │  ④ ahledger-importer.ts（独立进程）每 15 分钟拉 AHledger 网站价目表
-   │     → POST /api/import/ahledger（source="ahledger"）；时间戳用网站数据头 observedAt，非轮询时间
    ▼
 网页：src\app\page.tsx（首页）/ ledger（成交账本）/ items\[itemId]（单品）/ recipes（配方库）
 ```
 
 **关键机制**：网页只能看到已落盘的数据。游戏内扫完想立刻同步 → 游戏里 `/reload` 或登出。
+
+> 2026-10-01：AHledger 网站数据通道已整体移除（importer 进程、路由、toggle、相关脚本与
+> 历史数据全部清理）。`AuctionSnapshot` 增列 `alt_price`（P50 close，展示用）；市场价/7日参考
+> 仍统一为插件扫描的 P10 口径，P50 仅作单品页盘中走势的展示曲线，不参与雷达与参考价。
 
 ## 3. 关键路径速查
 
@@ -51,11 +53,10 @@ SQLite（Prisma）：prisma\dev.db
 | SavedVariables（AQT_SAVEDVARS_PATH） | `C:\Program Files (x86)\World of Warcraft\_classic_beta_\WTF\Account\1120133458#1\SavedVariables\WoWderhoiAH.lua` |
 | 数据库 | **`prisma\dev.db`**（~90MB；根目录 `dev.db` 是 0 字节空文件，勿用） |
 | watcher 状态 | `scripts\.watch-state.json`（`lastImportedScanAt`） |
-| ahledger 状态 | `scripts\.ahledger-state.json`（`lastObservedAt`） |
-| 日志 | `logs\`（addon-watch / ahledger-sync / web 的 out/err.log；node stdout 是文件缓冲，0 字节≠没跑，stderr 空才说明无错误） |
+| 日志 | `logs\`（addon-watch / web 的 out/err.log；node stdout 是文件缓冲，0 字节≠没跑，stderr 空才说明无错误） |
 | 插件测试 | `addon\test\`（wow-lua.ts 桥 + wow-stub.lua 桩 + 各 *.test.ts） |
 | 启动服务 | `scripts\launch-services.ps1`（幂等，重复运行不会重复启动） |
-| 环境变量 | `.env`：DATABASE_URL(file:./dev.db→实际 prisma/dev.db)、AQT_SAVEDVARS_PATH、AQT_IMPORT_URL、AHL_API_BASE、AHL_MARKET、AHL_SERVER、AHL_FACTION、AHL_IMPORT_URL、AHL_POLL_SECONDS(900) |
+| 环境变量 | `.env`：DATABASE_URL(file:./dev.db→实际 prisma/dev.db)、AQT_SAVEDVARS_PATH、AQT_IMPORT_URL（AHL_* 为已移除通道的残留配置，无代码读取） |
 
 网页库模块（src\lib\）：`analytics.ts`（行情信号/雷达）、`repositories.ts`（DB 访问）、`market-signals.ts`（按快照代缓存）、
 `freshness.ts`（"数据更新于"标签）、`market-filter.ts`、`alerts.ts`、`recipe-profits.ts`、`ladders.ts`、`addon-scan.ts`、`scan-import.ts`、`import-common.ts`、`daily-summary.ts`。
@@ -64,19 +65,24 @@ SQLite（Prisma）：prisma\dev.db
 
 | 服务 | 进程（tsx 父→node 子 = **1 个逻辑实例**，勿当重复杀） | 说明 |
 |---|---|---|
-| watch-savedvars | 28852 → 12644（父进程 16160=launcher） | 监视 SV → 导入 |
-| ahledger-importer | 12080 → 8256（父进程 16160） | 轮询 AHledger |
-| next dev | 20364（start-server.js 监听 3000）、10796（next dev） | 网页 |
-| 游戏 | WowB.exe PID 28760（5:44 启动，运行中） | — |
+| watch-savedvars | 2368 → 16076（Program Files node） | 监视 SV → 导入（已加并发锁） |
+| next dev | 2160（next dev）→ 11824（start-server，监听 3000） | 网页（Program Files node） |
+| 游戏 | WowB.exe（用户环境） | — |
 
 **不要**因为看到每个脚本 2 个 node 进程就去 kill：那是 tsx CLI 父 + 执行子进程的一对。
+
+> 2026-10-01：ahledger-importer 已随通道移除而停掉并删除，不再启动。
+> **服务必须用 `C:\Program Files\nodejs\node.exe` 启动**——agent 工具环境的 PATH 里 node 是 DoubaoWork 沙箱版
+> （sandbox_runtime\...\node.exe），用它启动会生成挂在沙箱下的服务进程，与用户环境不一致。手动启动示例：
+> `Start-Process "C:\Program Files\nodejs\node.exe" -ArgumentList "node_modules\next\dist\bin\next","dev","--webpack" -WorkingDirectory <root> -WindowStyle Hidden -RedirectStandardOutput logs\web.out.log -RedirectStandardError logs\web.err.log`。
 
 ## 5. 测试与验证命令
 
 ```powershell
 cd C:\Users\Hz\Documents\Workspace\Ah
-npx vitest run addon/test/     # 插件测试：9 文件 69 用例（含 sell-assist 6、ledger-mail 4）
+npx vitest run addon/test/     # 插件测试：10 文件 71 用例（含 scan-category 2、sell-assist 6、ledger-mail 4）
 npx tsc --noEmit               # 全项目类型检查，退出 0
+npx vitest run                 # 全量：27 文件 183 用例
 # 网页账本现状：
 Invoke-RestMethod http://localhost:3000/api/import/ledger
 # 直接查 DB（node 22 内置 sqlite）：
@@ -121,20 +127,49 @@ money=0 → 误判"流拍"记成垃圾 expired，真实 sell 永不生成（产�
 - 首页实测 **~2.3s**（原 17s/6.8s）。tsc 通过、159 用例全过。
 - **坑**：Prisma `$queryRaw` 对 Json 列返回**已反序列化的对象**，不要对返回值再 `JSON.parse`（会得到 "[object Object]" 报错）；raw_payload 存在 ladder<2 档的行属正常（getLatestLadders 要求 ≥2 档才记录）。
 
+### 6.6 NPC必赚链路修复（2026-10-01，已部署 + reload 验证通过，**未提交未推送**）
+现象：雷达从未出现"NPC必赚"。根因：插件 `itemCategoryAndVendor()` 调用 `C_Item.GetItemInfoByID`，
+该客户端**不存在**此 API（三轮游戏内探针实测），vendorP 恒 0 → Class 1 判定永不成立。
+修复：改用 `C_Item.GetItemInfo(itemId)`（1基布局：6=itemType、7=itemSubType、10=iconFileDataID、
+11=sellPrice、12=classID、13=subclassID；`GetItemClassInfo/GetItemSubClassInfo` 均为 nil），
+同款修复 GUI.lua/Trade.lua。部署哈希一致，用户 /reload 后扫出"黄铁矿 [NPC必赚] 20"验证生效。
+测试：`addon\test\scan-category.test.ts`（2 用例，钉死布局契约）。
+
+### 6.7 翡翠 7日参考两页口径统一（2026-10-01，已修复，**未提交未推送**）
+现象：首页"7日参考 23s97" vs 单品页"7日参考 10s"不一致。根因：首页 med7 走 `getMed7Aggregates()`
+SQL 全窗口聚合，单品页走截断后的 snapshots 数组本地重算（96 条截断引入偏差）。
+修复：`med7Info` SQL 全窗口聚合统一两页口径（翡翠=880）。测试/API 实测通过。
+
+### 6.8 砍掉 AHledger 网站通道 + P10/P50 双曲线（2026-10-01，已实施，**未提交未推送**）
+用户拍板：网站数据是另一服务商的 P50 口径，与插件 P10 混用造成两页不一致与口径混乱；且
+"扫描即实时"是误解（replicate 是快照）。方案：**单一数据源（游戏插件扫描）+ 每轮同时产出
+P10/P50 两条 close，P50 仅作展示**。实施：
+- 插件 `finishScan`：items 增 `p50`（weightedPercentile 0.50），Points 每点增 `c50`；`SCAN_PIPELINE_VERSION` 3→4（旧扫描/旧 Points 整体作废，P50 曲线从下次扫描起重新积累约 2 天）；
+- 数据层：`AuctionSnapshot` 增列 `alt_price`（BigInt?）；`addon-scan.ts`/`import-common.ts`/`repositories.ts`/`market-data.ts` 全链路读 P50；`importSnapshot` 移除 ahledger 过滤与占位 Item 分支；
+- UI：单品页盘中走势固定 P10（主）+P50（展示）双线，K线/季节/市场价/7日参考全部固定 P10；首页删 `AhledgerToggle`、footer 与雷达文案改"自扫P10"；
+- 删除：`scripts/ahledger-importer.ts`、`src/app/api/{ahledger/toggle,import/ahledger}`、`src/components/ahledger-toggle.tsx`、`scripts/{backfill-item-categories,prune-ahledger-only}.ts`、package.json `ahledger:sync`、启动/停止脚本中 ahledger 段；
+- 进程：ahledger-importer（12080→8256）已停；DB：`DELETE source='ahledger'`（快照+日汇总全清）、占位 Item、`AppState.ahledgerEnabled` 全清，清理脚本保留为 `scripts/purge-ahledger-history.ts`（幂等）；
+- 验证：tsc 0 错、全量 183 用例通过、插件已部署哈希一致（WoWderhoiAH.lua=7F752C3F…、GeneratedRules.lua=5E29C2EB…）、DB 剩余 ahledger 行=0。**用户需游戏内 /reload 生效并重新扫描**。
+
+### 6.9 "网页端刷新无数据"排查与修复（2026-10-01，已解决，**未提交未推送**）
+现象：用户 /reload + 重扫后，网页仍显示"数据更新于 31 分钟前"，新扫描不进来。实际是**两个叠加问题**：
+1. **watcher 进程跑着旧代码**：watch-savedvars 是早 5:44 启动的，tsx 不热重载，内存里 `SCAN_PIPELINE_VERSION` 还是 3；游戏落盘的是 v4 扫描，版本门禁 `dataVersion !== SCAN_PIPELINE_VERSION` 把它拦下，导致新扫描永不导入。→ 重启 watcher（用 Program Files node，见 §4）。
+2. **next dev 服务端 bundle 里是旧 @prisma/client**：schema 加 `alt_price` 后曾 `prisma generate` 报 EPERM（query_engine dll 被 next dev 锁定），磁盘 client 虽更新，但 next dev 的 .next 缓存内联了旧的校验器 → 新代码（importSnapshot 传 altPrice）运行时报 `Unknown argument altPrice`（命令行列测试则正常，因为命令行加载新 client）。→ 停服务 → 重新 `npx prisma generate` → **删 `.next` 清缓存** → 重启，错误消失，成功导入 1991 items（07:27:08Z）。
+3. **附带发现**：SV 单次落盘会触发多次 watch change 事件 → 并发两次导入，第二次撞 `item_id` 唯一约束报错（数据无损伤，但极端下两次都过 timestamp 去重会插双份）。已在 `importLatestScan` 加 `importInFlight` 互斥锁（finally 释放，tsx 重启生效）。
+4. 验证：DB 最新 addon 快照 = 1790839628000（09:27:08 CEST），`alt_price` 填充 1991 行（P50 已开始积累）；`/api/market` 2665 signals / 1.8s；首页 NPC必赚 8 条、单品页 P10/P50 图例与 7日参考正常。
+5. **用户端注意**：浏览器如仍显示旧页面，**硬刷新**（Ctrl+F5）一次——next dev 重启 + 删 .next 后旧 JS chunk 缓存会失效。
+
+### 6.10 修复命令备忘（下次再遇"新扫描不进来"）
+- 查 SV `dataVersion`/`scannedAt` → `.watch-state.json` → `logs\addon-watch.out.log` 有无 `Imported` 行；
+- watcher 没导入：先确认进程启动时间早于 SCAN_PIPELINE_VERSION 改动 → 重启 watcher；
+- API 报 `Unknown argument`：删 `.next` + `npx prisma generate` + 重启 next dev。
+
 ## 7. 当前状态与待办（重要）
 
-1. **用户需要在游戏内 `/reload`**（尚未确认是否已执行）：
-   - 加载修复后的 Trade.lua / Ledger.lua（部署已同步、哈希一致）；
-   - 新 Ledger.lua 启动时 `pruneGarbage()` 会清掉游戏内存里的 4 条垃圾账本；
-   - **reload 前游戏若再次落盘，4 条垃圾会回流到网页 DB**：已发生一次——10-01 06:23:32 游戏落盘（覆盖了人工清理的 SV 文件，SV 现在含垃圾+新扫描），垃圾曾回流，**已于 10-01 06:4x 再次从网页 DB 删除**（现 4 条：3 buy + 1 补录 sell）；若再回流凭 uid 1790826407-4/5、1790826510-6/7 删除。
-   - reload 后主页"数据更新于"会更新为最新扫描时间。
-2. **主页"数据更新于"机制（已查清）**：
-   - 显示逻辑：`page.tsx:62` `describeFreshness(latestSnapshotAt, new Date())`，`latestSnapshotAt = MAX(AuctionSnapshot.timestamp)`（跨 addon + ahledger 两通道）；
-   - 今早 5:54:18 / 6:09:58 两轮 addon 扫描**已导入网页**（各 2006/2005 条，DB 最新 addon 快照 1790827798=06:09:58 本地）；`.watch-state.json` 已推进到 1790827798；
-   - ahledger 通道最新 = 1790822889（AHledger 网站该服数据轮 04:48，**站点自己没更新**，导入器正常轮询跳过）；
-   - 已向用户提议（**未定**）：把标签改为只显示 addon 通道时间 / 标明通道来源，避免误读。
-3. **网页性能优化已完成（见 6.5）**：`src/lib/repositories.ts`、`src/lib/ladders.ts`、`src/app/api/market/route.ts` 已改，**未提交未推送**，等待用户指示。
-4. 无其他进行中的任务。
+1. **游戏内 /reload + 重新扫描已执行且数据已导入**（10-01 09:27:08 CEST，v4 扫描 1991 items，`alt_price` 1991 行已落库）。P50 曲线从该轮起积累，约 2 天形成完整曲线。
+2. **用户需浏览器硬刷新（Ctrl+F5）一次**：next dev 重启 + 删 .next 后旧 JS chunk 缓存会失效，普通刷新可能仍显示旧页面。
+3. **主页"数据更新于"机制（已查清）**：`latestSnapshotAt = MAX(AuctionSnapshot.timestamp)`，现在只有 addon 单通道，无跨通道歧义。
+4. 6.5/6.6/6.7/6.8/6.9 全部改动**未提交未推送**，等待用户指示（规则见 9）。
 
 ## 8. 已知坑 / 机制限制（务必记住）
 
@@ -148,7 +183,8 @@ money=0 → 误判"流拍"记成垃圾 expired，真实 sell 永不生成（产�
 - 时间换算锚点：1790826407 = 2026-10-01 03:46:47 UTC = 05:46:47 CEST（本地 UTC+2）；
   1790803107 ≈ 2026-09-30 23:18 CEST；1790822889 = 10-01 04:48:09 CEST。
 - 关键物品 ID：大型铜壳炸弹=4370（成交 3s / 买入 2s25c）、魔纹布=4338、亚麻布=2589、小飞刀=2947、美味鼠尾鱼=21217。
-- AHL1 价目表格式（ahledger.com/developers）：header `AHL1|market|unixtime|rowCount`，行 `itemId:median:minBuyout:quantity:median7d:median30d:low30d:high30d`。
+- **P10/P50 语义**：P10=按挂单量加权的 10 分位价（买家真实成交价，市场价/7日参考口径）；
+  P50=同扫描的 50 分位价（市场中心，仅展示）。P50 历史上有 v2 用其做市场价被高价钓单污染的教训，故只做展示。
 
 ## 9. 用户偏好 / 协作纪律
 
@@ -160,7 +196,7 @@ money=0 → 误判"流拍"记成垃圾 expired，真实 sell 永不生成（产�
 ## 10. 下一步常见场景速查（给下一个 AI）
 
 - **用户说"网页没更新/数据更新于 X 前"** → 先查：SV 文件 scannedAt 与 LastWriteTime、`.watch-state.json`、
-  DB `MAX(timestamp) GROUP BY source`、AHledger 站点当前 observedAt。结论几乎总是"游戏没落盘"或"站点没更新"，按第 7 节答复。
+  DB `MAX(timestamp) GROUP BY source`。结论几乎总是"游戏没落盘"，按第 7 节答复。
 - **动插件逻辑** → 读 `addon\WoWderhoiAH\` 对应 .lua；测试改 `addon\test\`（桥/桩：wow-lua.ts、wow-stub.lua）；改完跑 vitest + tsc，复制到游戏目录并比对哈希。
-- **动网页** → 读 `src\lib\` + `src\app\` 对应文件；页面/组件改动跑 tsc；DB 结构改动需注意 prisma/dev.db 与 schema 一致性。
+- **动网页** → 读 `src\lib\` + `src\app\` 对应文件；页面/组件改动跑 tsc；DB 结构改动需注意 prisma/dev.db 与 schema 一致性（加列用 `npx prisma db push`，勿忘同时改 `addon-scan.ts`/`import-common.ts`/`repositories.ts`/`market-data.ts` 的类型与 SQL SELECT 列）。
 - **查账本** → `GET http://localhost:3000/api/import/ledger`。

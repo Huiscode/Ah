@@ -76,7 +76,18 @@ async function pullWebRules(parsed: Record<string, unknown>) {
   } catch {}
 }
 
+// A single game SV flush can fire several watch "change" events (mtime +
+// size, or a watcher tick racing a write). importLatestScan must never run
+// twice concurrently: two imports of the same scan would either collide on
+// the item_id unique constraint or, worse, both pass the timestamp dedupe
+// probe and insert duplicate snapshot rows. One in-flight flag serializes
+// them; the loser returns immediately and the winner updates the state.
+let importInFlight = false;
+
 async function importLatestScan() {
+  if (importInFlight) return;
+  importInFlight = true;
+  try {
   const parsed = parseSavedVariables(readFileSync(savedVarsPath!, "utf8"));
   await pullWebRules(parsed);
   await syncRulesIfChanged(parsed);
@@ -111,6 +122,9 @@ async function importLatestScan() {
   writeState({ lastImportedScanAt });
   if (radarRules !== undefined) lastSentRulesJson = JSON.stringify(radarRules);
   console.log(`Imported ${body.imported} items from scan ${body.scannedAt}.`);
+  } finally {
+    importInFlight = false;
+  }
 }
 
 // Upload the trading ledger (Stage D). It rides on every watch tick so a buy
