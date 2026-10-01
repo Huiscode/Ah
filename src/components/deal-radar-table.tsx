@@ -32,6 +32,7 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
   const [sortAsc, setSortAsc] = useState(false);
   const [, force] = useState(0);
   const [category, setCategory] = usePersistedState<string>("wah:deal-radar:category", "");
+  const [onlyLiquid, setOnlyLiquid] = usePersistedState<boolean>("wah:deal-radar:onlyLiquid", false);
   const [fMinPrice, setFMinPrice] = usePersistedState<number>("wah:filter:minPrice", 0);
   const [fMaxPrice, setFMaxPrice] = usePersistedState<number>("wah:filter:maxPrice", 0);
   const [fGap1, setFGap1] = usePersistedState<number>("wah:filter:gap1", 0);
@@ -82,12 +83,21 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
   }
 
 
+  // 仅限高流通：只保留有流通分的商品（turnoverScore > 0）。
+  if (onlyLiquid) rows = rows.filter((deal) => deal.turnoverScore > 0);
+
   if (sortKey) {
     rows.sort((left, right) => {
       const a = sortKey === "name" ? left.name : sortKey === "price" ? (prices.get(left.itemId) ?? 0) : left[sortKey];
       const b = sortKey === "name" ? right.name : sortKey === "price" ? (prices.get(right.itemId) ?? 0) : right[sortKey];
       if (a === b) return right.profit - left.profit;
       return sortAsc ? (a > b ? 1 : -1) : (a < b ? 1 : -1);
+    });
+  } else if (onlyLiquid) {
+    // 仅限高流通的默认排序：流通分从高到低，同分按绝对盈利降序。
+    rows.sort((left, right) => {
+      if (left.turnoverScore !== right.turnoverScore) return right.turnoverScore - left.turnoverScore;
+      return right.profit - left.profit;
     });
   }
 
@@ -113,6 +123,15 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
             <option key={value} value={value}>{categoryLabel(value)}</option>
           ))}
         </select>
+        <label className="flex cursor-pointer select-none items-center gap-1.5 text-slate-100" title="只显示有流通分的商品，默认按流通分从高到低排列">
+          <input
+            type="checkbox"
+            checked={onlyLiquid}
+            onChange={(event) => setOnlyLiquid(event.target.checked)}
+            className="h-3.5 w-3.5 accent-terminal-amber"
+          />
+          仅限高流通商品
+        </label>
         <span className="text-terminal-muted">{rows.length} / {deals.length} 条</span>
       </div>
       <div className="max-h-[344px] overflow-y-auto [scrollbar-gutter:stable]">
