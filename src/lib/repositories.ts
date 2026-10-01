@@ -2,19 +2,131 @@ import { prisma } from "@/lib/prisma";
 import { type MarketHistory } from "@/lib/market-data";
 import type { DbRecipe, RecipeMaterial } from "@/lib/recipe-profits";
 
+type ItemRaw = {
+  id: string;
+  item_id: number;
+  name: string;
+  quality: string;
+  category: string;
+  sub_category: string;
+  icon: string | null;
+  vendor_price: number;
+  turnover_score: number;
+  is_vendor_item: number;
+  created_at: number | string | Date;
+  updated_at: number | string | Date;
+};
+
+type SnapshotRaw = {
+  id: string;
+  item_id: number;
+  timestamp: number | string | Date;
+  server: string;
+  faction: string;
+  source: string;
+  min_price: bigint | number;
+  market_price: bigint | number;
+  quantity: number;
+  num_auctions: number;
+  raw_payload: string | null;
+  rn?: number;
+};
+
+type DailyRaw = {
+  id: string;
+  item_id: number;
+  date: number | string | Date;
+  source: string;
+  open_price: bigint | number;
+  close_price: bigint | number;
+  high_price: bigint | number;
+  low_price: bigint | number;
+  volume: number;
+  rn?: number;
+};
+
+function toDate(v: number | string | Date): Date {
+  return v instanceof Date ? v : new Date(v);
+}
+
+function toNumber(v: bigint | number): number {
+  return typeof v === "bigint" ? Number(v) : v;
+}
+
+// The homepage universe: every item plus its most recent 48 snapshots and 30
+// daily summaries. Written as raw SQL because the Prisma include form pulls
+// ALL snapshot rows (37x10^4+) through the ORM just to truncate in JS —
+// measured ~5s; the window-function version is a few hundred ms.
 export async function getMarketUniverse(): Promise<MarketHistory[]> {
-  const rows = await prisma.item.findMany({
-    include: {
-      snapshots: { orderBy: { timestamp: "asc" }, take: -48 },
-      dailySummaries: { orderBy: { date: "asc" }, take: -30 }
-    },
-    orderBy: { name: "asc" }
-  });
-  for (const row of rows as any[]) {
-    for (const s of row.snapshots) { s.minPrice = Number(s.minPrice); s.marketPrice = Number(s.marketPrice); }
-    for (const d of row.dailySummaries) { d.openPrice = Number(d.openPrice); d.closePrice = Number(d.closePrice); d.highPrice = Number(d.highPrice); d.lowPrice = Number(d.lowPrice); }
+  const [items, snaps, dailies] = await Promise.all([
+    prisma.$queryRaw<ItemRaw[]>`SELECT * FROM "Item" ORDER BY "name" ASC`,
+    prisma.$queryRaw<SnapshotRaw[]>`
+      WITH ranked AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "timestamp" DESC) AS rn
+        FROM "AuctionSnapshot"
+      )
+      SELECT "id", "item_id", "timestamp", "server", "faction", "source",
+             "min_price", "market_price", "quantity", "num_auctions"
+      FROM ranked WHERE rn <= 48 ORDER BY "item_id", "timestamp" ASC`,
+    prisma.$queryRaw<DailyRaw[]>`
+      WITH ranked AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "date" DESC) AS rn
+        FROM "DailySummary"
+      )
+      SELECT * FROM ranked WHERE rn <= 30 ORDER BY "item_id", "date" ASC`
+  ]);
+
+  const snapsByItem = new Map<number, SnapshotRaw[]>();
+  for (const s of snaps) {
+    const list = snapsByItem.get(s.item_id);
+    if (list) list.push(s);
+    else snapsByItem.set(s.item_id, [s]);
   }
-  return rows as any;
+  const dailyByItem = new Map<number, DailyRaw[]>();
+  for (const d of dailies) {
+    const list = dailyByItem.get(d.item_id);
+    if (list) list.push(d);
+    else dailyByItem.set(d.item_id, [d]);
+  }
+
+  return items.map((i) => ({
+    id: i.id,
+    itemId: Number(i.item_id),
+    name: i.name,
+    quality: i.quality,
+    category: i.category,
+    subCategory: i.sub_category,
+    icon: i.icon,
+    vendorPrice: toNumber(i.vendor_price),
+    turnoverScore: toNumber(i.turnover_score),
+    isVendorItem: Boolean(i.is_vendor_item),
+    createdAt: toDate(i.created_at),
+    updatedAt: toDate(i.updated_at),
+    snapshots: (snapsByItem.get(Number(i.item_id)) ?? []).map((s) => ({
+      id: s.id,
+      itemId: Number(s.item_id),
+      timestamp: toDate(s.timestamp),
+      server: s.server,
+      faction: s.faction,
+      source: s.source,
+      minPrice: toNumber(s.min_price),
+      marketPrice: toNumber(s.market_price),
+      quantity: toNumber(s.quantity),
+      numAuctions: toNumber(s.num_auctions),
+      rawPayload: (s.raw_payload ?? null) as unknown
+    })),
+    dailySummaries: (dailyByItem.get(Number(i.item_id)) ?? []).map((d) => ({
+      id: d.id,
+      itemId: Number(d.item_id),
+      date: toDate(d.date),
+      source: d.source,
+      openPrice: toNumber(d.open_price),
+      closePrice: toNumber(d.close_price),
+      highPrice: toNumber(d.high_price),
+      lowPrice: toNumber(d.low_price),
+      volume: toNumber(d.volume)
+    }))
+  }));
 }
 
 

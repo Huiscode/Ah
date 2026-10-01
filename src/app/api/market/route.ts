@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { buildMarketSignal } from "@/lib/analytics";
-import { getMarketUniverse } from "@/lib/repositories";
+import { getMarketSignals } from "@/lib/market-signals";
 
 export async function GET() {
-  const universe = await getMarketUniverse();
-  const now = new Date();
-  const signals = universe.filter((item) => item.snapshots.length > 0).map((item) => buildMarketSignal(item, now));
+  // Reuse the per-snapshot-generation cache instead of rebuilding the whole
+  // market on every request (previously ~12-17s each hit).
+  const { signals } = await getMarketSignals();
   return NextResponse.json({ signals });
 }
