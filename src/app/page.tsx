@@ -72,6 +72,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const deals = latestAddonRound === null ? allDeals : allDeals.filter((deal) => latestAddonRound.has(deal.itemId));
   const radarCategories = groupedCategoryOptions(Array.from(new Set(deals.map((deal) => deal.category))));
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
+  // 流通分（turnoverScore）用于制造利润面板的物品名徽章。
+  const turnoverScores = new Map(signals.map((signal) => [signal.itemId, signal.turnoverScore]));
   // P0-B: full-recipe profit library. Revenue side = live AH price (自扫P10
   // → 网站P50 per signal) or the vendor floor when the market has no listing;
   // the floor index merges the curated dictionary, DB Item.vendorPrice and
@@ -139,7 +141,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         <div className="space-y-3">
           <PriceLadderPanel />
           <RadarParamsPanel initialRules={radarRules} />
-          <RecipeProfitPanel rows={conversionRows} prices={priceByItemId} floorPrices={floorPriceIndex} limitPerProfession={8} />
+          <RecipeProfitPanel rows={conversionRows} prices={priceByItemId} floorPrices={floorPriceIndex} limitPerProfession={8} turnoverScores={turnoverScores} />
           <Panel>
             <PanelHeader title="关注列表" action={<Star size={13} className="text-terminal-amber" />} />
             <div className="space-y-2 p-3 font-mono text-xs">

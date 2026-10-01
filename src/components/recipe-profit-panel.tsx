@@ -27,16 +27,31 @@ function fmtCopper(copper: number): string {
   return sign + parts.join("");
 }
 
+// 流通分徽章：被多少个配方当材料使用（越高周转越快），与市场表口径一致。
+function TurnoverBadge({ score }: { score: number }) {
+  if (score <= 0) return null;
+  const cls =
+    score >= 50
+      ? "bg-green-500/15 text-green-400"
+      : score >= 15
+        ? "bg-amber-500/15 text-amber-400"
+        : "bg-slate-500/15 text-slate-400";
+  return (
+    <span className={`shrink-0 rounded px-1 py-0.5 text-[9px] ${cls}`} title="被 N 个配方使用，流通快">{score}</span>
+  );
+}
+
 // P0-B 制造利润面板：全配方库（游戏内 /wahrecipes 扫描 + 内置经典种子），
 // 默认按服务端利润率排序，可按专业过滤；悬停显示完整配方链路与价格来源
 // （AH 价或保底价兜底）。首页以 limitPerProfession 精简为每专业 Top N 并
 // 提供 viewAllHref 跳转独立配方库页；配方库页自身不传 limit 显示全量。
-export function RecipeProfitPanel({ rows, prices, floorPrices, limitPerProfession, viewAllHref }: {
+export function RecipeProfitPanel({ rows, prices, floorPrices, limitPerProfession, viewAllHref, turnoverScores }: {
   rows: RecipeProfitRow[];
   prices: Map<number, number>;
   floorPrices: Map<number, number>;
   limitPerProfession?: number;
   viewAllHref?: Route;
+  turnoverScores?: Map<number, number>;
 }) {
   const professions = useMemo(() => {
     const seen = new Set<string>();
@@ -96,10 +111,22 @@ export function RecipeProfitPanel({ rows, prices, floorPrices, limitPerProfessio
             暂无配方库。游戏内打开专业技能窗口（按 K），运行 <span className="text-terminal-amber">/wahrecipes</span> 扫描已学配方；配方随下次 /wahscan 自动上传。
           </div>
         )}
-        {shown.map((row) => (
+        {shown.map((row) => {
+          // 配方均为单输出且输出名=配方名，可安全绑定产出物品的单品页；
+          // 非 craft / 异常数据兜底为纯文本。
+          const primaryOutput = row.recipe.outputs[0];
+          const primaryTurnover = primaryOutput ? (turnoverScores?.get(primaryOutput.itemId) ?? 0) : 0;
+          return (
           <div key={`${row.recipe.profession}|${row.recipe.name}`} className="group relative flex items-center justify-between gap-2">
             <span className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-slate-100">{row.recipe.name}</span>
+              {primaryOutput ? (
+                <Link href={`/items/${primaryOutput.itemId}`} target="_blank" rel="noopener noreferrer" data-no-ladder className="truncate text-slate-100 hover:text-terminal-amber hover:underline" title="打开商品终端">
+                  {row.recipe.name}
+                </Link>
+              ) : (
+                <span className="truncate text-slate-100">{row.recipe.name}</span>
+              )}
+              <TurnoverBadge score={primaryTurnover} />
               <span className="shrink-0 text-[9px] text-terminal-muted">{row.recipe.skillLevel}</span>
             </span>
             <span className="flex shrink-0 items-center gap-3">
@@ -114,7 +141,11 @@ export function RecipeProfitPanel({ rows, prices, floorPrices, limitPerProfessio
                 const subtotal = unit === undefined ? undefined : unit * material.quantity;
                 return (
                   <div key={material.itemId} className="flex items-center justify-between gap-2">
-                    <span className="text-terminal-muted">{material.name} ×{material.quantity}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Link href={`/items/${material.itemId}`} target="_blank" rel="noopener noreferrer" data-no-ladder className="pointer-events-auto truncate text-terminal-muted hover:text-terminal-amber hover:underline" title="打开商品终端">{material.name}</Link>
+                      <TurnoverBadge score={turnoverScores?.get(material.itemId) ?? 0} />
+                      <span className="shrink-0 text-terminal-muted">×{material.quantity}</span>
+                    </span>
                     <span>
                       {unit === undefined ? "无价" : <><span className="text-terminal-muted">@</span><CopperAmount copper={unit} /></>}
                       {subtotal !== undefined && <span className="ml-1 text-terminal-muted">=<CopperAmount copper={subtotal} />{prices.get(material.itemId) === undefined ? " 保底" : ""}</span>}
@@ -128,7 +159,11 @@ export function RecipeProfitPanel({ rows, prices, floorPrices, limitPerProfessio
                 const subtotal = unit === undefined ? undefined : unit * output.quantity;
                 return (
                   <div key={output.itemId} className="flex items-center justify-between gap-2">
-                    <span className="text-terminal-muted">{output.name} ×{output.quantity}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Link href={`/items/${output.itemId}`} target="_blank" rel="noopener noreferrer" data-no-ladder className="pointer-events-auto truncate text-terminal-muted hover:text-terminal-amber hover:underline" title="打开商品终端">{output.name}</Link>
+                      <TurnoverBadge score={turnoverScores?.get(output.itemId) ?? 0} />
+                      <span className="shrink-0 text-terminal-muted">×{output.quantity}</span>
+                    </span>
                     <span>
                       {unit === undefined ? "无价" : <><span className="text-terminal-muted">@</span><CopperAmount copper={unit} /></>}
                       {subtotal !== undefined && <span className="ml-1 text-terminal-muted">=<CopperAmount copper={subtotal} />{prices.get(output.itemId) === undefined ? " 保底" : ""}</span>}
@@ -143,7 +178,8 @@ export function RecipeProfitPanel({ rows, prices, floorPrices, limitPerProfessio
               <div className="mt-1 text-[9px] text-terminal-muted">产出价已含 5% 拍卖税；标"保底"的价格为 NPC 收购价兜底（无实时 AH 价）。</div>
             </div>
           </div>
-        ))}
+          );
+        })}
         {rows.length > 0 && (hiddenCount > 0 || missingCount > 0) && (
           <div className="border-t border-terminal-border pt-2 text-[10px] text-terminal-muted">
             {hiddenCount > 0 && <>另有 {hiddenCount} 个可算配方未在此列出</>}

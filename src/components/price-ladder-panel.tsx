@@ -17,6 +17,8 @@ export function PriceLadderPanel() {
     const handler = (e: MouseEvent) => {
       const anchor = (e.target as HTMLElement).closest("a[href^='/items/']") as HTMLAnchorElement | null;
       if (!anchor) return;
+      // 带 data-no-ladder 的链接（如制造利润面板的物品名）不触发价格档位。
+      if (anchor.hasAttribute("data-no-ladder")) return;
       const m = anchor.href.match(/\/items\/(\d+)/);
       if (m) setItemId(Number(m[1]));
     };
