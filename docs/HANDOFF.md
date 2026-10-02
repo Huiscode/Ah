@@ -1,7 +1,7 @@
 # AH 项目跟进文件（HANDOFF）
 
 > **本文件是进入本项目工作的唯一必读入口**：先读它，再按需精读具体文件，不要通读整个代码库。
-> 最后更新：2026-10-01（本地 UTC+2）。对应 git HEAD：`b0a3dca`（已 push）。
+> 最后更新：2026-10-02（本地 UTC+2）。对应 git HEAD：`9a32f5a`（已 push；工作树含 6.15 配方库回填等未提交改动）。
 > 语言：与用户用中文交流；代码/标识符保持英文。
 
 ## 1. 项目是什么
@@ -200,12 +200,54 @@ POST /api/import/ledger（upsert by uid），只删 DB 会被下一次上传灌�
   logo 移除 + 账本清空 + 流通分审计报告/数据/脚本；已 push origin main，本地=远端。
 - **防护**：`.gitignore` 新增 `prisma/dev.db.bak-*`，97MB 的 `prisma/dev.db.bak-20261001-consumables` 未入库。
 
+### 6.14 清除 logo 残留（2026-10-01，已提交推送 9a32f5a）
+- 背景：用户实测游戏内插件列表从未显示图标——Forever 1.60.1 客户端插件列表纯文字，不渲染 `logo.tga`；
+  `logo.tga` 虽已部署（游戏目录 16KB）但客户端不显示，整条 logo 链路无实际用途。
+- 清除：`addon\WoWderhoiAH\logo.tga`（仓库 + 游戏目录副本）、`scripts\render-logo.ts`、package.json
+  `logo:render` 条目、`WoWderhoiAH.toc` 的 `## IconTexture` 行（指向已删文件）；更新后的 TOC 已同步游戏目录。
+- 部署流程只复制 `*.lua`，本次不影响后续部署与哈希校验；需要时均可从 git 历史恢复。
+- 验证：tsc 0 错、vitest 28 文件 189 用例全过；服务未动。
+
+### 6.15 配方库审计与回填（2026-10-02，未提交）
+- 背景：用户问"10-01 配方/物品扫描后，网页端配方库面板是否需要补充或修改"。用线上同款管线
+  （getRecipes + getMarketSignals + computeRecipeProfits）全量核对：Recipe 2265 条（craft 1945 +
+  merchant 320，页面注释写死 1953/290 已过时）、可算利润 475、缺价 1790（79%）、1724 个配方产出
+  物品缺 Item 行、2 条工程消耗品配方（4365/274048）只存在于 forever-consumables.json 未入表。
+- 修复（脚本 `scripts/backfill-recipe-library.ts`，幂等可重跑）：
+  ① **2 条工程配方入表**：劣质炸药配方（4365，skill 75，材料 粗制火药粉×3+亚麻布，产出 劣质炸药×2）、
+    9-60电池组（274048，skill 125，材料 天蓝染料+黄铁矿+铁锭，spell 1293088）。数据来自
+    `docs/archive/.tmp-page-engineering.html`（foreverchanges 工程页实抓）。**命名规则（用户 10-02 指定）**：
+    配方名 = 物品同名 + "配方"两字——4365 命名"劣质炸药配方"（与低级配方 4358"劣质炸药"区分，
+    Recipe 唯一键 (name, profession, category) 不冲突）。
+  ② **NPC 材料卖价补字典**（`src/data/vendor-prices.ts`）：6 条原 pending（itemId=0）的 Forever
+    常驻材料 ID 已由扫描确认，提升为正式条目——品红染料 249430=250、翠绿染料 249431=375、
+    砂纸 249432=250、天蓝染料 249409=125、黄铁矿 249391=100、无瑕鳞片 249429=375。
+    （保留：属 NPC 保底价体系，非"等 AH"补价；用户如要连这些也等 AH 可再撤。）
+  ③ **产出物品 Item 行补录 1727 条**：名字/品质取自 `docs/archive/.tmp-items-list-1..20.html`
+    （9,708 件新增/改动清单中命中 476 件）或配方 outputs JSON 兜底；category=其它、sub_category=未知
+    （与既有占位行一致）；缺 Item 行数 1724 → **0**。列表页只覆盖"新增或改动"物品，经典未改动物品
+    由配方 JSON 补名/品质。产出 NPC 收购价一律不补（见下方缺价方针）。
+  ④ **页面文案**（`src/app/recipes/page.tsx`）：注释 1953/290 → 1947/320（实际值，数字以面板"统计"
+    卡为准）；build 描述改"wx-wow 69913 + 客户端 1.60.1（以游戏内实装为准）"——网站不同页面
+    70124/70170 显示不一致，不再写死网站小版本。
+- **缺价方针（用户 10-02 指定）**：所有有数据但缺价格的物品/产出只保留"缺价"标记，不做任何补价
+  （不做材料成本递推引擎、不抓详情页补产出卖价），等 AH 扫描到该物品时自然有价。据此已撤销
+  274048 的 2500 铜卖价（曾实抓自详情页"卖价：25银"），9-60电池组保持缺价。
+- 结果（真实页面 GET /recipes 验证）：Recipe **2267**（craft 1947 + merchant 320）、可算利润
+  **475 → 477**、缺价 **1790**（数字与基线持平但构成已变：+2 新配方中粗制炸药 ok、9-60电池组缺价；
+  品红染料等 NPC 材料不再缺价）。剩余缺价大头：熟化毛皮/魔化皮/奥金锭/精华等制造类材料与产出物品，
+  按方针保留缺价标记，等 AH 自然补上。
+- 验证：tsc --noEmit 0 错；页面 HTTP 200 且两条新配方已渲染。未提交（用户未说推）。
+
 ## 7. 当前状态与待办（重要）
 
 1. **游戏内 /reload + 重新扫描已执行且数据已导入**（10-01 09:27:08 CEST，v4 扫描 1991 items，`alt_price` 1991 行已落库）。P50 曲线从该轮起积累，约 2 天形成完整曲线。
 2. **用户需浏览器硬刷新（Ctrl+F5）一次**：next dev 重启 + 删 .next 后旧 JS chunk 缓存会失效，普通刷新可能仍显示旧页面。
 3. **主页"数据更新于"机制（已查清）**：`latestSnapshotAt = MAX(AuctionSnapshot.timestamp)`，现在只有 addon 单通道，无跨通道歧义。
-4. 6.5~6.12 全部改动已随 `b0a3dca` 提交并推送（见 6.13）；当前唯一未提交改动为本 HANDOFF 的记录更新。
+4. 6.5~6.12 全部改动已随 `b0a3dca` 提交并推送（见 6.13），6.14 已随 `9a32f5a` 提交推送。当前未提交改动：
+   配方库回填（6.15，含 vendor-prices.ts、recipes/page.tsx、backfill-recipe-library.ts、Item/Recipe 表数据、HANDOFF）
+   及配方库相关既有 WIP（src/app/page.tsx 的 data-no-ladder、src/lib/quality.ts 的 qualityColorClassById、
+   recipe-profit-panel.tsx、quality.test.ts）——均保持原样，待用户说"推"再处理。
 
 ## 8. 已知坑 / 机制限制（务必记住）
 

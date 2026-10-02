@@ -92,6 +92,15 @@ export const vendorPrices: VendorPriceEntry[] = [
 
   // Forever-only items with an already-known ID (from the project DB).
   { itemId: 249410, name: "硫酸", sellPriceCopper: 125, source: "forever-beta" },
+  // Forever-only NPC 常驻出售材料：ID 原为 0（待客户端 dump），2026-10-02 由
+  // 游戏扫描/配方数据确认后补齐；名字以 Item 表/客户端译名为准
+  // （旧字典名为"染色剂"）。
+  { itemId: 249409, name: "天蓝染料", sellPriceCopper: 125, source: "forever-beta" },
+  { itemId: 249430, name: "品红染料", sellPriceCopper: 250, source: "forever-beta" },
+  { itemId: 249431, name: "翠绿染料", sellPriceCopper: 375, source: "forever-beta" },
+  { itemId: 249432, name: "砂纸", sellPriceCopper: 250, source: "forever-beta" },
+  { itemId: 249429, name: "无瑕鳞片", sellPriceCopper: 375, source: "forever-beta", note: "稀有剥皮材料（物品等级 60）" },
+  { itemId: 249391, name: "黄铁矿", sellPriceCopper: 100, source: "forever-beta", note: "稀有采矿材料（物品等级 25）" },
 ];
 
 // Forever-only items whose itemId is not publicly published; the addon scan
@@ -104,15 +113,9 @@ export const pendingVendorItems: VendorPriceEntry[] = [
   { itemId: 0, name: "Legionit 锭", sellPriceCopper: 5000, source: "forever-beta", note: "炼金转化（重瑟银锭 + 恶魔水晶）" },
   { itemId: 0, name: "Tobernit", sellPriceCopper: 15000, source: "forever-beta", note: "附魔 300+ 材料" },
   { itemId: 0, name: "恶魔水晶", sellPriceCopper: 3000, source: "forever-beta" },
-  { itemId: 0, name: "天蓝染色剂", sellPriceCopper: 125, source: "forever-beta" },
-  { itemId: 0, name: "品红染色剂", sellPriceCopper: 250, source: "forever-beta" },
-  { itemId: 0, name: "翠绿染色剂", sellPriceCopper: 375, source: "forever-beta" },
-  { itemId: 0, name: "砂纸", sellPriceCopper: 250, source: "forever-beta" },
   { itemId: 0, name: "厚柴薪", sellPriceCopper: 50000, source: "forever-beta", note: "商人卖价 20g / 回购 5g（非套利品，仅参考）" },
   { itemId: 0, name: "力量鱼（大）", sellPriceCopper: 10000, source: "forever-beta", note: "带重量大鱼 1s/磅；103磅 1g3s" },
   { itemId: 0, name: "死亡之莲", sellPriceCopper: 1500, source: "forever-beta" },
-  { itemId: 0, name: "无瑕鳞片", sellPriceCopper: 375, source: "forever-beta", note: "稀有剥皮材料（物品等级 60）" },
-  { itemId: 0, name: "Pyrit（黄铁矿）", sellPriceCopper: 100, source: "forever-beta", note: "稀有采矿材料（物品等级 25）" },
   { itemId: 0, name: "Bauxit（铝土矿）", sellPriceCopper: 250, source: "forever-beta", note: "稀有采矿材料（物品等级 45）" },
 ];
 
