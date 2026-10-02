@@ -10,6 +10,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Coins } from "@/components/coins";
 import { CopperAmount } from "@/components/copper-amount";
 import { formatPercent } from "@/lib/utils";
+import { qualityColorClassById } from "@/lib/quality";
 import { usePersistedState } from "@/lib/use-persisted-state";
 
 // Unambiguous compact copper: 193 -> "1g93c", -113 -> "-1s13c". Mirrors the
@@ -120,7 +121,7 @@ export function RecipeProfitPanel({ rows, prices, floorPrices, limitPerProfessio
           <div key={`${row.recipe.profession}|${row.recipe.name}`} className="group relative flex items-center justify-between gap-2">
             <span className="flex min-w-0 items-center gap-2">
               {primaryOutput ? (
-                <Link href={`/items/${primaryOutput.itemId}`} target="_blank" rel="noopener noreferrer" data-no-ladder className="truncate text-slate-100 hover:text-terminal-amber hover:underline" title="打开商品终端">
+                <Link href={`/items/${primaryOutput.itemId}`} target="_blank" data-no-ladder className={`inline-flex items-center gap-1 truncate ${qualityColorClassById(primaryOutput.quality)}`}>
                   {row.recipe.name}
                 </Link>
               ) : (
@@ -142,7 +143,7 @@ export function RecipeProfitPanel({ rows, prices, floorPrices, limitPerProfessio
                 return (
                   <div key={material.itemId} className="flex items-center justify-between gap-2">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <Link href={`/items/${material.itemId}`} target="_blank" rel="noopener noreferrer" data-no-ladder className="pointer-events-auto truncate text-terminal-muted hover:text-terminal-amber hover:underline" title="打开商品终端">{material.name}</Link>
+                      <Link href={`/items/${material.itemId}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(material.quality)}`}>{material.name}</Link>
                       <TurnoverBadge score={turnoverScores?.get(material.itemId) ?? 0} />
                       <span className="shrink-0 text-terminal-muted">×{material.quantity}</span>
                     </span>
@@ -160,7 +161,7 @@ export function RecipeProfitPanel({ rows, prices, floorPrices, limitPerProfessio
                 return (
                   <div key={output.itemId} className="flex items-center justify-between gap-2">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <Link href={`/items/${output.itemId}`} target="_blank" rel="noopener noreferrer" data-no-ladder className="pointer-events-auto truncate text-terminal-muted hover:text-terminal-amber hover:underline" title="打开商品终端">{output.name}</Link>
+                      <Link href={`/items/${output.itemId}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(output.quality)}`}>{output.name}</Link>
                       <TurnoverBadge score={turnoverScores?.get(output.itemId) ?? 0} />
                       <span className="shrink-0 text-terminal-muted">×{output.quantity}</span>
                     </span>

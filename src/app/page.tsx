@@ -150,7 +150,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 <div key={signal.itemId} className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-2">
                     <WatchStar itemId={signal.itemId} watched />
-                    <Link href={`/items/${signal.itemId}`} target="_blank" className={`inline-flex items-center gap-1 ${qualityColorClass(signal.quality)}`}><ItemIcon itemId={signal.itemId} size={16} />{signal.name}</Link>
+                    <Link href={`/items/${signal.itemId}`} target="_blank" data-no-ladder className={`inline-flex items-center gap-1 ${qualityColorClass(signal.quality)}`}><ItemIcon itemId={signal.itemId} size={16} />{signal.name}</Link>
                   </span>
                   <span className="flex items-center gap-3">
                     <Coins copper={signal.price} />
