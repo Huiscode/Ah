@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Bell, CalendarClock, Hammer, RadioTower, Star } from "lucide-react";
+import { ArrowLeftRight, Bell, Hammer, RadioTower, Star } from "lucide-react";
 import { buildDealRadar } from "@/lib/analytics";
 import { evaluateAlertRules } from "@/lib/alerts";
 import { buildFloorPriceIndex, computeRecipeProfits } from "@/lib/recipe-profits";
@@ -9,7 +9,6 @@ import {
   getLatestAddonRoundItemIds,
   getRadarRules,
   getRecipes,
-  getUpcomingEvents,
   getWatchedItemIds
 } from "@/lib/repositories";
 import { getMarketSignals } from "@/lib/market-signals";
@@ -24,7 +23,7 @@ import { ProductBadge } from "@/components/product-badge";
 import { MarketTable } from "@/components/market-table";
 import { WatchStar } from "@/components/watch-star";
 import { DealRadarTable } from "@/components/deal-radar-table";
-import { getLatestLadders } from "@/lib/ladders";
+
 import { RadarParamsPanel } from "@/components/radar-params-panel";
 import { PriceLadderPanel } from "@/components/price-ladder-panel";
 import { FavoriteRecipesPanel } from "@/components/favorite-recipes-panel";
@@ -43,9 +42,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     quantity: "在售量"
   };
   const view = parseMarketView(await searchParams);
-  const [{ signals, latestSnapshotAt }, upcomingEvents, watchedIds, alertRules, storedRules, latestAddonRound, recipes, vendorPrices, ladders] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, watchedIds, alertRules, storedRules, latestAddonRound, recipes, vendorPrices] = await Promise.all([
     getMarketSignals(),
-    getUpcomingEvents(),
     getWatchedItemIds(),
     getAlertRules(),
     getRadarRules(),
@@ -53,8 +51,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     // 关注配方面板展示配方库中被收藏的配方（craft + merchant 全量，
     // 面板按收藏过滤；收藏在 /recipes 配方库页设置）。
     getRecipes(),
-    getItemVendorPrices(),
-    getLatestLadders()
+    getItemVendorPrices()
   ]);
   const freshness = describeFreshness(latestSnapshotAt, new Date());
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
@@ -116,7 +113,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   {signals.length === 0 ? "暂无市场数据。进游戏 /wahscan 扫描。" : "当前没有满足流动性与利润门槛的捡漏挂单。"}
                 </div>
               ) : (
-                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} ladders={ladders} productItemIds={productItemIds} />
+                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} productItemIds={productItemIds} />
               )}
             </div>
           </Panel>
@@ -154,18 +151,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                     <Coins copper={signal.price} />
                     <span className={trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</span>
                   </span>
-                </div>
-              ))}
-            </div>
-          </Panel>
-          <Panel>
-            <PanelHeader title="版本日历" action={<CalendarClock size={13} className="text-terminal-muted" />} />
-            <div className="space-y-2 p-3 font-mono text-xs">
-              {upcomingEvents.length === 0 && <div className="text-terminal-muted">暂无已录入的版本事件</div>}
-              {upcomingEvents.map((event) => (
-                <div key={event.id} className="flex items-center justify-between gap-2">
-                  <span className="text-slate-200">{event.eventName}</span>
-                  <span className="text-terminal-muted">{event.startTime.toLocaleString("en-CA", { timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit", day: "2-digit" })}</span>
                 </div>
               ))}
             </div>

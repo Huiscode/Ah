@@ -51,15 +51,11 @@ export const dealRadarRules: DealRadarRules = {
 export type LocalFilterRules = {
   minPrice: number; // only rows with min price >= this (0 = off)
   maxPrice: number; // only rows with min price <= this (0 = off)
-  gap1Pct: number; // required gap between the 1st and 2nd price tier (0 = off)
-  gap2Pct: number; // required gap between the 2nd and 3rd price tier (0 = off)
 };
 
 export const localFilterDefaults: LocalFilterRules = {
   minPrice: 0,
-  maxPrice: 0,
-  gap1Pct: 0,
-  gap2Pct: 0
+  maxPrice: 0
 };
 
 // Route-2 overrides arrive with each scan import (the in-game options panel

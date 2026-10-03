@@ -52,6 +52,7 @@ end
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("REPLICATE_ITEM_LIST_UPDATE")
 frame:RegisterEvent("AUCTION_HOUSE_CLOSED")
+frame:RegisterEvent("PLAYER_LOGOUT")
 
 local function chatMessage(text)
   DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WoWderhoiAH|r " .. text)
@@ -503,8 +504,10 @@ end)
 
 -- Auto-rescan: while the AH stays open, restart a replicate scan whenever
 -- the ~15-minute cooldown elapses. Ticker is cheap; all real gating is
--- inside the check.
-C_Timer.NewTicker(20, function()
+-- inside the check. Saved so we can cancel it on logout (otherwise a tick
+-- landing during teardown fires ReplicateItems and the client waits ~20s
+-- for the AH server to time out before exiting).
+local autoScanTicker = C_Timer.NewTicker(20, function()
   if not autoScanOn() or scanState then return end
   if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then return end
   if replicateSecondsLeft() > 0 then return end

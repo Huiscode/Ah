@@ -45,6 +45,12 @@ local pendingBuyQty = 0
 local pendingBuyCost = 0
 local pendingBuyCommodity = false
 local pendingItemAuction = nil -- non-commodity: { auctionID, buyout, quantity } chosen at search time
+-- Set true only right after we call PlaceBid/PlaceBuyout and are waiting for the
+-- native buyout confirmation StaticPopup. The StaticPopup_Show wrapper auto-clicks
+-- button1 ONLY while this is true. Without it, a stale pendingItemAuction surviving
+-- until logout would make the wrapper auto-click the "quit game" confirmation popup
+-- from Blizzard's logout path -> taint -> addon disabled.
+local wahExpectingBuyPopup = false
 -- Commodity buy-dialog state.
 local buyDialog = nil
 -- Assigned after the sell-assist frame is built; purchase-success handlers
@@ -307,6 +313,11 @@ end
 local repriceAfterPurchase -- forward declaration; defined below
 
 local function clearPendingBuy()
+  wahExpectingBuyPopup = false
+  -- Make sure the temp StaticPopup_Show interceptor is gone.
+  if WAH._origStaticPopupShow then
+    StaticPopup_Show = WAH._origStaticPopupShow
+  end
   pendingBuyItemId = nil
   pendingBuyName = nil
   pendingBuyCommodity = false
@@ -433,9 +444,29 @@ local function confirmItemOrder()
   if not pendingBuyItemId or not sel or commodityDialogState ~= "ready" then return end
   pendingBuyQty = 1
   pendingBuyCost = sel.buyout
+  -- Temporarily intercept StaticPopup_Show just for this one buyout confirmation.
+  -- Restore the original immediately after clicking button1 (or on failure/cancel)
+  -- so the global Blizzard function is never replaced outside the brief hardware
+  -- click window. A permanent replacement taints the logout secure path.
+  if not WAH._origStaticPopupShow then
+    WAH._origStaticPopupShow = StaticPopup_Show
+  end
+  wahExpectingBuyPopup = true
+  StaticPopup_Show = function(name, ...)
+    local frame = WAH._origStaticPopupShow(name, ...)
+    if wahExpectingBuyPopup and pendingItemAuction
+      and AuctionHouseFrame and AuctionHouseFrame:IsShown()
+      and frame and frame.button1 and frame.button1:IsShown() then
+      wahExpectingBuyPopup = false
+      StaticPopup_Show = WAH._origStaticPopupShow
+      frame.button1:Click()
+    end
+    return frame
+  end
   local placeFn = C_AuctionHouse.PlaceBid or C_AuctionHouse.PlaceBuyout
   local placed, placeErr = pcall(placeFn, sel.auctionID, sel.buyout)
   if not placed then
+    StaticPopup_Show = WAH._origStaticPopupShow
     clearPendingBuy()
     chatMessage(L.BUY_FAILED_EVENT .. " [" .. tostring(placeErr) .. "]")
     return
@@ -1548,27 +1579,12 @@ tradeEvents:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
 end)
 
 -- Auto-accept the native AH buyout confirmation popup ("以一口价购买：").
--- PlaceBid triggers this StaticPopup; because we call it from our confirm
--- button's hardware click, accepting it inline is not tainted. Only auto-
--- accept while we have an in-flight non-commodity item buy.
-if not WAH._origStaticPopupShow then
-  WAH._origStaticPopupShow = StaticPopup_Show
-  StaticPopup_Show = function(name, ...)
-    local frame = WAH._origStaticPopupShow(name, ...)
-    -- Only auto-accept the native buyout popup while the auction house is
-    -- actually open and we have an in-flight item buy. PlaceBid is a protected
-    -- action: a programmatic Click() issued with the AH closed (e.g. when a
-    -- logout-confirm popup appears in the open world) flags the addon as
-    -- "blocked from an action only available to the Blizzard UI" and disables
-    -- it until /reload.
-    if pendingItemAuction
-      and AuctionHouseFrame and AuctionHouseFrame:IsShown()
-      and frame and frame.button1 and frame.button1:IsShown() then
-      frame.button1:Click()
-    end
-    return frame
-  end
-end
+-- The hook is installed TEMPORARILY in confirmItemOrder() right before PlaceBid
+-- and removed immediately after the popup is auto-accepted (or on cancel/failure).
+-- We must NOT permanently replace the global StaticPopup_Show: Blizzard's logout
+-- flow calls it from a secure path to show the "quit game" popup, and routing that
+-- call through an addon function taints the client -> "function may only be used
+-- for Blizzard UI" -> addon disabled.
 
 -- Settings.lua calls this after applying radar tunables: if the trade panel
 -- is open on the deal radar, re-run it immediately with the new rules.

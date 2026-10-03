@@ -66,16 +66,6 @@ model DailySummary {
   @@index([date])
 }
 
-model Event {
-  id        String   @id @default(cuid())
-  eventType String   @map("event_type")
-  eventName String   @map("event_name")
-  startTime DateTime @map("start_time")
-  endTime   DateTime @map("end_time")
-
-  @@index([eventType, startTime])
-}
-
 // Single-operator local terminal: no userId columns anywhere.
 model Watchlist {
   id        String   @id @default(cuid())

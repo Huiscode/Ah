@@ -12,8 +12,6 @@ export function RadarParamsPanel({ initialRules }: { initialRules: RadarRules })
   const [open, setOpen] = usePersistedState<boolean>("wah:radar-panel:open", true);
   const [minPrice, setMinPrice] = usePersistedState<number>("wah:filter:minPrice", 0);
   const [maxPrice, setMaxPrice] = usePersistedState<number>("wah:filter:maxPrice", 0);
-  const [gap1Pct, setGap1Pct] = usePersistedState<number>("wah:filter:gap1", 0);
-  const [gap2Pct, setGap2Pct] = usePersistedState<number>("wah:filter:gap2", 0);
   const [vendorMinProfit, setVendorMinProfit] = usePersistedState<number>("wah:filter:vendorMinProfit", 0);
 
   const field = "rounded border border-terminal-border bg-terminal-panel2 px-2 py-1 text-right text-slate-100 focus:border-terminal-amber focus:outline-none";
@@ -54,14 +52,6 @@ export function RadarParamsPanel({ initialRules }: { initialRules: RadarRules })
         <div className={row}>
           <span className="text-slate-100">价格上限 (0=关)</span>
           <MoneyInput value={maxPrice} onChange={(v) => { setMaxPrice(v); notify(); }} fieldClass={field} />
-        </div>
-        <div className={row}>
-          <span className="text-slate-100">价格1比2低 (%)</span>
-          <input type="number" min="0" className={field + " w-20"} value={gap1Pct} onChange={(e) => { setGap1Pct(Number(e.target.value) || 0); notify(); }} />
-        </div>
-        <div className={row}>
-          <span className="text-slate-100">价格2比3低 (%)</span>
-          <input type="number" min="0" className={field + " w-20"} value={gap2Pct} onChange={(e) => { setGap2Pct(Number(e.target.value) || 0); notify(); }} />
         </div>
         <div className={row}>
           <span className="text-slate-100">必赚最低盈利 (0=关)</span>

@@ -13,7 +13,6 @@ import { formatPercent } from "@/lib/utils";
 import { categoryLabel, categoryMatches } from "@/lib/category-zh";
 import type { DealRadarRow } from "@/lib/analytics";
 import { usePersistedState } from "@/lib/use-persisted-state";
-import type { PricePoint } from "@/lib/ladders";
 
 type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" | "changePercent" | "quantity" | "numAuctions";
 
@@ -23,12 +22,11 @@ type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" |
 // Headers sort: first click high-to-low, second click low-to-high; without
 // any click the rows keep the radar's own ranking (NPC deals first, then
 // absolute profit).
-export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladders, productItemIds }: {
+export function DealRadarTable({ deals, prices, categories, watchedItemIds, productItemIds }: {
   deals: DealRadarRow[];
   prices: Map<number, number>;
   categories: string[];
   watchedItemIds: number[];
-  ladders: Map<number, PricePoint[]>;
   productItemIds: Set<number>;
 }) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
@@ -38,16 +36,12 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
   const [onlyLiquid, setOnlyLiquid] = usePersistedState<boolean>("wah:deal-radar:onlyLiquid", false);
   const [fMinPrice, setFMinPrice] = usePersistedState<number>("wah:filter:minPrice", 0);
   const [fMaxPrice, setFMaxPrice] = usePersistedState<number>("wah:filter:maxPrice", 0);
-  const [fGap1, setFGap1] = usePersistedState<number>("wah:filter:gap1", 0);
-  const [fGap2, setFGap2] = usePersistedState<number>("wah:filter:gap2", 0);
   const [fVendorMinProfit, setFVendorMinProfit] = usePersistedState<number>("wah:filter:vendorMinProfit", 0);
   useEffect(() => {
     const h = () => {
       try {
         const p = localStorage.getItem("wah:filter:minPrice"); if (p) setFMinPrice(JSON.parse(p));
         const x = localStorage.getItem("wah:filter:maxPrice"); if (x) setFMaxPrice(JSON.parse(x));
-        const g1 = localStorage.getItem("wah:filter:gap1"); if (g1) setFGap1(JSON.parse(g1));
-        const g2 = localStorage.getItem("wah:filter:gap2"); if (g2) setFGap2(JSON.parse(g2));
         const vp = localStorage.getItem("wah:filter:vendorMinProfit"); if (vp) setFVendorMinProfit(JSON.parse(vp));
       } catch {}
       force((n) => n + 1);
@@ -69,24 +63,6 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
   if (fMinPrice > 0) rows = rows.filter((d) => d.minPrice >= fMinPrice);
   if (fMaxPrice > 0) rows = rows.filter((d) => d.minPrice <= fMaxPrice);
   if (fVendorMinProfit > 0) rows = rows.filter((d) => !d.vendor || d.profit >= fVendorMinProfit);
-  if (fGap1 > 0 || fGap2 > 0) {
-    rows = rows.filter((deal) => {
-      const ladder = ladders.get(deal.itemId);
-      if (!ladder || ladder.length < 2) return true;
-      const [t1, t2, t3] = ladder;
-      if (fGap1 > 0) {
-        if (t1.price >= t2.price) return false;
-        const g1 = (t2.price - t1.price) / t2.price * 100;
-        if (g1 < fGap1) return false;
-      }
-      if (fGap2 > 0 && t3) {
-        if (t2.price >= t3.price) return false;
-        const g2 = (t3.price - t2.price) / t3.price * 100;
-        if (g2 < fGap2) return false;
-      }
-      return true;
-    });
-  }
 
 
   // 仅限高流通：只保留有流通分的商品（turnoverScore > 0）。
@@ -189,7 +165,7 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
               <td className="px-3 py-2 text-right text-terminal-muted"><Coins copper={deal.reference} /></td>
               {deal.vendor
                 ? <td className="whitespace-nowrap px-3 py-2 text-right text-terminal-amber">必赚 +<Coins copper={deal.profit} /></td>
-                : <td className="whitespace-nowrap px-3 py-2 text-right text-terminal-green">-{deal.discountPercent.toFixed(0)}%</td>}
+                : <td className={`whitespace-nowrap px-3 py-2 text-right ${deal.discountPercent > 0 ? "text-terminal-green" : deal.discountPercent < 0 ? "text-terminal-red" : "text-slate-100"}`}>{deal.discountPercent.toFixed(0)}%</td>}
               <td className={"px-3 py-2 text-right " + trendTextClass(deal.changePercent)}>{formatTrendPercent(deal.changePercent)}</td>
               <td className="px-3 py-2 text-right text-slate-300">{deal.quantity.toLocaleString("en-US")}</td>
               <td className="px-3 py-2 text-right text-slate-300">{deal.numAuctions.toLocaleString("en-US")}</td>

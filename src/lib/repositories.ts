@@ -196,14 +196,6 @@ export async function getItemDetail(itemId: number): Promise<MarketHistory | nul
   return row as any;
 }
 
-export async function getUpcomingEvents() {
-  return prisma.event.findMany({
-    where: { endTime: { gte: new Date() } },
-    orderBy: { startTime: "asc" },
-    take: 6
-  });
-}
-
 export async function getWatchedItemIds() {
   const rows = await prisma.watchlist.findMany({ select: { itemId: true } });
   return new Set(rows.map((row) => row.itemId));

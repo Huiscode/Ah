@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Coins } from "@/components/coins";
-import { X } from "lucide-react";
+import { EyeOff } from "lucide-react";
 import { usePersistedState } from "@/lib/use-persisted-state";
 import { qualityColorClass } from "@/lib/quality";
 
@@ -45,8 +45,8 @@ export function PriceLadderPanel() {
           </span>
         }
         action={
-          <button onClick={() => setItemId(null)} aria-label="关闭" className="text-terminal-muted hover:text-terminal-amber">
-            <X size={13} />
+          <button onClick={() => setItemId(null)} aria-label="隐藏" className="text-terminal-muted hover:text-terminal-amber">
+            <EyeOff size={13} />
           </button>
         }
       />

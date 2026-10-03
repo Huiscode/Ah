@@ -69,7 +69,6 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices }: {
         action={
           <span className="flex items-center gap-2">
             <Star size={13} className="text-terminal-amber" />
-            <span className="font-mono text-[10px] text-terminal-muted">共 {favRows.length} 条</span>
             <button onClick={() => setOpen(false)} aria-label="收起" className="text-terminal-muted hover:text-terminal-amber"><EyeOff size={13} /></button>
           </span>
         }

@@ -78,6 +78,11 @@ panel.name = "WoWderhoi AHelper"
 -- AH was up before the settings opened, and when they close, re-open the AH
 -- frame and remind the user to scan again.
 local ahClosedBySettings = false
+-- Set on PLAYER_LOGOUT: while the client is tearing down for quit/logout,
+-- reopening the protected AuctionHouseFrame from an OnHide hook taints the
+-- client ("function may only be used for Blizzard UI") and gets the addon
+-- disabled. Never re-Show the AH during teardown.
+local wahQuitting = false
 
 local function rememberAhBeforeSettings()
   if AuctionHouseFrame and AuctionHouseFrame:IsShown() then
@@ -86,14 +91,26 @@ local function rememberAhBeforeSettings()
 end
 
 local function restoreAhAfterSettings()
-  if not ahClosedBySettings then return end
+  if wahQuitting or not ahClosedBySettings then return end
   ahClosedBySettings = false
+  -- 退出游戏时 GameMenuFrame 仍在前台（玩家从 ESC 菜单点退出），此时 Show 受保护的
+  -- AuctionHouseFrame 会在登出受保护路径上触发客户端 taint
+  -- （"function may only be used for Blizzard UI"）并禁用插件。跳过即可——
+  -- 反正要退出了，AH 本来就要关。PLAYER_LOGOUT 触发太晚（UI 先关、事件后到），
+  -- 不能单独依赖它。
+  if GameMenuFrame and GameMenuFrame:IsShown() then return end
   if AuctionHouseFrame and not AuctionHouseFrame:IsShown() then
     local ok = pcall(function() AuctionHouseFrame:Show() end)
     if ok then
       DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99WAH|r " .. L.SETTINGS_AH_RESTORED)
     end
   end
+end
+
+do
+  local quitWatch = CreateFrame("Frame")
+  pcall(quitWatch.RegisterEvent, quitWatch, "PLAYER_LOGOUT")
+  quitWatch:SetScript("OnEvent", function() wahQuitting = true end)
 end
 
 local OPTIONS = {
