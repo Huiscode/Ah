@@ -1517,6 +1517,11 @@ tradeEvents:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     sellAssist:Hide()
     lastAssistItemId = nil
     for frame in pairs(sellSlotState) do sellSlotState[frame] = nil end
+    -- Clear any in-flight buy state left over from the session: a stale
+    -- pendingItemAuction would make the StaticPopup_Show wrapper below auto-
+    -- click unrelated popups (e.g. the logout confirm in the open world) and
+    -- flag the addon as blocked.
+    clearPendingBuy()
   elseif event == "GET_ITEM_INFO_RECEIVED" then
     -- Item info landed (itemIcon or the scanner asked for it): backfill a
     -- category that came back unknown during the scan, then repaint.
@@ -1550,7 +1555,15 @@ if not WAH._origStaticPopupShow then
   WAH._origStaticPopupShow = StaticPopup_Show
   StaticPopup_Show = function(name, ...)
     local frame = WAH._origStaticPopupShow(name, ...)
-    if pendingItemAuction and frame and frame.button1 and frame.button1:IsShown() then
+    -- Only auto-accept the native buyout popup while the auction house is
+    -- actually open and we have an in-flight item buy. PlaceBid is a protected
+    -- action: a programmatic Click() issued with the AH closed (e.g. when a
+    -- logout-confirm popup appears in the open world) flags the addon as
+    -- "blocked from an action only available to the Blizzard UI" and disables
+    -- it until /reload.
+    if pendingItemAuction
+      and AuctionHouseFrame and AuctionHouseFrame:IsShown()
+      and frame and frame.button1 and frame.button1:IsShown() then
       frame.button1:Click()
     end
     return frame
