@@ -16,18 +16,18 @@ import { getMarketSignals } from "@/lib/market-signals";
 import { describeFreshness } from "@/lib/freshness";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
 import { groupedCategoryOptions } from "@/lib/category-zh";
-import { formatPercent } from "@/lib/utils";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import { Coins } from "@/components/coins";
 import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
+import { ProductBadge } from "@/components/product-badge";
 import { MarketTable } from "@/components/market-table";
 import { WatchStar } from "@/components/watch-star";
 import { DealRadarTable } from "@/components/deal-radar-table";
 import { getLatestLadders } from "@/lib/ladders";
 import { RadarParamsPanel } from "@/components/radar-params-panel";
 import { PriceLadderPanel } from "@/components/price-ladder-panel";
-import { RecipeProfitPanel } from "@/components/recipe-profit-panel";
+import { FavoriteRecipesPanel } from "@/components/favorite-recipes-panel";
 import { InstructionsPanel } from "@/components/instructions-panel";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import Link from "next/link";
@@ -50,9 +50,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     getAlertRules(),
     getRadarRules(),
     getLatestAddonRoundItemIds(),
-    // 首页制造利润面板只展示专业配方（craft）；商人青睐兑换（merchant）
-    // 在 /recipes 配方库页独立呈现。
-    getRecipes("craft"),
+    // 关注配方面板展示配方库中被收藏的配方（craft + merchant 全量，
+    // 面板按收藏过滤；收藏在 /recipes 配方库页设置）。
+    getRecipes(),
     getItemVendorPrices(),
     getLatestLadders()
   ]);
@@ -72,8 +72,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const deals = latestAddonRound === null ? allDeals : allDeals.filter((deal) => latestAddonRound.has(deal.itemId));
   const radarCategories = groupedCategoryOptions(Array.from(new Set(deals.map((deal) => deal.category))));
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
-  // 流通分（turnoverScore）用于制造利润面板的物品名徽章。
-  const turnoverScores = new Map(signals.map((signal) => [signal.itemId, signal.turnoverScore]));
   // P0-B: full-recipe profit library. Revenue side = live AH price (自扫P10
   // → 网站P50 per signal) or the vendor floor when the market has no listing;
   // the floor index merges the curated dictionary, DB Item.vendorPrice and
@@ -81,11 +79,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // source for Forever-only items).
   const floorPriceIndex = buildFloorPriceIndex(recipes, vendorPrices);
   const recipeRows = computeRecipeProfits(recipes, priceByItemId, floorPriceIndex);
-  // 首页制造利润面板只看"基础加工"利润：矿石→锭（熔炼锭）、布料→卷（裁缝材料）、
-  // 皮→熟化皮（制皮材料）、石头→砂轮（锻造材料）、草药/鱼→染料油剂（炼金材料）、
-  // 元素/锭转化（炼金次级/强效转化）。端装装备、药水、烹饪等不在此列。
-  const CONVERSION_CATEGORIES = new Set(["熔炼锭", "材料", "次级转化", "强效转化"]);
-  const conversionRows = recipeRows.filter((row) => CONVERSION_CATEGORIES.has(row.recipe.categoryName ?? ""));
+  // 配方产出物集合：扫描物品若被某配方产出（成品），在列表中标记"产品"徽章。
+  const productItemIds = new Set<number>();
+  for (const recipe of recipes) for (const output of recipe.outputs) productItemIds.add(output.itemId);
   // The client table only ever receives the visible page; filtering and
   // sorting run here against the URL-provided view.
   const filtered = filterSortSignals(signals, view);
@@ -113,14 +109,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · NPC必赚 + 最低价 vs 7日参考价（自扫P10）</span>} />
+            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · 必赚 + 最低价 vs 7日参考价（自扫P10）</span>} />
             <div className="p-3 font-mono text-xs">
               {deals.length === 0 ? (
                 <div className="text-terminal-muted">
                   {signals.length === 0 ? "暂无市场数据。进游戏 /wahscan 扫描。" : "当前没有满足流动性与利润门槛的捡漏挂单。"}
                 </div>
               ) : (
-                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} ladders={ladders} />
+                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} ladders={ladders} productItemIds={productItemIds} />
               )}
             </div>
           </Panel>
@@ -135,15 +131,16 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               filteredCount={filtered.length}
               page={marketPage.page}
               pageCount={marketPage.pageCount}
+              productItemIds={productItemIds}
             />
           </Panel>
         </div>
         <div className="space-y-3">
           <PriceLadderPanel />
           <RadarParamsPanel initialRules={radarRules} />
-          <RecipeProfitPanel rows={conversionRows} prices={priceByItemId} floorPrices={floorPriceIndex} limitPerProfession={8} turnoverScores={turnoverScores} />
+          <FavoriteRecipesPanel rows={recipeRows} prices={priceByItemId} floorPrices={floorPriceIndex} />
           <Panel>
-            <PanelHeader title="关注列表" action={<Star size={13} className="text-terminal-amber" />} />
+            <PanelHeader title="关注物品" action={<Star size={13} className="text-terminal-amber" />} />
             <div className="space-y-2 p-3 font-mono text-xs">
               {watchedSignals.length === 0 && <div className="text-terminal-muted">市场表中点 ☆ 添加关注</div>}
               {watchedSignals.map((signal) => (
@@ -151,6 +148,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   <span className="flex items-center gap-2">
                     <WatchStar itemId={signal.itemId} watched />
                     <Link href={`/items/${signal.itemId}`} target="_blank" data-no-ladder className={`inline-flex items-center gap-1 ${qualityColorClass(signal.quality)}`}><ItemIcon itemId={signal.itemId} size={16} />{signal.name}</Link>
+                    {productItemIds.has(signal.itemId) && <ProductBadge itemId={signal.itemId} />}
                   </span>
                   <span className="flex items-center gap-3">
                     <Coins copper={signal.price} />

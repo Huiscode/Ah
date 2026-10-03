@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { Prisma, prisma } from "@/lib/prisma";
 import { type MarketHistory } from "@/lib/market-data";
 import type { DbRecipe, RecipeMaterial } from "@/lib/recipe-profits";
 
@@ -65,13 +65,17 @@ function toNumber(v: bigint | number): number {
 // ceil for the median index).
 type Med7Raw = { item_id: number; med7: bigint | number; samples: number; distinct_cnt: number };
 
-async function getMed7Aggregates(): Promise<Map<number, { med7: number; samples: number; distinct: number }>> {
+async function getMed7Aggregates(itemIds?: number[]): Promise<Map<number, { med7: number; samples: number; distinct: number }>> {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  // 商品终端等单品页只关心一个物品的 med7：把窗口聚合限定到目标物品，
+  // 避免对全表 37 万行快照做 ROW_NUMBER + 聚合（单品页加载慢的元凶）。
+  const idCond = itemIds && itemIds.length > 0 ? Prisma.sql`AND "item_id" IN (${Prisma.join(itemIds)})` : Prisma.empty;
   const rows = await prisma.$queryRaw<Med7Raw[]>`
     WITH latest AS (
       SELECT "item_id", "source",
              ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "timestamp" DESC) AS rn
       FROM "AuctionSnapshot"
+      WHERE 1=1 ${idCond}
     ),
     lsrc AS (SELECT "item_id", "source" FROM latest WHERE rn = 1),
     win AS (
@@ -186,7 +190,7 @@ export async function getItemDetail(itemId: number): Promise<MarketHistory | nul
   if (row) {
     for (const s of (row as any).snapshots) { s.minPrice = Number(s.minPrice); s.marketPrice = Number(s.marketPrice); s.altPrice = s.altPrice === null ? undefined : Number(s.altPrice); }
     for (const d of (row as any).dailySummaries) { d.openPrice = Number(d.openPrice); d.closePrice = Number(d.closePrice); d.highPrice = Number(d.highPrice); d.lowPrice = Number(d.lowPrice); }
-    const med7s = await getMed7Aggregates();
+    const med7s = await getMed7Aggregates([itemId]);
     (row as any).med7Info = med7s.get(itemId) ?? null;
   }
   return row as any;
@@ -257,12 +261,19 @@ export async function getRadarRules(): Promise<unknown> {
 // exchanges); omit for everything. reagents/outputs are JSON columns that
 // mirror the addon's field names (itemId/name/quantity/vendorPrice), so the
 // profit engine consumes them without reshaping.
-export async function getRecipes(category?: "craft" | "merchant"): Promise<DbRecipe[]> {
-  const rows = await prisma.recipe.findMany({
-    where: category ? { category } : undefined,
-    orderBy: { name: "asc" }
-  });
-  return rows.map((row) => ({
+function mapRecipeRow(row: {
+  name: string;
+  profession: string;
+  skillLevel: number;
+  category: string;
+  favorCost: number;
+  difficulty: unknown;
+  categoryName: string | null;
+  spellId: number | null;
+  reagents: unknown;
+  outputs: unknown;
+}): DbRecipe {
+  return {
     name: row.name,
     profession: row.profession,
     skillLevel: row.skillLevel,
@@ -273,7 +284,70 @@ export async function getRecipes(category?: "craft" | "merchant"): Promise<DbRec
     spellId: row.spellId ?? undefined,
     reagents: (row.reagents as unknown as RecipeMaterial[]) ?? [],
     outputs: (row.outputs as unknown as RecipeMaterial[]) ?? []
-  }));
+  };
+}
+
+export async function getRecipes(category?: "craft" | "merchant"): Promise<DbRecipe[]> {
+  const rows = await prisma.recipe.findMany({
+    where: category ? { category } : undefined,
+    orderBy: { name: "asc" }
+  });
+  return rows.map(mapRecipeRow);
+}
+
+// 产出指定物品的配方：outputs JSON 数组含该 itemId（商品终端"制作配方"
+// 面板用）。只取匹配行，避免每次单品页加载全量配方库。
+export async function getRecipesProducing(itemId: number): Promise<DbRecipe[]> {
+  const rows = await prisma.$queryRaw<Array<{
+    name: string;
+    profession: string;
+    skillLevel: number;
+    category: string;
+    favorCost: number;
+    difficulty: unknown;
+    categoryName: string | null;
+    spellId: number | null;
+    reagents: unknown;
+    outputs: unknown;
+  }>>`
+    SELECT "name", "profession", "skill_level" AS "skillLevel", "category", "favor_cost" AS "favorCost",
+           "difficulty", "category_name" AS "categoryName", "spell_id" AS "spellId", "reagents", "outputs"
+    FROM "Recipe"
+    WHERE EXISTS (
+      SELECT 1 FROM json_each("Recipe"."outputs") AS e
+      WHERE json_extract(e.value, '$.itemId') = ${itemId}
+    )
+    ORDER BY "name" ASC
+  `;
+  return rows.map(mapRecipeRow);
+}
+
+// 按 itemId 批量取每个物品最新 addon 快照的市场价（P10，与 buildMarketSignal
+// 的 price 口径一致）。配方利润只需要这些价，不需要全市场信号。
+export async function getLatestAddonPricesByItemIds(itemIds: number[]): Promise<Map<number, number>> {
+  if (itemIds.length === 0) return new Map();
+  const rows = await prisma.$queryRaw<Array<{ itemId: bigint | number; marketPrice: bigint | number }>>`
+    WITH ranked AS (
+      SELECT "item_id" AS "itemId", "market_price" AS "marketPrice",
+             ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "timestamp" DESC) AS rn
+      FROM "AuctionSnapshot"
+      WHERE "source" = 'addon' AND "item_id" IN (${Prisma.join(itemIds)})
+    )
+    SELECT "itemId", "marketPrice" FROM ranked WHERE rn = 1
+  `;
+  const out = new Map<number, number>();
+  for (const r of rows) out.set(Number(r.itemId), toNumber(r.marketPrice));
+  return out;
+}
+
+// 按 itemId 批量取 NPC 保底价（Item.vendorPrice > 0），供配方利润引擎兜底。
+export async function getItemVendorPricesByIds(itemIds: number[]): Promise<Map<number, number>> {
+  if (itemIds.length === 0) return new Map();
+  const rows = await prisma.item.findMany({
+    where: { itemId: { in: itemIds }, vendorPrice: { gt: 0 } },
+    select: { itemId: true, vendorPrice: true }
+  });
+  return new Map(rows.map((row) => [row.itemId, Number(row.vendorPrice)]));
 }
 
 // Vendor floors the import pipeline picked up from the addon scan channel

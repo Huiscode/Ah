@@ -6,7 +6,9 @@ import Link from "next/link";
 import { ItemIcon } from "@/components/item-icon";
 import { Coins } from "@/components/coins";
 import { WatchStar } from "@/components/watch-star";
+import { ProductBadge } from "@/components/product-badge";
 import { qualityColorClass } from "@/lib/quality";
+import { turnoverBadgeClass } from "@/lib/turnover";
 import { formatPercent } from "@/lib/utils";
 import { categoryLabel, categoryMatches } from "@/lib/category-zh";
 import type { DealRadarRow } from "@/lib/analytics";
@@ -21,12 +23,13 @@ type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" |
 // Headers sort: first click high-to-low, second click low-to-high; without
 // any click the rows keep the radar's own ranking (NPC deals first, then
 // absolute profit).
-export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladders }: {
+export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladders, productItemIds }: {
   deals: DealRadarRow[];
   prices: Map<number, number>;
   categories: string[];
   watchedItemIds: number[];
   ladders: Map<number, PricePoint[]>;
+  productItemIds: Set<number>;
 }) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
@@ -96,9 +99,13 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
       if (a === b) return right.profit - left.profit;
       return sortAsc ? (a > b ? 1 : -1) : (a < b ? 1 : -1);
     });
-  } else if (onlyLiquid) {
-    // 仅限高流通的默认排序：流通分从高到低，同分按绝对盈利降序。
+  } else {
+    // 默认排序：必赚行按必赚金额从多到少排最前；其余行按流通分从高到低、
+    // 同分按绝对盈利降序（与 buildDealRadar 输出一致）。
     rows.sort((left, right) => {
+      if (left.vendor && right.vendor) return right.profit - left.profit;
+      if (left.vendor) return -1;
+      if (right.vendor) return 1;
       if (left.turnoverScore !== right.turnoverScore) return right.turnoverScore - left.turnoverScore;
       return right.profit - left.profit;
     });
@@ -145,7 +152,7 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
           <col className="w-[100px]" />
           <col className="w-[104px]" />
           <col className="w-[120px]" />
-          <col className="w-[96px]" />
+          <col className="w-[140px]" />
           <col className="w-[96px]" />
           <col className="w-[96px]" />
           <col className="w-[96px]" />
@@ -172,24 +179,17 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, ladd
                   <ItemIcon itemId={deal.itemId} icon={deal.icon} />
                   <span className="truncate">{deal.name}</span>
                 </Link>
-                {deal.turnoverScore >= 100
-                  ? <span className="ml-1.5 rounded bg-[#ff8000]/15 px-1 py-0.5 align-middle text-[9px] text-[#ff8000]" title="被 N 个配方使用">{deal.turnoverScore}</span>
-                  : deal.turnoverScore >= 50
-                    ? <span className="ml-1.5 rounded bg-[#a335ee]/15 px-1 py-0.5 align-middle text-[9px] text-[#a335ee]" title="被 N 个配方使用">{deal.turnoverScore}</span>
-                    : deal.turnoverScore >= 15
-                      ? <span className="ml-1.5 rounded bg-[#0070dd]/15 px-1 py-0.5 align-middle text-[9px] text-[#0070dd]" title="被 N 个配方使用">{deal.turnoverScore}</span>
-                      : deal.turnoverScore >= 5
-                        ? <span className="ml-1.5 rounded bg-[#1eff00]/15 px-1 py-0.5 align-middle text-[9px] text-[#1eff00]" title="被 N 个配方使用">{deal.turnoverScore}</span>
-                        : deal.turnoverScore > 0
-                          ? <span className="ml-1.5 rounded bg-white/15 px-1 py-0.5 align-middle text-[9px] text-white" title="被 N 个配方使用">{deal.turnoverScore}</span>
-                          : null}
+                {productItemIds.has(deal.itemId) && <ProductBadge itemId={deal.itemId} />}
+                {turnoverBadgeClass(deal.turnoverScore) !== null && (
+                  <span className={`ml-1.5 rounded px-1 py-0.5 align-middle text-[9px] ${turnoverBadgeClass(deal.turnoverScore)}`} title="被 N 个配方使用">{deal.turnoverScore}</span>
+                )}
               </td>
               <td className="px-3 py-2 text-right"><Coins copper={deal.minPrice} /></td>
               <td className="px-3 py-2 text-right"><Coins copper={prices.get(deal.itemId) ?? 0} /></td>
               <td className="px-3 py-2 text-right text-terminal-muted"><Coins copper={deal.reference} /></td>
               {deal.vendor
-                ? <td className="px-3 py-2 text-right text-terminal-amber">NPC必赚 +<Coins copper={deal.profit} /></td>
-                : <td className="px-3 py-2 text-right text-terminal-green">-{deal.discountPercent.toFixed(0)}%</td>}
+                ? <td className="whitespace-nowrap px-3 py-2 text-right text-terminal-amber">必赚 +<Coins copper={deal.profit} /></td>
+                : <td className="whitespace-nowrap px-3 py-2 text-right text-terminal-green">-{deal.discountPercent.toFixed(0)}%</td>}
               <td className={"px-3 py-2 text-right " + trendTextClass(deal.changePercent)}>{formatTrendPercent(deal.changePercent)}</td>
               <td className="px-3 py-2 text-right text-slate-300">{deal.quantity.toLocaleString("en-US")}</td>
               <td className="px-3 py-2 text-right text-slate-300">{deal.numAuctions.toLocaleString("en-US")}</td>

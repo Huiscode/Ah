@@ -12,13 +12,16 @@ import { formatPercent } from "@/lib/utils";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import { categoryLabel } from "@/lib/category-zh";
 import { qualityColorClass } from "@/lib/quality";
+import { turnoverBadgeClass } from "@/lib/turnover";
 import { Coins } from "@/components/coins";
 import { WatchStar } from "@/components/watch-star";
 import { ItemIcon } from "@/components/item-icon";
+import { ProductBadge } from "@/components/product-badge";
 import { usePersistedState } from "@/lib/use-persisted-state";
 
+// 列结构与上方捡漏雷达一致（★/物品/最低价/市场价/7日参考/折扣%/环比%/在售量/挂单数），
+// 上下对齐；流通分徽章并入物品列，配色规则见 lib/turnover.ts。
 const sortableColumns: Array<{ key: SignalSortKey; heading: string }> = [
-  { key: "turnoverScore", heading: "流通" },
   { key: "minPrice", heading: "最低价" },
   { key: "price", heading: "市场价" },
   { key: "med7", heading: "7日参考" },
@@ -28,23 +31,7 @@ const sortableColumns: Array<{ key: SignalSortKey; heading: string }> = [
   { key: "numAuctions", heading: "挂单数" }
 ];
 
-// 流通分徽章：被多少个配方当材料使用（越高周转越快）。单独一列展示。
-function TurnoverBadge({ score }: { score: number }) {
-  if (score <= 0) {
-    return <span className="text-terminal-muted">—</span>;
-  }
-  const cls =
-    score >= 50
-      ? "bg-green-500/15 text-green-400"
-      : score >= 15
-        ? "bg-amber-500/15 text-amber-400"
-        : "bg-slate-500/15 text-slate-400";
-  return (
-    <span className={`inline-block rounded px-1 py-0.5 text-[9px] ${cls}`} title="被 N 个配方使用">{score}</span>
-  );
-}
-
-export function MarketTable({ rows, watchedItemIds, view, categories, totalCount, filteredCount, page, pageCount }: {
+export function MarketTable({ rows, watchedItemIds, view, categories, totalCount, filteredCount, page, pageCount, productItemIds }: {
   rows: MarketSignal[];
   watchedItemIds: number[];
   view: MarketView;
@@ -53,6 +40,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
   filteredCount: number;
   page: number;
   pageCount: number;
+  productItemIds: Set<number>;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -153,10 +141,6 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
           ))}
         </select>
         <span className="text-terminal-muted">{filteredCount} / {totalCount} 项</span>
-        <span className="ml-auto hidden items-center gap-3 text-[10px] text-terminal-muted sm:flex">
-          <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-cyan-400" />自扫 P10</span>
-          <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-amber-400" />网站 P50</span>
-        </span>
         <span className="ml-auto flex items-center gap-2">
           <button
             onClick={() => apply({ page: page - 1 })}
@@ -183,7 +167,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
             <col className="w-[100px]" />
             <col className="w-[104px]" />
             <col className="w-[120px]" />
-            <col className="w-[96px]" />
+            <col className="w-[140px]" />
             <col className="w-[96px]" />
             <col className="w-[96px]" />
             <col className="w-[96px]" />
@@ -212,16 +196,13 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                     <ItemIcon itemId={signal.itemId} icon={signal.icon} />
                     {signal.name}
                   </Link>
-                  {signal.turnoverScore >= 50
-                    ? <span className="ml-1.5 rounded bg-green-500/15 px-1 py-0.5 align-middle text-[9px] text-green-400" title="被 N 个配方使用，流通快">{signal.turnoverScore}</span>
-                    : signal.turnoverScore >= 15
-                      ? <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 align-middle text-[9px] text-amber-400" title="被 N 个配方使用">{signal.turnoverScore}</span>
-                      : signal.turnoverScore > 0
-                        ? <span className="ml-1.5 rounded bg-slate-500/15 px-1 py-0.5 align-middle text-[9px] text-slate-400" title="被 N 个配方使用">{signal.turnoverScore}</span>
-                        : null}
+                  {productItemIds.has(signal.itemId) && <ProductBadge itemId={signal.itemId} />}
+                  {turnoverBadgeClass(signal.turnoverScore) !== null && (
+                    <span className={`ml-1.5 rounded px-1 py-0.5 align-middle text-[9px] ${turnoverBadgeClass(signal.turnoverScore)}`} title="被 N 个配方使用">{signal.turnoverScore}</span>
+                  )}
                 </td>
-                <td className="px-3 py-2 text-right"><Coins copper={signal.price} /></td>
                 <td className="px-3 py-2 text-right"><Coins copper={signal.minPrice} /></td>
+                <td className="px-3 py-2 text-right"><Coins copper={signal.price} /></td>
                 <td className="px-3 py-2 text-right"><Coins copper={signal.med7} /></td>
                 <td className={signal.discountPercent >= 15 ? "px-3 py-2 text-right text-terminal-green" : "px-3 py-2 text-right text-slate-300"}>{signal.discountPercent.toFixed(0)}%</td>
                 <td className={"px-3 py-2 text-right " + trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</td>

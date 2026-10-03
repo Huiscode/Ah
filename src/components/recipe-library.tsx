@@ -7,6 +7,7 @@ import { professionLabel, categoryLabel } from "@/lib/recipe-profits";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { formatPercent } from "@/lib/utils";
 import { CopperAmount } from "@/components/copper-amount";
+import { ProductBadge } from "@/components/product-badge";
 import { usePersistedState } from "@/lib/use-persisted-state";
 
 // Unambiguous compact copper: 193 -> "1g93c", -113 -> "-1s13c".
@@ -38,6 +39,9 @@ const QUALITY_COLORS = [
 
 type SourceFilter = "全部" | "专业配方" | "商人兑换";
 type SortKey = "profit" | "skillAsc" | "skillDesc" | "name";
+// 收藏配方：localStorage 共享 key（首页"关注配方"面板读取同一份）。
+type FavoriteKey = { category: string; profession: string; name: string };
+const FAVORITES_KEY = "wah:favorite-recipes";
 
 // 技能等级档（入门技能等级口径，与 wx-wow.com 一致）。
 const SKILL_BANDS: Array<{ key: string; label: string; test: (level: number) => boolean }> = [
@@ -62,7 +66,30 @@ export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
   const [category, setCategory] = usePersistedState<string>("wah:recipes:category", "全部");
   const [query, setQuery] = usePersistedState<string>("wah:recipes:query", "");
   const [sort, setSort] = usePersistedState<SortKey>("wah:recipes:sort", "profit");
+  // 配方筛选条件（排序下拉右侧）：材料总价上限（g/s/c）+ 最小利润（%）。
+  // 留空即不过滤；缺价配方无法满足价格条件，激活任一筛选时自动排除。
+  const [costMax, setCostMax] = usePersistedState<{ g: string; s: string; c: string }>("wah:recipes:costMax", { g: "", s: "", c: "" });
+  const [minMargin, setMinMargin] = usePersistedState<string>("wah:recipes:minMargin", "");
   const [page, setPage] = useState(1);
+  // 收藏的配方（首页"关注配方"面板读取同一份 localStorage）。
+  const [favorites, setFavorites] = usePersistedState<FavoriteKey[]>(FAVORITES_KEY, []);
+
+  const isFavorite = (row: RecipeProfitRow): boolean =>
+    favorites.some(
+      (f) =>
+        f.category === (row.recipe.category ?? "") &&
+        f.profession === row.recipe.profession &&
+        f.name === row.recipe.name
+    );
+
+  const toggleFavorite = (row: RecipeProfitRow) => {
+    const key: FavoriteKey = { category: row.recipe.category ?? "", profession: row.recipe.profession, name: row.recipe.name };
+    setFavorites((prev) =>
+      isFavorite(row)
+        ? prev.filter((f) => !(f.category === key.category && f.profession === key.profession && f.name === key.name))
+        : [...prev, key]
+    );
+  };
 
   const bySource = useMemo(() => {
     const craft: RecipeProfitRow[] = [];
@@ -138,8 +165,28 @@ export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
     );
   }, [searched, category]);
 
+  // 价格/利润筛选：材料总价 ≤ g/s/c 上限 且 盈利百分比 ≥ 最小值。
+  // 任一条件激活时只保留 status="ok"（缺价行材料成本不完整，无法判定）。
+  const costLimitCopper = useMemo(() => {
+    const g = Number.parseInt(costMax.g || "0", 10) || 0;
+    const s = Number.parseInt(costMax.s || "0", 10) || 0;
+    const c = Number.parseInt(costMax.c || "0", 10) || 0;
+    return g * 10000 + s * 100 + c;
+  }, [costMax]);
+  const costFilterActive = costMax.g !== "" || costMax.s !== "" || costMax.c !== "";
+  const marginLimit = minMargin.trim() === "" || Number.isNaN(Number(minMargin)) ? null : Number(minMargin);
+  const priced = useMemo(() => {
+    if (!costFilterActive && marginLimit === null) return filtered;
+    return filtered.filter((row) => {
+      if (row.status !== "ok") return false;
+      if (costFilterActive && row.cost > costLimitCopper) return false;
+      if (marginLimit !== null && row.marginPercent < marginLimit) return false;
+      return true;
+    });
+  }, [filtered, costFilterActive, costLimitCopper, marginLimit]);
+
   const sorted = useMemo(() => {
-    const arr = [...filtered];
+    const arr = [...priced];
     switch (sort) {
       case "profit":
         return arr.sort((a, b) => {
@@ -154,7 +201,7 @@ export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
       case "name":
         return arr.sort((a, b) => a.recipe.name.localeCompare(b.recipe.name, "zh-CN"));
     }
-  }, [filtered, sort]);
+  }, [priced, sort]);
 
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
@@ -192,7 +239,7 @@ export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
         action={
           <span className="flex items-center gap-2 font-mono text-[10px] text-terminal-muted">
             <Hammer size={13} className="text-terminal-muted" />
-            共 {rows.length} 条 · 可算利润 {rows.filter((row) => row.status === "ok").length} 条
+            共 {rows.length} 条 · 可算利润 {rows.filter((row) => row.status === "ok").length} 条 · 已收藏 {favorites.length} 条
           </span>
         }
       />
@@ -312,13 +359,59 @@ export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
             <select
               value={sort}
               onChange={(event) => { setSort(event.target.value as SortKey); setPage(1); }}
-              className="border border-terminal-border bg-terminal-panel px-1 py-1 text-[10px] text-slate-200 outline-none"
+              className="border border-terminal-border bg-terminal-bg px-1 py-1 text-[10px] text-terminal-muted outline-none"
             >
               <option value="profit">利润率 高→低</option>
               <option value="skillAsc">技能 低→高</option>
               <option value="skillDesc">技能 高→低</option>
               <option value="name">名称 排序</option>
             </select>
+            <span className="flex items-center gap-1 border border-terminal-border bg-terminal-bg px-1.5 py-1 text-terminal-muted">
+              材料总价&nbsp;≤
+              <input
+                type="text"
+                inputMode="numeric"
+                value={costMax.g}
+                onChange={(event) => { setCostMax({ ...costMax, g: event.target.value.replace(/[^\d]/g, "") }); setPage(1); }}
+                placeholder="g"
+                title="材料总价上限（金币）"
+                className="w-9 bg-transparent text-center text-slate-200 outline-none placeholder:text-terminal-muted/60"
+              />
+              <span>g</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={costMax.s}
+                onChange={(event) => { setCostMax({ ...costMax, s: event.target.value.replace(/[^\d]/g, "") }); setPage(1); }}
+                placeholder="s"
+                title="材料总价上限（银币）"
+                className="w-7 bg-transparent text-center text-slate-200 outline-none placeholder:text-terminal-muted/60"
+              />
+              <span>s</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={costMax.c}
+                onChange={(event) => { setCostMax({ ...costMax, c: event.target.value.replace(/[^\d]/g, "") }); setPage(1); }}
+                placeholder="c"
+                title="材料总价上限（铜币）"
+                className="w-7 bg-transparent text-center text-slate-200 outline-none placeholder:text-terminal-muted/60"
+              />
+              <span>c</span>
+            </span>
+            <span className="flex items-center gap-1 border border-terminal-border bg-terminal-bg px-1.5 py-1 text-terminal-muted">
+              最小利润&nbsp;≥
+              <input
+                type="text"
+                inputMode="decimal"
+                value={minMargin}
+                onChange={(event) => { setMinMargin(event.target.value.replace(/[^\d.]/g, "")); setPage(1); }}
+                placeholder="%"
+                title="最小盈利百分比（缺价配方不参与）"
+                className="w-12 bg-transparent text-center text-slate-200 outline-none placeholder:text-terminal-muted/60"
+              />
+              <span>%</span>
+            </span>
             <span className="ml-auto text-terminal-muted">
               {source === "全部" ? "全库" : source}
               {effectiveProfession === "全部" ? "" : ` · ${professionLabel(effectiveProfession)}`}
@@ -353,10 +446,20 @@ export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
                       <span className="ml-1 text-[9px] text-terminal-amber/80">兑换{(row.recipe.favorCost ?? 0) > 0 ? `·青睐${row.recipe.favorCost}` : ""}</span>
                     )}
                   </span>
-                  <span className="shrink-0 text-[9px] text-terminal-muted">
-                    {difficultyLabel(row)}
-                    {difficultyLabel(row) ? " · " : ""}{row.recipe.reagents.length}种材料
-                    {row.recipe.categoryName ? ` · ${categoryLabel(row.recipe.categoryName)}` : ""}
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleFavorite(row)}
+                      title={isFavorite(row) ? "取消收藏" : "收藏配方"}
+                      className={isFavorite(row) ? "text-terminal-amber" : "text-terminal-muted hover:text-slate-300"}
+                    >
+                      {isFavorite(row) ? "★" : "☆"}
+                    </button>
+                    <span className="text-[9px] text-terminal-muted">
+                      {difficultyLabel(row)}
+                      {difficultyLabel(row) ? " · " : ""}{row.recipe.reagents.length}种材料
+                      {row.recipe.categoryName ? ` · ${categoryLabel(row.recipe.categoryName)}` : ""}
+                    </span>
                   </span>
                 </div>
                 <div className="mt-1 flex h-4 items-baseline justify-between gap-2">
@@ -402,6 +505,7 @@ export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
                     <span key={i}>
                       {i > 0 ? " + " : ""}
                       <span className={QUALITY_COLORS[m.quality ?? 0] ?? ""}>{m.name}×{m.quantity}</span>
+                      <ProductBadge itemId={m.itemId} />
                     </span>
                   )) || "—"}
                   {row.recipe.outputs[0]?.ilvl ? ` · 物品等级${row.recipe.outputs[0].ilvl}` : ""}

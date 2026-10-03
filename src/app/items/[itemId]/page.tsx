@@ -1,8 +1,15 @@
 ﻿import { notFound } from "next/navigation";
 import Link from "next/link";
 import { buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
-import { getItemDetail, getWatchedItemIds } from "@/lib/repositories";
-import { prisma } from "@/lib/prisma";
+import {
+  getItemDetail,
+  getItemVendorPricesByIds,
+  getLatestAddonPricesByItemIds,
+  getRecipesProducing,
+  getWatchedItemIds
+} from "@/lib/repositories";
+import { buildFloorPriceIndex, computeRecipeProfits, professionLabel } from "@/lib/recipe-profits";
+import { FOOD_EFFECTS } from "@/data/food-effects";
 import { formatPercent } from "@/lib/utils";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import { Coins } from "@/components/coins";
@@ -20,9 +27,26 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const item = await getItemDetail(numericItemId);
   if (!item) notFound();
 
-  const [watchedIds] = await Promise.all([
-    getWatchedItemIds()
+  // 制作配方面板按需取数：只查产出此物品的配方，以及这些配方涉及的
+  // 物品的最新市场价 / NPC 保底价——不做全量市场信号扫描（单品页加载
+  // 快的关键：med7 在 getItemDetail 里也只算当前物品）。
+  const [watchedIds, producingRecipes] = await Promise.all([
+    getWatchedItemIds(),
+    getRecipesProducing(numericItemId)
   ]);
+  const involvedItemIds = new Set<number>([numericItemId]);
+  for (const recipe of producingRecipes) {
+    for (const material of recipe.reagents) involvedItemIds.add(material.itemId);
+    for (const output of recipe.outputs) involvedItemIds.add(output.itemId);
+  }
+  const [priceByItemId, vendorPrices] = await Promise.all([
+    getLatestAddonPricesByItemIds(Array.from(involvedItemIds)),
+    getItemVendorPricesByIds(Array.from(involvedItemIds))
+  ]);
+  const floorPriceIndex = buildFloorPriceIndex(producingRecipes, vendorPrices);
+  const recipeRows = computeRecipeProfits(producingRecipes, priceByItemId, floorPriceIndex);
+  // 食物产出物：字典命中即食物（由 foreverchanges.pro 详情页 tooltip 生成）。
+  const foodEffect = FOOD_EFFECTS[numericItemId];
   const now = new Date();
   const hasSnapshots = item.snapshots.length > 0;
   const signal = hasSnapshots ? buildMarketSignal(item, now) : null;
@@ -180,6 +204,45 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                   </table>
                 );
               })()}
+            </div>
+          </Panel>
+          <Panel>
+            <PanelHeader title="制作配方" />
+            <div className="space-y-2 p-3 font-mono text-xs">
+              {foodEffect && recipeRows.length > 0 && (
+                <div className="rounded border border-terminal-border bg-terminal-panel2 p-2 text-[12px] leading-relaxed text-slate-300">
+                  <span className="font-semibold text-terminal-amber">使用：</span>
+                  {foodEffect.replace(/^使用：\s*/, "")}
+                </div>
+              )}
+              {recipeRows.length === 0 && (
+                <div className="text-terminal-muted">配方库中没有配方产出这个物品</div>
+              )}
+              {recipeRows.map((row) => (
+                <div key={`${row.recipe.category ?? "craft"}|${row.recipe.profession}|${row.recipe.name}`} className="rounded border border-terminal-border bg-terminal-panel2 p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-slate-200">{professionLabel(row.recipe.profession)} · {row.recipe.name}</span>
+                    {row.status === "ok" ? (
+                      <span className={"shrink-0 " + (row.profit >= 0 ? "text-terminal-green" : "text-terminal-red")}>
+                        {row.profit >= 0 ? "+" : ""}{formatPercent(row.marginPercent)}
+                        <span className="text-terminal-muted">{row.profit >= 0 ? " 盈利 " : " 亏损 "}</span>
+                        <Coins copper={Math.abs(row.profit)} />
+                      </span>
+                    ) : (
+                      <span className="shrink-0 text-terminal-red">缺价</span>
+                    )}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-1.5 gap-y-0.5 leading-relaxed text-terminal-muted">
+                    {row.status === "ok" ? (
+                      row.materials.map((material) => (
+                        <span key={material.name}>材料 {material.name}×{material.quantity}（<span className="text-slate-200"><Coins copper={material.price} /></span>）</span>
+                      ))
+                    ) : (
+                      row.missing.map((name) => <span key={name}>缺价：{name}</span>)
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </Panel>
         </div>

@@ -68,7 +68,7 @@ export function RadarParamsPanel({ initialRules }: { initialRules: RadarRules })
           <MoneyInput value={vendorMinProfit} onChange={(v) => { setVendorMinProfit(v); notify(); }} fieldClass={field} />
         </div>
         <p className="pt-2 text-[10px] leading-relaxed text-terminal-muted">
-          所有条件仅对本地数据库的捡漏池做筛选。必赚最低盈利只过滤 NPC必赚 行。
+          所有条件仅对本地数据库的捡漏池做筛选。必赚最低盈利只过滤必赚 行。
         </p>
       </div>
     </Panel>
