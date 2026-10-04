@@ -15,7 +15,8 @@ local L = {
   SCAN_AUTO_ARMED = " Auto-rescan armed (next full scan in ~15 min).",
   SCAN_ABORTED = "Scan aborted: auction house closed.",
   SCAN_DIAG_THROTTLE = "Diag: IsThrottled=%s before replication.",
-  SCAN_NO_REPLICATE = "No replication data within 12s (event never fired). The server may have rejected the request; retry later, or check for errors with /console scriptErrors 1.",
+  SCAN_NO_REPLICATE = "No replication data within 180s (event never fired). The server may have rejected the request; retry later, or check for errors with /console scriptErrors 1.",
+  SCAN_RETRYING = "First replication attempt was ignored by the server; retrying in a few seconds...",
   SCAN_INCOMPLETE = "Replication stream stalled; %d incomplete entries left unrecorded. Next full scan will retry them.",
   SCAN_PROBE = "probe idx0: %d positional values | %s",
   AUTO_ON = "Auto-rescan ON: rescans every ~15 min while the AH is open. (persisted)",
@@ -134,7 +135,8 @@ if GetLocale() == "zhCN" then
   L.SCAN_AUTO_ARMED = " 自动重扫已就绪（约 15 分钟后下一次全量扫描）。"
   L.SCAN_ABORTED = "扫描中止：拍卖行已关闭。"
   L.SCAN_DIAG_THROTTLE = "诊断：发起复制前 IsThrottled=%s。"
-  L.SCAN_NO_REPLICATE = "12 秒内未收到复制数据（事件未触发）。服务器可能拒绝了复制请求；可稍后重试，或用 /console scriptErrors 1 查看是否有报错。"
+  L.SCAN_NO_REPLICATE = "180 秒内未收到复制数据（事件未触发）。服务器可能拒绝了复制请求；可稍后重试，或用 /console scriptErrors 1 查看是否有报错。"
+  L.SCAN_RETRYING = "服务器未响应首次复制请求，几秒后自动重试..."
   L.SCAN_INCOMPLETE = "复制数据流停滞；%d 条不完整条目未记录。下次全量扫描会重试。"
   L.SCAN_PROBE = "探针 idx0：%d 个位置值 | %s"
   L.AUTO_ON = "自动重扫已开启：拍卖行开着时每约 15 分钟重扫一次。（已保存）"

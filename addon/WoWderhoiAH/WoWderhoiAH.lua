@@ -32,6 +32,17 @@ end
 -- getAll cooldown cadence; the server does not expose a public query for
 -- "is replicate ready", so the addon tracks its own ready-at timestamp.
 local REPLICATE_COOLDOWN = 15 * 60
+-- How long to wait for the first replication chunk before giving up. The
+-- main-city book is large and the server can take a while to start
+-- streaming; the old 12s cutoff aborted scans that were merely slow. Raise
+-- this number if a large book still reports "no replication data".
+local REPLICATE_WATCHDOG = 180
+-- Automatic retry when a replication never starts. Forever has been
+-- observed to silently drop the FIRST ReplicateItems after the AH opens
+-- (no event at all), while a retry seconds later streams instantly; wait
+-- RETRY_DELAY seconds, up to MAX_REPLICATE_RETRIES times, before giving up.
+local RETRY_DELAY = 5
+local MAX_REPLICATE_RETRIES = 2
 -- Hard ceiling on listings processed per OnUpdate frame. The real gate is
 -- the time budget below; this only caps a single catastrophically slow
 -- recordAuction from spinning one frame indefinitely.
@@ -44,6 +55,7 @@ local FRAME_BUDGET_MS = 8
 
 local scanState = nil -- { mode="replicate", itemsById, itemInfoCache, processing, cursor, pending, pendingOnly }
 local pendingRounds = 0 -- revisit passes over incomplete entries, capped to avoid a stall
+local replicateRetries = 0 -- consecutive watchdog timeouts; reset on delivered data or success
 
 local function autoScanOn()
   return WAH.settings and WAH.settings.autoScan
@@ -275,6 +287,7 @@ local function sellFrontPrice(sortedListings, totalQuantity)
 end
 
 local function finishScan(totalAuctions)
+  replicateRetries = 0 -- a completed scan resets the retry counter
   local items = {}
   local itemCount = 0
   for itemId, entry in pairs(scanState.itemsById) do
@@ -373,8 +386,27 @@ end
 
 local function processReplicateChunk()
   local total = C_AuctionHouse.GetNumReplicateItems()
+  -- Guard: the event can land before the first entries are queryable. If the
+  -- list is still empty, keep waiting instead of instantly "completing" a
+  -- 0-item scan (the old code flipped to revisit mode and finished at once).
+  if total <= 0 then
+    scanState.emptySince = scanState.emptySince or time()
+    if time() - scanState.emptySince > 10 then
+      chatMessage(string.format(L.SCAN_INCOMPLETE, 0))
+      frame:SetScript("OnUpdate", nil)
+      scanState = nil
+      WAH.scanRunning = false
+    end
+    return
+  end
+  scanState.emptySince = nil
   local frameStart = debugprofilestop()
   local yielded = false
+  -- If the list grew since the first walk ended (the server kept streaming
+  -- past the count we saw), resume walking the new tail before revisiting.
+  if scanState.pendingOnly and total > (scanState.prevTotal or 0) then
+    scanState.pendingOnly = false
+  end
   if not scanState.pendingOnly then
     -- First pass: walk every index once. Entries still streaming in
     -- (hasAllInfo=false) are queued for a revisit; the rest are recorded.
@@ -393,7 +425,11 @@ local function processReplicateChunk()
       index = index + 1
     end
     scanState.cursor = index + 1
-    if not yielded and target >= total - 1 then
+    scanState.prevTotal = total
+    -- Reached the current end of the list: move to the revisit pass. If the
+    -- server keeps streaming and the count grows later, the top of this
+    -- function flips back to the walk pass to pick up the new tail.
+    if not yielded and total > 0 and target >= total - 1 then
       scanState.pendingOnly = true -- whole list walked; revisit incomplete entries
     end
   else
@@ -417,8 +453,18 @@ local function processReplicateChunk()
     end
     if not yielded then
       if next(scanState.pending) then
-        pendingRounds = pendingRounds + 1
-        if pendingRounds >= 4 then
+        -- Progress-based stall detection: only a pass that failed to shrink
+        -- the pending set counts against the round cap, so a slow-but-live
+        -- stream is never cut off at a fixed low round count.
+        local pendingCount = 0
+        for _ in pairs(scanState.pending) do pendingCount = pendingCount + 1 end
+        if pendingCount < (scanState.lastPendingCount or 999999999) then
+          scanState.lastPendingCount = pendingCount
+          pendingRounds = 0
+        else
+          pendingRounds = pendingRounds + 1
+        end
+        if pendingRounds >= 20 then
           -- Streaming stalled; ship what completed rather than hanging.
           chatMessage(string.format(L.SCAN_INCOMPLETE, #keys))
           frame:SetScript("OnUpdate", nil)
@@ -459,7 +505,7 @@ local function startScan()
   end
   WAH.scanRunning = true
   pendingRounds = 0
-  scanState = { mode = "replicate", itemsById = {}, itemInfoCache = {}, pending = {}, pendingOnly = false, probeDone = false, pendingCategory = {} }
+  scanState = { mode = "replicate", itemsById = {}, itemInfoCache = {}, pending = {}, pendingOnly = false, probeDone = false, pendingCategory = {}, prevTotal = nil, lastPendingCount = nil, emptySince = nil, lastEventAt = nil }
   chatMessage(L.SCAN_REPLICATE_START)
   local throttled = false
   if C_AuctionHouse.IsThrottled then throttled = C_AuctionHouse.IsThrottled() end
@@ -467,10 +513,28 @@ local function startScan()
   C_AuctionHouse.ReplicateItems()
   -- Watchdog: if REPLICATE_ITEM_LIST_UPDATE never fires (replication
   -- rejected, or the event differs on this client), scanState would sit
-  -- here forever and block every later scan. Reset after 12s and say so.
-  C_Timer.After(12, function()
+  -- here forever and block every later scan. Give a large book time to
+  -- start streaming (REPLICATE_WATCHDOG seconds), and never abort while
+  -- events have arrived recently -- a slow but live stream must not be
+  -- killed mid-flight.
+  --
+  -- Observed on Forever: the server silently drops the FIRST ReplicateItems
+  -- after the AH opens (no event at all), while a retry seconds later
+  -- streams instantly. So a timeout does not give up immediately -- it
+  -- retries up to MAX_REPLICATE_RETRIES times before reporting failure.
+  C_Timer.After(REPLICATE_WATCHDOG + 1, function()
     if not scanState then return end
     if scanState.processing then return end -- data is flowing; normal path owns it
+    if scanState.lastEventAt and time() - scanState.lastEventAt < REPLICATE_WATCHDOG then return end
+    if replicateRetries < MAX_REPLICATE_RETRIES then
+      replicateRetries = replicateRetries + 1
+      scanState = nil
+      WAH.scanRunning = false
+      chatMessage(L.SCAN_RETRYING)
+      C_Timer.After(RETRY_DELAY, function() startScan() end)
+      return
+    end
+    replicateRetries = 0
     chatMessage(L.SCAN_NO_REPLICATE)
     scanState = nil
     WAH.scanRunning = false
@@ -479,6 +543,7 @@ end
 
 frame:SetScript("OnEvent", function(_, event)
   if event == "AUCTION_HOUSE_CLOSED" then
+    replicateRetries = 0 -- fresh start next time the AH opens
     if scanState then
       frame:SetScript("OnUpdate", nil)
       scanState = nil
@@ -492,6 +557,8 @@ frame:SetScript("OnEvent", function(_, event)
   -- next chunk event until the replication is fully consumed.
   if not scanState then return end
   if scanState.processing then return end
+  scanState.lastEventAt = time()
+  replicateRetries = 0 -- data delivered; any earlier rejection is moot
   scanState.processing = true
   scanState.cursor = 0 -- replicate indices are 0-based on this client
   chatMessage(string.format(L.SCAN_RECEIVED, C_AuctionHouse.GetNumReplicateItems() or 0))
