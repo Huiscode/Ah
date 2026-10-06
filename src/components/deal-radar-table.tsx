@@ -5,6 +5,7 @@ import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import Link from "next/link";
 import { ItemIcon } from "@/components/item-icon";
 import { Coins } from "@/components/coins";
+import { MoneyInput } from "@/components/money-input";
 import { WatchStar } from "@/components/watch-star";
 import { ProductBadge } from "@/components/product-badge";
 import { qualityColorClass } from "@/lib/quality";
@@ -31,24 +32,11 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
 }) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
-  const [, force] = useState(0);
   const [category, setCategory] = usePersistedState<string>("wah:deal-radar:category", "");
   const [onlyLiquid, setOnlyLiquid] = usePersistedState<boolean>("wah:deal-radar:onlyLiquid", false);
   const [fMinPrice, setFMinPrice] = usePersistedState<number>("wah:filter:minPrice", 0);
   const [fMaxPrice, setFMaxPrice] = usePersistedState<number>("wah:filter:maxPrice", 0);
   const [fVendorMinProfit, setFVendorMinProfit] = usePersistedState<number>("wah:filter:vendorMinProfit", 0);
-  useEffect(() => {
-    const h = () => {
-      try {
-        const p = localStorage.getItem("wah:filter:minPrice"); if (p) setFMinPrice(JSON.parse(p));
-        const x = localStorage.getItem("wah:filter:maxPrice"); if (x) setFMaxPrice(JSON.parse(x));
-        const vp = localStorage.getItem("wah:filter:vendorMinProfit"); if (vp) setFVendorMinProfit(JSON.parse(vp));
-      } catch {}
-      force((n) => n + 1);
-    };
-    window.addEventListener("wah:filter", h);
-    return () => window.removeEventListener("wah:filter", h);
-  }, []);
   const watched = new Set(watchedItemIds);
 
   useEffect(() => {
@@ -99,6 +87,7 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
   const mark = (key: SortKey) => (sortKey === key ? (sortAsc ? " ▲" : " ▼") : "");
   const thClass = "cursor-pointer select-none border-b border-terminal-border px-3 py-2 hover:text-slate-200";
   const inputClass = "border border-terminal-border bg-terminal-panel2 px-2 py-1 text-slate-100 focus:outline-none";
+  const moneyField = "bg-transparent text-right text-slate-100 focus:outline-none";
 
   return (
     <div>
@@ -118,7 +107,19 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
           />
           仅限高流通商品
         </label>
-        <span className="text-terminal-muted">{rows.length} / {deals.length} 条</span>
+        <span className="flex items-center gap-1.5 border border-terminal-border/60 bg-terminal-panel2 px-2 py-1" title="0=关：不筛选。只保留最低价 ≥ 该值的行">
+          <span className="text-terminal-muted">价格下限</span>
+          <MoneyInput value={fMinPrice} onChange={setFMinPrice} fieldClass={moneyField} />
+        </span>
+        <span className="flex items-center gap-1.5 border border-terminal-border/60 bg-terminal-panel2 px-2 py-1" title="0=关：不筛选。只保留最低价 ≤ 该值的行">
+          <span className="text-terminal-muted">价格上限</span>
+          <MoneyInput value={fMaxPrice} onChange={setFMaxPrice} fieldClass={moneyField} />
+        </span>
+        <span className="flex items-center gap-1.5 border border-terminal-border/60 bg-terminal-panel2 px-2 py-1" title="0=关；只过滤必赚行（盈利 ≥ 该值）">
+          <span className="text-terminal-muted">必赚最低盈利</span>
+          <MoneyInput value={fVendorMinProfit} onChange={setFVendorMinProfit} fieldClass={moneyField} />
+        </span>
+        <span className="ml-auto text-terminal-muted">{rows.length} / {deals.length} 条</span>
       </div>
       <div className="max-h-[344px] overflow-y-auto [scrollbar-gutter:stable]">
       <table className="w-full min-w-[1000px] table-fixed border-collapse font-mono text-xs">

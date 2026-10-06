@@ -2,6 +2,7 @@ import { ArrowLeftRight, Bell, Hammer, RadioTower, Star } from "lucide-react";
 import { buildDealRadar } from "@/lib/analytics";
 import { evaluateAlertRules } from "@/lib/alerts";
 import { buildFloorPriceIndex, computeRecipeProfits } from "@/lib/recipe-profits";
+import { buildSecondaryMaterialRows } from "@/lib/secondary-materials";
 import { mergeRadarRules } from "@/lib/market-rules";
 import {
   getAlertRules,
@@ -23,8 +24,8 @@ import { ProductBadge } from "@/components/product-badge";
 import { MarketTable } from "@/components/market-table";
 import { WatchStar } from "@/components/watch-star";
 import { DealRadarTable } from "@/components/deal-radar-table";
+import { SecondaryMaterialsPanel } from "@/components/secondary-materials-panel";
 
-import { RadarParamsPanel } from "@/components/radar-params-panel";
 import { PriceLadderPanel } from "@/components/price-ladder-panel";
 import { FavoriteRecipesPanel } from "@/components/favorite-recipes-panel";
 import { InstructionsPanel } from "@/components/instructions-panel";
@@ -69,6 +70,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const deals = latestAddonRound === null ? allDeals : allDeals.filter((deal) => latestAddonRound.has(deal.itemId));
   const radarCategories = groupedCategoryOptions(Array.from(new Set(deals.map((deal) => deal.category))));
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
+  const turnoverByItemId = new Map(signals.map((signal) => [signal.itemId, signal.turnoverScore]));
   // P0-B: full-recipe profit library. Revenue side = live AH price (自扫P10
   // → 网站P50 per signal) or the vendor floor when the market has no listing;
   // the floor index merges the curated dictionary, DB Item.vendorPrice and
@@ -76,6 +78,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // source for Forever-only items).
   const floorPriceIndex = buildFloorPriceIndex(recipes, vendorPrices);
   const recipeRows = computeRecipeProfits(recipes, priceByItemId, floorPriceIndex);
+  // 中间材料（次级材料）：配方产物且被其它配方用作材料，按单位利润排序。
+  const secondaryRows = buildSecondaryMaterialRows(recipes, priceByItemId, floorPriceIndex);
   // 配方产出物集合：扫描物品若被某配方产出（成品），在列表中标记"产品"徽章。
   const productItemIds = new Set<number>();
   for (const recipe of recipes) for (const output of recipe.outputs) productItemIds.add(output.itemId);
@@ -133,8 +137,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </Panel>
         </div>
         <div className="space-y-3">
+          <SecondaryMaterialsPanel rows={secondaryRows} prices={priceByItemId} floorPrices={floorPriceIndex} turnoverByItemId={turnoverByItemId} />
           <PriceLadderPanel />
-          <RadarParamsPanel initialRules={radarRules} />
           <FavoriteRecipesPanel rows={recipeRows} prices={priceByItemId} floorPrices={floorPriceIndex} />
           <Panel>
             <PanelHeader title="关注物品" action={<Star size={13} className="text-terminal-amber" />} />
