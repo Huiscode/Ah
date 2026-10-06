@@ -55,6 +55,24 @@ const SKILL_BANDS: Array<{ key: string; label: string; test: (level: number) => 
 
 const PAGE_SIZE = 20;
 
+// 专业 tab 固定顺序，与 wx-wow.com（网上截图）一致：
+// 炼金→锻造→附魔→工程→制皮→裁缝→采矿→草药→剥皮→烹饪→钓鱼→急救。
+// 未出现在列表中的专业（如"贸易通用"）自动排到最后，再按拼音兜底。
+const PROFESSION_ORDER = [
+  "Alchemy",        // 炼金术
+  "Blacksmithing",  // 锻造
+  "Enchanting",     // 附魔
+  "Engineering",    // 工程学
+  "Leatherworking", // 制皮
+  "Tailoring",      // 裁缝
+  "Mining",         // 采矿
+  "Herbalism",      // 草药学
+  "Skinning",       // 剥皮
+  "Cooking",        // 烹饪
+  "Fishing",        // 钓鱼
+  "First Aid"       // 急救
+];
+
 // 配方库（独立页面）：模仿 wx-wow.com 专业配方页——来源/专业 tab 横条、
 // 左侧技能等级+分类筛选、搜索框、排序、两列卡片网格、分页。卡片保留本项目
 // 的核心增值：利润率与利润额（绿色/红色），缺价配方排最后并标"缺价"。
@@ -108,7 +126,12 @@ export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
   const professions = useMemo(() => {
     const seen = new Set<string>();
     for (const row of baseRows) if (row.recipe.profession) seen.add(row.recipe.profession);
-    return Array.from(seen).sort((a, b) => a.localeCompare(b, "zh-CN"));
+    const order = new Map(PROFESSION_ORDER.map((p, i) => [p, i]));
+    return Array.from(seen).sort(
+      (a, b) =>
+        (order.get(a) ?? Number.MAX_SAFE_INTEGER) - (order.get(b) ?? Number.MAX_SAFE_INTEGER) ||
+        a.localeCompare(b, "zh-CN")
+    );
   }, [baseRows]);
 
   // 默认"全部"，无空值回退。

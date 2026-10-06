@@ -47,10 +47,10 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
     ? deals.filter((deal) => categoryMatches(deal.category, category))
     : [...deals];
 
-  // Client-side secondary filters (from radar params panel).
+  // Client-side secondary filters: 价格上下限按最低价，最低盈利按整池盈利。
   if (fMinPrice > 0) rows = rows.filter((d) => d.minPrice >= fMinPrice);
   if (fMaxPrice > 0) rows = rows.filter((d) => d.minPrice <= fMaxPrice);
-  if (fVendorMinProfit > 0) rows = rows.filter((d) => !d.vendor || d.profit >= fVendorMinProfit);
+  if (fVendorMinProfit > 0) rows = rows.filter((d) => d.profit >= fVendorMinProfit);
 
 
   // 仅限高流通：只保留有流通分的商品（turnoverScore > 0）。
@@ -115,8 +115,8 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
           <span className="text-terminal-muted">价格上限</span>
           <MoneyInput value={fMaxPrice} onChange={setFMaxPrice} fieldClass={moneyField} />
         </span>
-        <span className="flex items-center gap-1.5 border border-terminal-border/60 bg-terminal-panel2 px-2 py-1" title="0=关；只过滤必赚行（盈利 ≥ 该值）">
-          <span className="text-terminal-muted">必赚最低盈利</span>
+        <span className="flex items-center gap-1.5 border border-terminal-border/60 bg-terminal-panel2 px-2 py-1" title="0=关；整个雷达池的最低盈利门槛（必赚与非必赚行都按盈利筛选）">
+          <span className="text-terminal-muted">最低盈利</span>
           <MoneyInput value={fVendorMinProfit} onChange={setFVendorMinProfit} fieldClass={moneyField} />
         </span>
         <span className="ml-auto text-terminal-muted">{rows.length} / {deals.length} 条</span>
