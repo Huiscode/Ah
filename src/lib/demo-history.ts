@@ -47,6 +47,7 @@ export function generateDemoHistory(days = 21): MarketHistory[] {
         timestamp,
         server: "Anniversary",
         faction: "Alliance",
+        market: "faction",
         minPrice: Math.round(latest.closePrice * 0.97 * pulse),
         marketPrice: Math.round(latest.closePrice * pulse),
         quantity: Math.max(12, Math.round(latest.volume / 2 + Math.sin(offset) * 35)),

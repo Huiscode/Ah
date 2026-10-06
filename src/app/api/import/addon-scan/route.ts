@@ -34,6 +34,7 @@ export async function POST(request: Request) {
       scannedAt: scan.scannedAt,
       server: scan.server,
       faction: scan.faction,
+      market: scan.market,
       items: scan.items as unknown as ImportScanItem[],
       ...(points !== undefined ? { points } : {}),
       ...(typeof rawBody?.after === "number" && rawBody.after > 0 ? { after: rawBody.after } : {}),

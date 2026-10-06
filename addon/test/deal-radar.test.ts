@@ -75,6 +75,7 @@ function classifiedByWeb(candidates: Candidate[]) {
         timestamp: new Date(NOW.getTime() - (last - index) * DAY),
         server: "TestRealm",
         faction: "Alliance",
+        market: "faction",
         marketPrice: price,
         minPrice: index === last ? candidate.minPrice : price,
         quantity: 100,

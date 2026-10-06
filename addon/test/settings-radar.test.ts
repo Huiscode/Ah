@@ -69,6 +69,7 @@ function webWith(candidates: Candidate[], rules: Partial<DealRadarRules>): strin
         timestamp: new Date(NOW.getTime() - (last - index) * DAY),
         server: "TestRealm",
         faction: "Alliance",
+        market: "faction",
         marketPrice: price,
         minPrice: index === last ? candidate.minPrice : price,
         quantity: candidate.quantity ?? 100,

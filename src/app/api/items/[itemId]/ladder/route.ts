@@ -10,7 +10,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ itemId: st
 
   const item = await prisma.item.findUnique({ where: { itemId: id }, select: { name: true, quality: true } });
   const snap = await prisma.auctionSnapshot.findFirst({
-    where: { itemId: id, source: "addon", rawPayload: { not: undefined } },
+    where: { itemId: id, source: "addon", market: "faction", rawPayload: { not: undefined } },
     orderBy: { timestamp: "desc" },
     select: { rawPayload: true }
   });

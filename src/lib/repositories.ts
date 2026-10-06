@@ -23,6 +23,7 @@ type SnapshotRaw = {
   timestamp: number | string | Date;
   server: string;
   faction: string;
+  market: string;
   source: string;
   min_price: bigint | number;
   market_price: bigint | number;
@@ -75,14 +76,14 @@ async function getMed7Aggregates(itemIds?: number[]): Promise<Map<number, { med7
       SELECT "item_id", "source",
              ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "timestamp" DESC) AS rn
       FROM "AuctionSnapshot"
-      WHERE 1=1 ${idCond}
+      WHERE "market" = 'faction' ${idCond}
     ),
     lsrc AS (SELECT "item_id", "source" FROM latest WHERE rn = 1),
     win AS (
       SELECT s."item_id", s."market_price"
       FROM "AuctionSnapshot" s
       JOIN lsrc ON lsrc."item_id" = s."item_id" AND lsrc."source" = s."source"
-      WHERE s."timestamp" >= ${cutoff}
+      WHERE s."timestamp" >= ${cutoff} AND s."market" = 'faction'
     ),
     med AS (
       SELECT "item_id", "market_price",
@@ -111,8 +112,9 @@ export async function getMarketUniverse(): Promise<MarketHistory[]> {
       WITH ranked AS (
         SELECT *, ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "timestamp" DESC) AS rn
         FROM "AuctionSnapshot"
+        WHERE "market" = 'faction'
       )
-      SELECT "id", "item_id", "timestamp", "server", "faction", "source",
+      SELECT "id", "item_id", "timestamp", "server", "faction", "market", "source",
              "min_price", "market_price", "alt_price", "quantity", "num_auctions"
       FROM ranked WHERE rn <= 48 ORDER BY "item_id", "timestamp" ASC`,
     prisma.$queryRaw<DailyRaw[]>`
@@ -157,6 +159,7 @@ export async function getMarketUniverse(): Promise<MarketHistory[]> {
       timestamp: toDate(s.timestamp),
       server: s.server,
       faction: s.faction,
+      market: s.market,
       source: s.source,
       minPrice: toNumber(s.min_price),
       marketPrice: toNumber(s.market_price),
@@ -207,7 +210,11 @@ export async function getAlertRules() {
 
 
 export async function getLatestSnapshotTime() {
-  const row = await prisma.auctionSnapshot.findFirst({ orderBy: { timestamp: "desc" }, select: { timestamp: true } });
+  const row = await prisma.auctionSnapshot.findFirst({
+    where: { market: "faction" },
+    orderBy: { timestamp: "desc" },
+    select: { timestamp: true }
+  });
   return row?.timestamp ?? null;
 }
 
@@ -227,13 +234,13 @@ export async function getItemMetaVersion(): Promise<number> {
 // universe and stays empty.
 export async function getLatestAddonRoundItemIds(): Promise<Set<number> | null> {
   const latest = await prisma.auctionSnapshot.findFirst({
-    where: { source: "addon" },
+    where: { source: "addon", market: "faction" },
     orderBy: { timestamp: "desc" },
     select: { timestamp: true }
   });
   if (!latest) return null;
   const rows = await prisma.auctionSnapshot.findMany({
-    where: { source: "addon", timestamp: latest.timestamp },
+    where: { source: "addon", market: "faction", timestamp: latest.timestamp },
     select: { itemId: true }
   });
   return new Set(rows.map((row) => row.itemId));

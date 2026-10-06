@@ -23,6 +23,7 @@ function history(
       timestamp: new Date(now.getTime() - snap.daysAgo * DAY),
       server: "Anniversary",
       faction: "Alliance",
+      market: "faction",
       minPrice: snap.minPrice ?? Math.round(snap.marketPrice * 0.9),
       marketPrice: snap.marketPrice,
       quantity: snap.quantity ?? 100,

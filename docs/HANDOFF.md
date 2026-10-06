@@ -1,7 +1,7 @@
 # AH 项目跟进文件（HANDOFF）
 
 > **本文件是进入本项目工作的唯一必读入口**：先读它，再按需精读具体文件，不要通读整个代码库。
-> 最后更新：2026-10-02（本地 UTC+2）。对应 git HEAD：`9a32f5a`（已 push；工作树含 6.15 配方库回填等未提交改动）。
+> 最后更新：2026-10-06（本地 UTC+2）。对应 git HEAD：`8a46464`（**未推**，origin 停在 `dd0ae7f`，本地 ahead 1；工作树含 0.3.7 插件、网页 market 维度、测试夹具等大量未提交改动，详见 §7）。
 > 语言：与用户用中文交流；代码/标识符保持英文。
 
 ## 1. 项目是什么
@@ -42,6 +42,12 @@ SQLite（Prisma）：prisma\dev.db
 > 2026-10-01：AHledger 网站数据通道已整体移除（importer 进程、路由、toggle、相关脚本与
 > 历史数据全部清理）。`AuctionSnapshot` 增列 `alt_price`（P50 close，展示用）；市场价/7日参考
 > 仍统一为插件扫描的 P10 口径，P50 仅作单品页盘中走势的展示曲线，不参与雷达与参考价。
+>
+> 2026-10-06：**市场隔离（0.3.5+）**——插件扫描完成时判定市场：开服宽限内（0.3.7，见 §6.22）
+> 一律 faction；之后按挂单总数 ≥20000 判 faction，否则 neutral。faction 写 `WoWderhoiAH_ScanData`
+> （+ Points，进网页导入）；neutral 写 `WoWderhoiAHDB.neutralScanData` 独立槽位（不覆盖 scanData、
+> 不写 Points、**不进网页导入**）。`AuctionSnapshot` 增 `market` 列（默认 "faction"）+ 索引；
+> 导入链路透传 market，全部查询（最新轮/信号/med7/走势/ladder）按 `market='faction'` 过滤。
 
 ## 3. 关键路径速查
 
@@ -61,13 +67,16 @@ SQLite（Prisma）：prisma\dev.db
 网页库模块（src\lib\）：`analytics.ts`（行情信号/雷达）、`repositories.ts`（DB 访问）、`market-signals.ts`（按快照代缓存）、
 `freshness.ts`（"数据更新于"标签）、`market-filter.ts`、`alerts.ts`、`recipe-profits.ts`、`ladders.ts`、`addon-scan.ts`、`scan-import.ts`、`import-common.ts`、`daily-summary.ts`。
 
-## 4. 运行中的服务与进程（2026-10-01 早上启动）
+## 4. 运行中的服务与进程（2026-10-06 18:46 重启后）
 
 | 服务 | 进程（tsx 父→node 子 = **1 个逻辑实例**，勿当重复杀） | 说明 |
 |---|---|---|
-| watch-savedvars | 2368 → 16076（Program Files node） | 监视 SV → 导入（已加并发锁） |
-| next dev | 2160（next dev）→ 11824（start-server，监听 3000） | 网页（Program Files node） |
+| watch-savedvars | 4316 → 11892（Program Files node） | 监视 SV → 导入（已加并发锁） |
+| next dev | 13216 → 22440 → 22700（监听 3000） | 网页（Program Files node） |
 | 游戏 | WowB.exe（用户环境） | — |
+
+进程 PID 随重启变化，以上为 10-06 实况；确认方式：`Get-NetTCPConnection -State Listen -LocalPort 3000` /
+`Get-Process -Name node`。
 
 **不要**因为看到每个脚本 2 个 node 进程就去 kill：那是 tsx CLI 父 + 执行子进程的一对。
 
@@ -80,9 +89,9 @@ SQLite（Prisma）：prisma\dev.db
 
 ```powershell
 cd C:\Users\Hz\Documents\Workspace\Ah
-npx vitest run addon/test/     # 插件测试：10 文件 71 用例（含 scan-category 2、sell-assist 6、ledger-mail 4）
+npx vitest run addon/test/     # 插件测试：10 文件 76 用例（scan-category 5、sell-assist 6、ledger-mail 4 等）
 npx tsc --noEmit               # 全项目类型检查，退出 0
-npx vitest run                 # 全量：27 文件 183 用例
+npx vitest run                 # 全量：29 文件 199 用例
 # 网页账本现状：
 Invoke-RestMethod http://localhost:3000/api/import/ledger
 # 直接查 DB（node 22 内置 sqlite）：
@@ -90,7 +99,7 @@ node -e "const{DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('p
 # 部署插件：把 addon\WoWderhoiAH\*.lua 复制到游戏插件目录并比对哈希
 ```
 
-## 6. 最近完成的工作（均已提交并 push）
+## 6. 最近完成的工作（6.1~6.15 已提交并 push；6.16 之后状态见各小节——0.3.x 系列与市场维度均未推/未提交）
 
 ### 6.1 出售助手窗口不关闭修复（commit f3e0cc9，Trade.lua）
 三个根因：hook 闭包引用了未声明 local 的 sellAssist（每处关闭都在 pcall 里静默死掉）、全局 itemId 残留、
@@ -239,15 +248,75 @@ POST /api/import/ledger（upsert by uid），只删 DB 会被下一次上传灌�
   按方针保留缺价标记，等 AH 自然补上。
 - 验证：tsc --noEmit 0 错；页面 HTTP 200 且两条新配方已渲染。未提交（用户未说推）。
 
+### 6.16 主城扫描可靠性修复 0.3.1→0.3.3（2026-10-04，已推 7520d4d）
+现象：主城拍卖行（约 5 万物品）经常扫描失败"12 秒内未收到复制数据"，野外中立拍卖行（约 2000
+物品）秒扫成功——两者是**两套独立市场**，行价互不参考。修复（看门狗按用户要求 60s→180s）：
+复制启动看门狗放宽到 3 分钟；空数据守卫（禁止 0 条假成功）；流式增长 + 停滞追读；
+静默丢弃时自动重试一次；每条改动走"备份→双向同步→哈希→luaparse→vitest"闭环。
+0.3.3 稳定表现：第一次失败后自动重扫几秒出数据（用户实测 93767 条拍卖 → 2425 种商品）。
+
+### 6.17 曲线窗口仅拍卖行开启时显示 0.3.4（2026-10-05，已推 593b9c3）
+商人/背包/链接等普通悬浮提示只保留价格信息窗口；价格曲线窗口仅在拍卖行界面开启时显示
+（对照图：商人场景原同时弹曲线+价格两窗）。
+
+### 6.18 捡漏筛选并入雷达 + 中间材料利润面板（2026-10-06，已推 dd0ae7f）
+- 删除捡漏筛选面板；价格下限/上限/最低盈利条件移入捡漏雷达头部"仅限高流通商品"右侧，
+  条目计数"56/856"移到最右侧；
+- 首页价格档位上方新增"中间材料利润"面板：定义=由初级材料合成/分解得到的物品（亚麻卷、铜锭、
+  石头、附魔材料等）且被其它配方消耗的产物；**按专业分类筛选下拉**（持久化键
+  `wah:secondary-materials:profession`）；
+- 雷达物品用**流通分**替代"被X配方"徽章（turnoverBadgeClass 五档）；删除"仅显示 XX"六字。
+
+### 6.19 最低盈利改整池筛选 + 配方库专业 tab 固定顺序（2026-10-06，commit 8a46464，**未推**）
+捡漏雷达"必赚最低盈利"改名"最低盈利"且作用域=**整个雷达池**的最低盈利筛选（非单条必赚）；
+配方库专业 tab 顺序固定。此 commit 已提交未推（origin 停在 dd0ae7f，本地 ahead 1）。
+
+### 6.20 市场隔离 0.3.5：中立扫描独立槽位 + 网页 market 维度（2026-10-04~06，**未提交**）
+背景：用户问"扫描了中立拍卖行会不会覆盖错误数据到我的联盟拍卖行？"——核查：**会，且已发生**
+（10-04 10:29:37Z 一轮 523 商品/1717 挂单确为中立，污染了 523 种商品 7 日历史）。方案三件套：
+- 插件 0.3.5：`finishScan` 按挂单总数 ≥20000（WAH.MARKET_SPLIT_AUCTIONS）判 faction/neutral；
+  neutral 写 `WoWderhoiAHDB.neutralScanData`（不覆盖 scanData、不写 Points、不进网页导入）；
+- 网页端：schema 加 `market String @default("faction")` + 索引 `[server,faction,market,timestamp,source]`；
+  AddonScan/ImportPayload 透传 market；normalize 归一（仅显式 "neutral" 为 neutral，其余 faction）；
+  dedupe/points 探测/两张 createMany 带 market；`getLatestSnapshotTime`/`getLatestAddonRoundItemIds`/
+  `getMarketUniverse`/`getMed7Aggregates`/ladder 路由全部按 market='faction' 过滤；
+- 清理：删除 10-04 中立轮 523 行（残留 0），按联盟剩余数据重算当日日线（2544→2541）。
+验证：luaparse 7 文件全过、插件 74/74（含中立隔离用例）、全量 197/197、tsc 干净、
+market 分布 faction 全量；首页实测正常。踩坑：Prisma generate 在 next dev 运行时 EPERM
+（DLL 被占用）→ 停进程再生成；雷达 0 条 = 2 小时新鲜度闸门设计行为（信号层健康）。
+
+### 6.21 0.3.6 相对阈值尝试 → 已回退（2026-10-06，**未提交**）
+用户问"第一天扫不足两万条怎么办"→ 试做相对市场参考 + 冷启动（MARKET_MIN_FACTION_RATIO=0.25、
+classifyMarket、槽位记 auctions），测试 1 处失败未查。用户叫停并要求复原 0.3.5 → 已回退
+（游戏目录+源码恢复 0.3.5，哈希核对一致，测试回 74/74）。0.3.6 版本保留在
+`WoWderhoiAH.lua/toc.bak-0.3.6`（游戏目录与 addon 源码目录各一份）。
+
+### 6.22 0.3.7 开服 7 天宽限（2026-10-06，当前版本，**未提交**）
+采纳用户的时间方案替代绝对阈值冷启动：**首次扫描起 7 天内，无论扫到多少挂单一律按联盟拍卖行收；
+7 天后恢复 2 万阈值**（WAH.MARKET_GRACE_DAYS=7）。
+细节：游戏无服务器开服时间 API → 锚点 = 插件首次扫描时间（`WoWderhoiAHDB.firstScanAt`）；
+**已有 scanData 的账户（老用户升级）不重新进入宽限**——阈值立即生效，中立扫描依旧走独立槽位。
+测试 +2（宽限内 2 条挂单也按联盟收、老账户不重进宽限）：插件 76/76、全量 199/199、tsc 干净；
+游戏目录+源码哈希一致，TOC 0.3.7。用户已 /reload（SV 10-06 18:18 落盘）。
+
 ## 7. 当前状态与待办（重要）
 
-1. **游戏内 /reload + 重新扫描已执行且数据已导入**（10-01 09:27:08 CEST，v4 扫描 1991 items，`alt_price` 1991 行已落库）。P50 曲线从该轮起积累，约 2 天形成完整曲线。
-2. **用户需浏览器硬刷新（Ctrl+F5）一次**：next dev 重启 + 删 .next 后旧 JS chunk 缓存会失效，普通刷新可能仍显示旧页面。
-3. **主页"数据更新于"机制（已查清）**：`latestSnapshotAt = MAX(AuctionSnapshot.timestamp)`，现在只有 addon 单通道，无跨通道歧义。
-4. 6.5~6.12 全部改动已随 `b0a3dca` 提交并推送（见 6.13），6.14 已随 `9a32f5a` 提交推送。当前未提交改动：
-   配方库回填（6.15，含 vendor-prices.ts、recipes/page.tsx、backfill-recipe-library.ts、Item/Recipe 表数据、HANDOFF）
-   及配方库相关既有 WIP（src/app/page.tsx 的 data-no-ladder、src/lib/quality.ts 的 qualityColorClassById、
-   recipe-profit-panel.tsx、quality.test.ts）——均保持原样，待用户说"推"再处理。
+1. **插件当前版本 0.3.7**（游戏目录 + 源码副本哈希一致）：开服 7 天宽限 + 2 万阈值市场判定 + 中立
+   独立槽位。用户 10-06 已 /reload（SV 18:18 落盘），测试服行为与 0.3.5 一致（老账户无宽限）。
+2. **网页端市场维度已落地**：`AuctionSnapshot.market` 全量 faction（实测 391,971 行），10-04 中立轮
+   已清理（残留 0）；最新导入轮 `2026-10-06T13:30:56Z`（2493 商品 / 75565 挂单，market=faction）。
+3. **首页雷达当前 0 条属设计行为**：2 小时新鲜度闸门以"当前时刻"为准，最后一次扫描 15:30 已超
+   2 小时；以扫描时刻算信号层健康。下次主城扫描后自动恢复。
+4. **git 状态**：HEAD=`8a46464`（已提交**未推**，origin 停在 `dd0ae7f`，本地 ahead 1）；工作树未提交
+   改动 = 0.3.7 插件（lua/toc）、市场维度（schema/addon-scan/import-common/repositories/ladder 路由）、
+   测试夹具（deal-radar/settings-radar/scan-category/analytics/demo-history）。用户说"推"才 push。
+5. **用户 WIP 保持不动**（未提交勿改勿提交）：`scripts/backfill-df-recipes.ts`、`src/app/items/[itemId]/page.tsx`、
+   `src/app/ledger/page.tsx`、`src/app/recipes/page.tsx`（git status 中 M 属既有改动）。
+6. **待办（用户 10-06 指示）**：**公测开始时清空全部运行时数据**——网页 SQLite（快照/信号/历史）、
+   插件 SavedVariables（scanData/Points/firstScanAt）、导入进度 `.watch-state.json`；代码与 git 保留。
+   用户届时会通知触发（已记入偏好 p1_AQFJGcEGWaE，见 §9）。
+7. 遗留：`.dev-restart.log.err`（next dev 重启日志，可忽略/删除）；addon 源码目录
+   `WoWderhoiAH.lua/toc.bak-0.3.6`（0.3.6 尝试备份，保留勿删）。
 
 ## 8. 已知坑 / 机制限制（务必记住）
 
@@ -263,11 +332,23 @@ POST /api/import/ledger（upsert by uid），只删 DB 会被下一次上传灌�
 - 关键物品 ID：大型铜壳炸弹=4370（成交 3s / 买入 2s25c）、魔纹布=4338、亚麻布=2589、小飞刀=2947、美味鼠尾鱼=21217。
 - **P10/P50 语义**：P10=按挂单量加权的 10 分位价（买家真实成交价，市场价/7日参考口径）；
   P50=同扫描的 50 分位价（市场中心，仅展示）。P50 历史上有 v2 用其做市场价被高价钓单污染的教训，故只做展示。
+- **游戏无"服务器开服时间"API** → 0.3.7 宽限锚点取插件首扫时间（`WoWderhoiAHDB.firstScanAt`）；
+  老账户（已有 scanData）不重进宽限。用户若要在精确开服日启用，可后续加设置项。
+- **市场口径**：网页市场监控"3325/3325 项"= 去重**商品种类数**；插件端"8 万多物品"= 挂单**条目数**
+  （约 25 挂单/种），两者自洽不冲突。
+- **Prisma generate 与运行中的 next dev 互斥**：DLL 被占用报 EPERM → 先停 next dev 进程再
+  `npx prisma generate`，完事用 Program Files node 重启。
+- **雷达 2 小时新鲜度闸门**：以"当前时刻"计，距最后一次扫描 >2h 则雷达 0 条（设计行为）；以扫描
+  时刻计信号层仍健康。排查时先用扫描时刻口径判断是否真的没数据。
+- **addon 源码目录内的 `*.bak-x.y.z` 是版本备份**（0.3.5/0.3.6 等），游戏目录同样有；勿删勿入库
+  （会出现在 git untracked，属预期）。
 
 ## 9. 用户偏好 / 协作纪律
 
 - **回复用中文**；称呼、语气自然。
 - **git**：不主动提交/推送；只有用户明确说"推/推一版"才 push；只提交点名范围；用户工作区常有大堆未提交 WIP，保持原样。
+- **公测清空（偏好 p1_AQFJGcEGWaE）**：用户通知"公测开始"时清空全部运行时数据（网页 SQLite +
+  插件 SavedVariables + `.watch-state.json` 导入进度），代码/git/备份保留；届时先与用户确认范围再执行。
 - 网页/数据库等长期运行服务都在本机跑着（见第 4 节），改动后注意别重启/杀错进程。
 - 游戏内改动部署到游戏目录后要提示用户 /reload 生效。
 
@@ -276,5 +357,8 @@ POST /api/import/ledger（upsert by uid），只删 DB 会被下一次上传灌�
 - **用户说"网页没更新/数据更新于 X 前"** → 先查：SV 文件 scannedAt 与 LastWriteTime、`.watch-state.json`、
   DB `MAX(timestamp) GROUP BY source`。结论几乎总是"游戏没落盘"，按第 7 节答复。
 - **动插件逻辑** → 读 `addon\WoWderhoiAH\` 对应 .lua；测试改 `addon\test\`（桥/桩：wow-lua.ts、wow-stub.lua）；改完跑 vitest + tsc，复制到游戏目录并比对哈希。
+- **市场判定相关** → 插件 `finishScan` 的 classify 逻辑（WAH.MARKET_SPLIT_AUCTIONS=20000 + WAH.MARKET_GRACE_DAYS=7）：
+  宽限内一律 faction；之后 ≥20000=faction 写 scanData+Points，<20000=neutral 写 neutralScanData（不进网页）。
+  网页侧凡新增查询记得按 `market='faction'` 过滤（repositories.ts / ladder 路由已示范）。
 - **动网页** → 读 `src\lib\` + `src\app\` 对应文件；页面/组件改动跑 tsc；DB 结构改动需注意 prisma/dev.db 与 schema 一致性（加列用 `npx prisma db push`，勿忘同时改 `addon-scan.ts`/`import-common.ts`/`repositories.ts`/`market-data.ts` 的类型与 SQL SELECT 列）。
 - **查账本** → `GET http://localhost:3000/api/import/ledger`；**清空账本** → 账本页页头按钮（二次确认，`POST /api/ledger/clear`）。

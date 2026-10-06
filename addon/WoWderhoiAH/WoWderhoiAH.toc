@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: WoWderhoi AHelper
-## Notes: Auction house scanner and price intelligence for WoW: Forever (Infinite) 1.60.1 and retail 12.x. Port of the TBC Anniversary build to the C_AuctionHouse API. 0.3.1: main-city scan reliability (60s start watchdog, no 0-item false success, stream-growth + stall handling). 0.3.2: auto-retry the replication when the first request is silently dropped. 0.3.3: replication start timeout raised to 3 min. 0.3.4: chart window shows only while the auction house is open; normal tooltips (merchant/bags/links) keep price info only.
+## Notes: Auction house scanner and price intelligence for WoW: Forever (Infinite) 1.60.1 and retail 12.x. Port of the TBC Anniversary build to the C_AuctionHouse API. 0.3.1: main-city scan reliability (60s start watchdog, no 0-item false success, stream-growth + stall handling). 0.3.2: auto-retry the replication when the first request is silently dropped. 0.3.3: replication start timeout raised to 3 min. 0.3.4: chart window shows only while the auction house is open; normal tooltips (merchant/bags/links) keep price info only. 0.3.5: market discrimination — scans are tagged faction/neutral by replicated listing count (≥20k = faction); neutral scans are parked in a separate slot and never overwrite the faction scan, the points history, or the web import. 0.3.7: launch grace — the first 7 days from the addon's first scan on a fresh account are always the faction market (a day-one economy under 20k listings is never lost); after the grace the 20k listing split applies. Accounts that already have scan data never re-enter the grace.
 ## Author: Jim Zhang
-## Version: 0.3.4
+## Version: 0.3.7
 ## Category: Auctions
 ## Category-zhCN: 拍卖
 ## SavedVariables: WoWderhoiAHDB

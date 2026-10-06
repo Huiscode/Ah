@@ -37,6 +37,7 @@ model AuctionSnapshot {
   timestamp   DateTime
   server      String
   faction     String
+  market      String   @default("faction") // "faction" (主城阵营市场) | "neutral" (中立地精市场)；中立扫描不得进入联盟分析
   source      String   @default("addon") // data channel: "addon" (game scan) — website channel removed
   minPrice    BigInt   @map("min_price")
   marketPrice BigInt   @map("market_price")
@@ -47,7 +48,7 @@ model AuctionSnapshot {
   item        Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
 
   @@index([itemId, timestamp])
-  @@index([server, faction, timestamp, source])
+  @@index([server, faction, market, timestamp, source])
 }
 
 model DailySummary {

@@ -52,6 +52,23 @@ local PROCESS_PER_FRAME = 200
 -- 60fps instead of hitching on a 500-row burst. Measured with
 -- debugprofilestop (ms float, available on retail 12.x).
 local FRAME_BUDGET_MS = 8
+-- Market discriminator: the faction (main-city) book replicates ~75-88k
+-- listings on this realm, the neutral goblin book a few thousand at most.
+-- Scans at or above this many listings are faction-market scans; anything
+-- below is treated as the neutral market and parked in its own slot, so it
+-- can never overwrite or pollute the Alliance market data. Lives on the WAH
+-- namespace (not a local) so the test harness can lower it per-test.
+WAH.MARKET_SPLIT_AUCTIONS = 20000
+
+-- Launch grace period. WoW exposes no server-launch API, so the anchor is
+-- the addon's own first scan: a true cold start (no faction scanData yet)
+-- opens a window of this many days during which EVERY scan is treated as
+-- the faction market, whatever the listing count — a day-one faction book
+-- that is still small is never parked in the neutral slot and lost. After
+-- the grace, the listing split above applies. Accounts that already have
+-- scan data (upgrading from 0.3.5) never re-enter the grace. Lives on the
+-- WAH namespace so the test harness can override it per-test.
+WAH.MARKET_GRACE_DAYS = 7
 
 local scanState = nil -- { mode="replicate", itemsById, itemInfoCache, processing, cursor, pending, pendingOnly }
 local pendingRounds = 0 -- revisit passes over incomplete entries, capped to avoid a stall
@@ -323,55 +340,91 @@ local function finishScan(totalAuctions)
     }
     itemCount = itemCount + 1
   end
-  -- Every stored point carries the pipeline's close price, so a pipeline
-  -- bump redefines what the whole series means. Blending v2's P50 closes
-  -- into the new P10 series would poison med7 and the deal radar until
-  -- the last old point aged out; drop them on the first scan after a bump.
-  local previousVersion = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion
-  if previousVersion and previousVersion ~= WAH.PIPELINE_VERSION then
-    WoWderhoiAH_Points = nil
+  -- Market identity. Within the launch grace (7 days from the addon's very
+  -- first scan on a fresh account) every scan counts as the faction market,
+  -- so a day-one economy is never lost. After the grace the listing split
+  -- applies: the faction (main-city) book replicates ~75-88k listings on
+  -- this realm, the neutral goblin book only a few thousand. Scans at or
+  -- above the split are faction-market scans; anything below is treated as
+  -- the neutral market. A neutral scan is parked in its own slot and never
+  -- touches the faction scan slot, the points history, or the web import —
+  -- it can neither overwrite the Alliance market data in-game nor pollute
+  -- the terminal's references (med7/趋势/环比) with another market's prices.
+  local firstScanAt = WoWderhoiAHDB.firstScanAt
+  if not firstScanAt and not WoWderhoiAH_ScanData then
+    firstScanAt = time() -- 冷启动锚点：真正的首扫才开启 7 天宽限
+    WoWderhoiAHDB.firstScanAt = firstScanAt
   end
-  WoWderhoiAH_ScanData = {
-    dataVersion = WAH.PIPELINE_VERSION, -- consumers reject anything else
-    scannedAt = time(),
-    server = GetRealmName(),
-    faction = UnitFactionGroup("player"),
-    items = items
-  }
-  WoWderhoiAHDB.scanData = WoWderhoiAH_ScanData -- persist under the single WoWderhoiAHDB variable
-  -- Accumulate per-item price points in game: c is the P10 close — the
-  -- price a buyer actually pays on this realm — and feeds the chart, the
-  -- 7d P10 median and the deal radar alike. 7-day window, newest 192 points
-  -- per item (~48 h at the 15-minute auto-scan cadence).
-  WoWderhoiAH_Points = WoWderhoiAH_Points or {}
-  WoWderhoiAHDB.points = WoWderhoiAH_Points -- keep the alias in sync for persistence
-  local nowTs = time()
-  local cutoff = nowTs - 7 * 24 * 3600
-  for itemId, item in pairs(items) do
-    local pts = WoWderhoiAH_Points[itemId] or {}
-    -- Each point carries the scan's P10 close (c) and P50 close (c50) plus
-    -- the listed quantity (q). c remains the only field any chart or median
-    -- reads; c50 feeds the display-only P50 curve on the item page.
-    pts[#pts + 1] = { t = nowTs, c = item.marketPrice, c50 = item.p50, q = item.quantity }
-    WoWderhoiAH_Points[itemId] = pts
+  local graceDays = WAH.MARKET_GRACE_DAYS or 7
+  local inGrace = firstScanAt and (time() - firstScanAt) < graceDays * 86400
+  local market
+  if inGrace then
+    market = "faction" -- 开服 7 天内：无论扫到多少都按联盟收
+  else
+    market = (totalAuctions or 0) >= (WAH.MARKET_SPLIT_AUCTIONS or 20000) and "faction" or "neutral"
   end
-  for itemId, pts in pairs(WoWderhoiAH_Points) do
-    local pruned = {}
-    for _, point in ipairs(pts) do
-      if point.t >= cutoff then pruned[#pruned + 1] = point end
+  if market == "faction" then
+    -- Every stored point carries the pipeline's close price, so a pipeline
+    -- bump redefines what the whole series means. Blending v2's P50 closes
+    -- into the new P10 series would poison med7 and the deal radar until
+    -- the last old point aged out; drop them on the first scan after a bump.
+    local previousVersion = WoWderhoiAH_ScanData and WoWderhoiAH_ScanData.dataVersion
+    if previousVersion and previousVersion ~= WAH.PIPELINE_VERSION then
+      WoWderhoiAH_Points = nil
     end
-    if #pruned > 192 then
-      -- Keep only the newest 192: a single O(n) slice instead of
-      -- repeatedly removing the head (table.remove(pruned, 1) is O(n^2)).
-      local trimmed = {}
-      for index = #pruned - 191, #pruned do trimmed[#trimmed + 1] = pruned[index] end
-      pruned = trimmed
+    WoWderhoiAH_ScanData = {
+      dataVersion = WAH.PIPELINE_VERSION, -- consumers reject anything else
+      scannedAt = time(),
+      server = GetRealmName(),
+      faction = UnitFactionGroup("player"),
+      market = market,
+      items = items
+    }
+    WoWderhoiAHDB.scanData = WoWderhoiAH_ScanData -- persist under the single WoWderhoiAHDB variable
+    -- Accumulate per-item price points in game: c is the P10 close — the
+    -- price a buyer actually pays on this realm — and feeds the chart, the
+    -- 7d P10 median and the deal radar alike. 7-day window, newest 192 points
+    -- per item (~48 h at the 15-minute auto-scan cadence).
+    WoWderhoiAH_Points = WoWderhoiAH_Points or {}
+    WoWderhoiAHDB.points = WoWderhoiAH_Points -- keep the alias in sync for persistence
+    local nowTs = time()
+    local cutoff = nowTs - 7 * 24 * 3600
+    for itemId, item in pairs(items) do
+      local pts = WoWderhoiAH_Points[itemId] or {}
+      -- Each point carries the scan's P10 close (c) and P50 close (c50) plus
+      -- the listed quantity (q). c remains the only field any chart or median
+      -- reads; c50 feeds the display-only P50 curve on the item page.
+      pts[#pts + 1] = { t = nowTs, c = item.marketPrice, c50 = item.p50, q = item.quantity }
+      WoWderhoiAH_Points[itemId] = pts
     end
-    if #pruned == 0 then
-      WoWderhoiAH_Points[itemId] = nil
-    else
-      WoWderhoiAH_Points[itemId] = pruned
+    for itemId, pts in pairs(WoWderhoiAH_Points) do
+      local pruned = {}
+      for _, point in ipairs(pts) do
+        if point.t >= cutoff then pruned[#pruned + 1] = point end
+      end
+      if #pruned > 192 then
+        -- Keep only the newest 192: a single O(n) slice instead of
+        -- repeatedly removing the head (table.remove(pruned, 1) is O(n^2)).
+        local trimmed = {}
+        for index = #pruned - 191, #pruned do trimmed[#trimmed + 1] = pruned[index] end
+        pruned = trimmed
+      end
+      if #pruned == 0 then
+        WoWderhoiAH_Points[itemId] = nil
+      else
+        WoWderhoiAH_Points[itemId] = pruned
+      end
     end
+  else
+    -- 中立市场：独立槽位，不覆盖主城 scanData、不写 points、不进网页导入。
+    WoWderhoiAHDB.neutralScanData = {
+      dataVersion = WAH.PIPELINE_VERSION,
+      scannedAt = time(),
+      server = GetRealmName(),
+      faction = UnitFactionGroup("player"),
+      market = "neutral",
+      items = items
+    }
   end
   -- Record when the next full replication scan is allowed.
   if WAH.settings then

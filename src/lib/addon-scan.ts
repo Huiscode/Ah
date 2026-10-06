@@ -46,6 +46,10 @@ export type AddonScan = {
   scannedAt: Date;
   server: string;
   faction: string;
+  // 市场标识："faction"（主城阵营市场，唯一进入联盟分析的通道）或
+  // "neutral"（中立地精市场）。插件按扫描挂单总数判定；未知/缺省按
+  // faction 兜底（旧版本扫描均为联盟主城数据）。
+  market?: "faction" | "neutral";
   items: AddonScanItem[];
   rules?: AddonRadarRules;
 };
@@ -338,6 +342,7 @@ export function normalizeAddonScan(raw: unknown): AddonScan {
     scannedAt: new Date(scan.scannedAt * 1000),
     server: scan.server,
     faction: scan.faction,
+    market: scan.market === "neutral" ? ("neutral" as const) : ("faction" as const),
     items,
     ...(normalizeRadarRules(scan.rules) !== undefined
       ? { rules: normalizeRadarRules(scan.rules) }

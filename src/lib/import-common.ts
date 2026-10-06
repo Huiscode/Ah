@@ -35,6 +35,8 @@ export type ImportPayload = {
   scannedAt: Date;
   server: string;
   faction: string;
+  // 市场标识，与快照行一起落库；缺省按 faction 处理。
+  market?: "faction" | "neutral";
   items: ImportScanItem[];
   // the accumulated in-game 7-day point series riding along with the
   // snapshot; each point carries the P10 close and (newer scans) the P50
@@ -111,11 +113,13 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
   const { source, scannedAt, server, faction, rules } = payload;
   const items = payload.items;
   const points = payload.points ?? [];
+  // 市场归一：只有显式中立才记为 neutral，其余（含旧版扫描）一律 faction。
+  const market = payload.market === "neutral" ? "neutral" : "faction";
 
   // Timestamp-scoped dedupe: the same wall-clock scan time is one import;
   // source joins the key for legacy rows from the removed website channel.
   const duplicate = await prisma.auctionSnapshot.findFirst({
-    where: { timestamp: scannedAt, server, faction, source },
+    where: { timestamp: scannedAt, server, faction, market, source },
     select: { id: true }
   });
   if (duplicate) {
@@ -148,7 +152,7 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
     }
     const minTs = new Date(minTsMs);
     const existing = await prisma.auctionSnapshot.findMany({
-      where: { server, faction, source, timestamp: { gte: minTs } },
+      where: { server, faction, market, source, timestamp: { gte: minTs } },
       select: { itemId: true, timestamp: true }
     });
     const seen = new Set(existing.map((row) => `${row.itemId}|${row.timestamp.getTime()}`));
@@ -267,6 +271,7 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
           timestamp: scannedAt,
           server,
           faction,
+          market,
           source,
           minPrice: item.minPrice,
           marketPrice: item.marketPrice,
@@ -283,6 +288,7 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
           timestamp: point.timestamp,
           server,
           faction,
+          market,
           source,
           // History points only carry the P10 close; mirror it into
           // minPrice so the column stays populated. The radar reads
