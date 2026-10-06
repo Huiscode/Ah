@@ -265,6 +265,14 @@ function WoWderhoiAH_UpdateChart(itemId)
     if chart then chart:Hide() end
     return
   end
+  -- Show the curve window only while the auction house is open (beside the
+  -- AH / trade panel, unchanged). In normal play -- merchant windows, bags,
+  -- chat links, bank -- keep the price tooltip section but suppress the
+  -- chart so it never floats beside an arbitrary tooltip.
+  if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then
+    if chart then chart:Hide() end
+    return
+  end
   if not chart then createChart() end
   local entry = historyFor(itemId)
   if not entry or not entry.pts or #entry.pts < 2 then

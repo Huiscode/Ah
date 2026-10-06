@@ -1,8 +1,8 @@
 ## Interface: 16001
 ## Title: WoWderhoi AHelper
-## Notes: Auction house scanner and price intelligence for WoW: Forever (Infinite) 1.60.1 and retail 12.x. Port of the TBC Anniversary build to the C_AuctionHouse API. 0.3.1: main-city scan reliability (60s start watchdog, no 0-item false success, stream-growth + stall handling). 0.3.2: auto-retry the replication when the first request is silently dropped. 0.3.3: replication start timeout raised to 3 min.
+## Notes: Auction house scanner and price intelligence for WoW: Forever (Infinite) 1.60.1 and retail 12.x. Port of the TBC Anniversary build to the C_AuctionHouse API. 0.3.1: main-city scan reliability (60s start watchdog, no 0-item false success, stream-growth + stall handling). 0.3.2: auto-retry the replication when the first request is silently dropped. 0.3.3: replication start timeout raised to 3 min. 0.3.4: chart window shows only while the auction house is open; normal tooltips (merchant/bags/links) keep price info only.
 ## Author: Jim Zhang
-## Version: 0.3.3
+## Version: 0.3.4
 ## Category: Auctions
 ## Category-zhCN: 拍卖
 ## SavedVariables: WoWderhoiAHDB
