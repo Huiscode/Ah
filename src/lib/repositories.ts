@@ -106,6 +106,26 @@ async function getMed7Aggregates(itemIds?: number[]): Promise<Map<number, { med7
 }
 
 export async function getMarketUniverse(): Promise<MarketHistory[]> {
+  // 最新 addon 轮的挂单档位（rawPayload.ladder 前 3 档价格）。只取最新一轮
+  // 而非全部 48 轮，避免把 JSON 大字段拖进首页全量查询。
+  const ladderRows = await prisma.$queryRaw<Array<{ item_id: bigint | number; raw_payload: unknown }>>`
+    SELECT "item_id", "raw_payload"
+    FROM "AuctionSnapshot"
+    WHERE "market" = 'faction' AND "source" = 'addon'
+      AND "timestamp" = (SELECT MAX("timestamp") FROM "AuctionSnapshot" WHERE "market" = 'faction' AND "source" = 'addon')
+  `;
+  const ladderByItem = new Map<number, number[]>();
+  for (const row of ladderRows) {
+    let payload: { ladder?: Array<{ price: number }> } | null = null;
+    try {
+      payload = typeof row.raw_payload === "string" ? JSON.parse(row.raw_payload) : (row.raw_payload as { ladder?: Array<{ price: number }> } | null);
+    } catch {
+      payload = null;
+    }
+    const ladder = payload?.ladder;
+    if (Array.isArray(ladder)) ladderByItem.set(Number(row.item_id), ladder.slice(0, 3).map((p) => Number(p.price)));
+  }
+
   const [items, snaps, dailies, med7s] = await Promise.all([
     prisma.$queryRaw<ItemRaw[]>`SELECT * FROM "Item" ORDER BY "name" ASC`,
     prisma.$queryRaw<SnapshotRaw[]>`
@@ -153,6 +173,7 @@ export async function getMarketUniverse(): Promise<MarketHistory[]> {
     createdAt: toDate(i.created_at),
     updatedAt: toDate(i.updated_at),
     med7Info: med7s.get(Number(i.item_id)),
+    ladder: ladderByItem.get(Number(i.item_id)),
     snapshots: (snapsByItem.get(Number(i.item_id)) ?? []).map((s) => ({
       id: s.id,
       itemId: Number(s.item_id),

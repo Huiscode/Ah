@@ -96,7 +96,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
 
   return (
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
-      <div className="relative mb-3 flex items-center justify-between border border-terminal-border bg-terminal-panel px-4 py-3">
+      <div className="mb-3 flex items-center justify-between border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
           <div className="font-mono text-xs uppercase text-terminal-muted">商品终端</div>
           <h1 className={`flex items-center gap-2 font-mono text-2xl font-semibold ${qualityColorClass(item.quality)}`}>
@@ -115,8 +115,8 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xl"><WatchStar itemId={item.itemId} watched={watchedIds.has(item.itemId)} /></span>
+          <CloseTabButton />
         </div>
-        <div className="absolute left-1/2 -translate-x-1/2"><CloseTabButton /></div>
       </div>
       <div className="grid gap-3 xl:grid-cols-[1fr_420px]">
         <div className="space-y-3">

@@ -122,7 +122,7 @@ function parseAddon(): { rows: AddonRow[]; catZh: Record<string, Record<string, 
           grey: r[9] ?? 0,
           isNew: r[10] ?? false,
           reagents: Array.isArray(r[11]) ? r[11] : [],
-          formula: Array.isArray(r[12]) ? r[12] : null,
+          formula: Array.isArray(r[12]) && r[12].length >= 2 ? [r[12][0] as number, r[12][1] as number] : null,
         });
       }
     }

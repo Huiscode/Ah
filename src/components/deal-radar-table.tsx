@@ -35,8 +35,8 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
   const [category, setCategory] = usePersistedState<string>("wah:deal-radar:category", "");
   const [onlyLiquid, setOnlyLiquid] = usePersistedState<boolean>("wah:deal-radar:onlyLiquid", false);
   const [fMinPrice, setFMinPrice] = usePersistedState<number>("wah:filter:minPrice", 0);
-  const [fMaxPrice, setFMaxPrice] = usePersistedState<number>("wah:filter:maxPrice", 0);
-  const [fVendorMinProfit, setFVendorMinProfit] = usePersistedState<number>("wah:filter:vendorMinProfit", 0);
+  const [fLadder12, setFLadder12] = usePersistedState<number>("wah:deal-radar:ladder12", 0);
+  const [fLadder23, setFLadder23] = usePersistedState<number>("wah:deal-radar:ladder23", 0);
   const watched = new Set(watchedItemIds);
 
   useEffect(() => {
@@ -47,10 +47,26 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
     ? deals.filter((deal) => categoryMatches(deal.category, category))
     : [...deals];
 
-  // Client-side secondary filters: 价格上下限按最低价，最低盈利按整池盈利。
+  // 客户端二级筛选：价格下限按最低价。
   if (fMinPrice > 0) rows = rows.filter((d) => d.minPrice >= fMinPrice);
-  if (fMaxPrice > 0) rows = rows.filter((d) => d.minPrice <= fMaxPrice);
-  if (fVendorMinProfit > 0) rows = rows.filter((d) => d.profit >= fVendorMinProfit);
+
+  // 价位阶梯筛选：价位1/2/3 = 最新扫描挂单档位价格（rawPayload.ladder，
+  // 从低到高）。"价位1比价位2低 X%" = 最低档至少比次低档低 X%；
+  // "价位2比价位3低 Y%" = 次低档至少比第三档低 Y%。启用时缺档的行视为不满足。
+  if (fLadder12 > 0) {
+    rows = rows.filter((d) => {
+      const tier = d.ladder;
+      if (!tier || tier.length < 2 || tier[1] <= 0) return false;
+      return tier[0] <= tier[1] * (1 - fLadder12 / 100);
+    });
+  }
+  if (fLadder23 > 0) {
+    rows = rows.filter((d) => {
+      const tier = d.ladder;
+      if (!tier || tier.length < 3 || tier[2] <= 0) return false;
+      return tier[1] <= tier[2] * (1 - fLadder23 / 100);
+    });
+  }
 
 
   // 仅限高流通：只保留有流通分的商品（turnoverScore > 0）。
@@ -111,13 +127,15 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
           <span className="text-terminal-muted">价格下限</span>
           <MoneyInput value={fMinPrice} onChange={setFMinPrice} fieldClass={moneyField} />
         </span>
-        <span className="flex items-center gap-1.5 border border-terminal-border/60 bg-terminal-panel2 px-2 py-1" title="0=关：不筛选。只保留最低价 ≤ 该值的行">
-          <span className="text-terminal-muted">价格上限</span>
-          <MoneyInput value={fMaxPrice} onChange={setFMaxPrice} fieldClass={moneyField} />
+        <span className="flex items-center gap-1.5 border border-terminal-border/60 bg-terminal-panel2 px-2 py-1" title="0=关：不筛选。价位1/2/3 = 最新扫描挂单档位价（从低到高）；要求最低档(价位1)至少比次低档(价位2)低该百分比，缺档的行被过滤">
+          <span className="text-terminal-muted">价位1比价位2低</span>
+          <input type="number" min={0} max={100} value={fLadder12 || ""} onChange={(event) => setFLadder12(Number(event.target.value) || 0)} className={`${moneyField} w-12`} />
+          <span className="text-terminal-muted">%</span>
         </span>
-        <span className="flex items-center gap-1.5 border border-terminal-border/60 bg-terminal-panel2 px-2 py-1" title="0=关；整个雷达池的最低盈利门槛（必赚与非必赚行都按盈利筛选）">
-          <span className="text-terminal-muted">最低盈利</span>
-          <MoneyInput value={fVendorMinProfit} onChange={setFVendorMinProfit} fieldClass={moneyField} />
+        <span className="flex items-center gap-1.5 border border-terminal-border/60 bg-terminal-panel2 px-2 py-1" title="0=关：不筛选。要求次低档(价位2)至少比第三档(价位3)低该百分比，缺档的行被过滤">
+          <span className="text-terminal-muted">价位2比价位3低</span>
+          <input type="number" min={0} max={100} value={fLadder23 || ""} onChange={(event) => setFLadder23(Number(event.target.value) || 0)} className={`${moneyField} w-12`} />
+          <span className="text-terminal-muted">%</span>
         </span>
         <span className="ml-auto text-terminal-muted">{rows.length} / {deals.length} 条</span>
       </div>

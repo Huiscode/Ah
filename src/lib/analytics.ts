@@ -26,6 +26,7 @@ export type MarketSignal = {
   latestAt: Date; // timestamp of the latest observation backing this signal
   turnoverScore: number; // #recipes that use this item as a reagent (higher = faster turnover)
   isVendorItem: boolean; // true = NPC sells this container/consumable (bottles, dyes, thread)
+  ladder?: number[]; // latest scan's listed-price tiers (rawPayload.ladder 前 3 档, low→high)
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -94,7 +95,8 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
     changePercent: previous && previous.marketPrice > 0 ? ((latest.marketPrice - previous.marketPrice) / previous.marketPrice) * 100 : 0,
     latestAt: latest.timestamp,
     turnoverScore: item.turnoverScore ?? 0,
-    isVendorItem: item.isVendorItem ?? false
+    isVendorItem: item.isVendorItem ?? false,
+    ladder: item.ladder
   };
 }
 
@@ -114,6 +116,7 @@ export type DealRadarRow = {
   quantity: number;
   numAuctions: number;
   turnoverScore: number; // #recipes that use this item as reagent; higher = faster sell-through
+  ladder?: number[]; // latest scan's listed-price tiers (rawPayload.ladder 前 3 档, low→high)
 };
 
 // Deal radar, mirroring addon/WoWderhoiAH/Trade.lua refreshDeals: the two
@@ -164,7 +167,8 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         changePercent: signal.changePercent,
         quantity: signal.quantity,
         numAuctions: signal.numAuctions,
-        turnoverScore: signal.turnoverScore
+        turnoverScore: signal.turnoverScore,
+        ladder: signal.ladder
       });
     // Class 2: median discount. Requires history depth (3+ scans) AND a
     // live market (3+ auctions) AND a worthwhile absolute spread —
@@ -197,7 +201,8 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         changePercent: signal.changePercent,
         quantity: signal.quantity,
         numAuctions: signal.numAuctions,
-        turnoverScore: signal.turnoverScore
+        turnoverScore: signal.turnoverScore,
+        ladder: signal.ladder
       });
     }
   }

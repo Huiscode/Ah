@@ -43,6 +43,13 @@ local REPLICATE_WATCHDOG = 180
 -- RETRY_DELAY seconds, up to MAX_REPLICATE_RETRIES times, before giving up.
 local RETRY_DELAY = 5
 local MAX_REPLICATE_RETRIES = 2
+-- Backoff after a replication has been given up: the auto ticker fires
+-- every 20s and the cooldown only gets set on SUCCESS (finishScan), so
+-- without this the failure path would retrigger a full 3-minute wait
+-- almost immediately, over and over, against a server that is silently
+-- dropping requests — the "stuck scan" loop. Give the server a quiet
+-- minute before the next scan may start (auto or manual).
+local REPLICATE_FAIL_BACKOFF = 60
 -- Hard ceiling on listings processed per OnUpdate frame. The real gate is
 -- the time budget below; this only caps a single catastrophically slow
 -- recordAuction from spinning one frame indefinitely.
@@ -558,12 +565,21 @@ local function startScan()
   end
   WAH.scanRunning = true
   pendingRounds = 0
-  scanState = { mode = "replicate", itemsById = {}, itemInfoCache = {}, pending = {}, pendingOnly = false, probeDone = false, pendingCategory = {}, prevTotal = nil, lastPendingCount = nil, emptySince = nil, lastEventAt = nil }
+  scanState = { mode = "replicate", itemsById = {}, itemInfoCache = {}, pending = {}, pendingOnly = false, probeDone = false, pendingCategory = {}, prevTotal = nil, lastPendingCount = nil, emptySince = nil, lastEventAt = nil, replicateAckCount = nil }
   chatMessage(L.SCAN_REPLICATE_START)
   local throttled = false
   if C_AuctionHouse.IsThrottled then throttled = C_AuctionHouse.IsThrottled() end
   chatMessage(string.format(L.SCAN_DIAG_THROTTLE, throttled and "yes" or "no"))
   C_AuctionHouse.ReplicateItems()
+  -- Diagnostic (silent unless the scan ultimately fails): did the server
+  -- accept the request? Record the list count a few seconds after the call
+  -- — >0 means streaming began; 0 means the request was dropped or still
+  -- queued server-side. Only reported at final failure so a healthy scan
+  -- never spams the chat frame.
+  C_Timer.After(3, function()
+    if not scanState or scanState.processing then return end
+    scanState.replicateAckCount = C_AuctionHouse.GetNumReplicateItems() or 0
+  end)
   -- Watchdog: if REPLICATE_ITEM_LIST_UPDATE never fires (replication
   -- rejected, or the event differs on this client), scanState would sit
   -- here forever and block every later scan. Give a large book time to
@@ -589,8 +605,20 @@ local function startScan()
     end
     replicateRetries = 0
     chatMessage(L.SCAN_NO_REPLICATE)
+    -- Report the silent ack probe only now, at final failure, so a healthy
+    -- scan never printed it at all.
+    if scanState.replicateAckCount ~= nil then
+      chatMessage(string.format(L.SCAN_DIAG_REPLICATE_ACK, scanState.replicateAckCount))
+    end
     scanState = nil
     WAH.scanRunning = false
+    -- Failure backoff: without a new ready-at the 20s auto ticker would
+    -- restart this whole 3-minute wait immediately and loop forever. Set a
+    -- cooldown so auto scans (and manual ones) give the server a minute
+    -- before trying again.
+    if WAH.settings then
+      WAH.settings.replicateReadyAt = time() + REPLICATE_FAIL_BACKOFF
+    end
   end)
 end
 

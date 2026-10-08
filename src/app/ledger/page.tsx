@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { ArrowLeftRight, Package, Coins, TrendingUp, Clock, Wallet, CheckCircle2 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { ClearLedgerButton } from "@/components/clear-ledger-button";
+import { CloseTabButton } from "@/components/close-tab-button";
 
 export const dynamic = "force-dynamic";
 
@@ -125,7 +125,7 @@ export default async function LedgerPage() {
         </div>
         <div className="flex items-center gap-3">
           <ClearLedgerButton />
-          <Link href="/" className="font-mono text-xs text-terminal-amber hover:underline">← 返回终端</Link>
+          <CloseTabButton />
         </div>
       </div>
 

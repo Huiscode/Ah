@@ -1,10 +1,10 @@
 import { RadioTower } from "lucide-react";
-import Link from "next/link";
 import { buildFloorPriceIndex, computeRecipeProfits } from "@/lib/recipe-profits";
 import { getItemVendorPrices, getRecipes } from "@/lib/repositories";
 import { getMarketSignals } from "@/lib/market-signals";
 import { describeFreshness } from "@/lib/freshness";
 import { RecipeLibrary } from "@/components/recipe-library";
+import { CloseTabButton } from "@/components/close-tab-button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +42,7 @@ export default async function RecipesPage() {
           <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
             <RadioTower size={14} /> 市场数据更新于 {freshness.label}
           </span>
-          <Link href="/" className="text-terminal-amber hover:underline">← 返回终端</Link>
+          <CloseTabButton />
         </div>
       </div>
 

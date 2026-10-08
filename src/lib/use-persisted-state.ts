@@ -16,6 +16,18 @@ export function usePersistedState<T>(key: string, initial: T): [T, (v: T | ((pre
       // 忽略损坏的缓存，保持初始值
     }
     setLoaded(true);
+    // 跨标签页/跨页面即时同步：其他标签页写入同一个 key 时，
+    // 这里收到 storage 事件并覆盖本地 state，无需手动刷新。
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== key || e.storageArea !== localStorage) return;
+      try {
+        if (e.newValue !== null) setValue(JSON.parse(e.newValue) as T);
+      } catch {
+        // 损坏的写入值保持当前状态
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, [key]);
 
   useEffect(() => {
