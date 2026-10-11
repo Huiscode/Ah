@@ -1,6 +1,7 @@
 import { Prisma, prisma } from "@/lib/prisma";
 import { type MarketHistory } from "@/lib/market-data";
 import type { DbRecipe, RecipeMaterial } from "@/lib/recipe-profits";
+import type { CrossMarketSide } from "@/lib/cross-market";
 
 type ItemRaw = {
   id: string;
@@ -230,9 +231,9 @@ export async function getAlertRules() {
 }
 
 
-export async function getLatestSnapshotTime() {
+export async function getLatestSnapshotTime(market: string = "faction") {
   const row = await prisma.auctionSnapshot.findFirst({
-    where: { market: "faction" },
+    where: { market },
     orderBy: { timestamp: "desc" },
     select: { timestamp: true }
   });
@@ -245,6 +246,137 @@ export async function getLatestSnapshotTime() {
 export async function getItemMetaVersion(): Promise<number> {
   const row = await prisma.item.aggregate({ _max: { updatedAt: true } });
   return row._max.updatedAt?.getTime() ?? 0;
+}
+
+// M2 跨市场倒卖：联盟/中立各自最新一轮快照的配对输入。返回两侧原始快照
+// + Item 元数据；页面用 buildCrossMarketRows + attachItemMeta 计算指标。
+// 任一方还没有扫描时返回空数组（页面提示去扫描），绝不编造价格。
+export async function getCrossMarketSides(): Promise<{
+  factionAt: Date | null;
+  neutralAt: Date | null;
+  faction: CrossMarketSide[];
+  neutral: CrossMarketSide[];
+  items: Array<{ itemId: number; name: string; quality: string; category: string; subCategory: string; icon: string | null }>;
+}> {
+  const [fLatest, nLatest] = await Promise.all([
+    prisma.auctionSnapshot.findFirst({ where: { market: "faction" }, orderBy: { timestamp: "desc" }, select: { timestamp: true } }),
+    prisma.auctionSnapshot.findFirst({ where: { market: "neutral" }, orderBy: { timestamp: "desc" }, select: { timestamp: true } })
+  ]);
+  if (!fLatest || !nLatest) {
+    return {
+      factionAt: fLatest?.timestamp ?? null,
+      neutralAt: nLatest?.timestamp ?? null,
+      faction: [],
+      neutral: [],
+      items: []
+    };
+  }
+  const [fSnaps, nSnaps] = await Promise.all([
+    prisma.auctionSnapshot.findMany({
+      where: { market: "faction", timestamp: fLatest.timestamp },
+      select: { itemId: true, marketPrice: true, minPrice: true, quantity: true, numAuctions: true, rawPayload: true }
+    }),
+    prisma.auctionSnapshot.findMany({
+      where: { market: "neutral", timestamp: nLatest.timestamp },
+      select: { itemId: true, marketPrice: true, minPrice: true, quantity: true, numAuctions: true, rawPayload: true }
+    })
+  ]);
+  const itemIds = [...new Set([...fSnaps.map((snap) => snap.itemId), ...nSnaps.map((snap) => snap.itemId)])];
+  const items = await prisma.item.findMany({
+    where: { itemId: { in: itemIds } },
+    select: { itemId: true, name: true, quality: true, category: true, subCategory: true, icon: true }
+  });
+  const mapSnap = (snap: { itemId: number; marketPrice: bigint; minPrice: bigint; quantity: number; numAuctions: number; rawPayload: unknown }, at: Date): CrossMarketSide => ({
+    itemId: snap.itemId,
+    marketPrice: Number(snap.marketPrice),
+    minPrice: Number(snap.minPrice),
+    ladderFloor: ladderFloorOfPayload(snap.rawPayload),
+    quantity: Number(snap.quantity),
+    numAuctions: Number(snap.numAuctions),
+    timestamp: at
+  });
+  return {
+    factionAt: fLatest.timestamp,
+    neutralAt: nLatest.timestamp,
+    faction: fSnaps.map((snap) => mapSnap(snap, fLatest.timestamp)),
+    neutral: nSnaps.map((snap) => mapSnap(snap, nLatest.timestamp)),
+    items: items.map((item) => ({
+      itemId: item.itemId,
+      name: item.name,
+      quality: item.quality,
+      category: item.category,
+      subCategory: item.subCategory,
+      icon: item.icon
+    }))
+  };
+}
+
+// rawPayload 的 ladder 第 1 档价格（真实买入成本）。Prisma findMany 对
+// Json 列可能返回已反序列化对象，也可能返回字符串，两种形态都处理。
+function ladderFloorOfPayload(payload: unknown): number | null {
+  if (!payload) return null;
+  let raw: unknown = payload;
+  if (typeof payload === "string") {
+    try { raw = JSON.parse(payload); } catch { return null; }
+  }
+  const ladder = (raw as { ladder?: Array<{ price: number }> } | null)?.ladder;
+  if (!Array.isArray(ladder) || ladder.length === 0) return null;
+  const price = Number(ladder[0].price);
+  return Number.isFinite(price) ? Math.round(price) : null;
+}
+
+// The neutral (goblin trade camp) market's latest round: every listed item
+// with its prices and quantities at the most recent neutral scan. Read-only
+// surface for M1 — the neutral book never feeds faction analyses. Returns an
+// empty list until the first neutral scan has been imported.
+export async function getNeutralMarketLatest(): Promise<{
+  scannedAt: Date | null;
+  rows: Array<{
+    itemId: number;
+    name: string;
+    quality: string;
+    category: string;
+    subCategory: string;
+    icon: string | null;
+    minPrice: number;
+    marketPrice: number;
+    quantity: number;
+    numAuctions: number;
+  }>;
+}> {
+  const latest = await prisma.auctionSnapshot.findFirst({
+    where: { market: "neutral" },
+    orderBy: { timestamp: "desc" },
+    select: { timestamp: true }
+  });
+  if (!latest) return { scannedAt: null, rows: [] };
+  const snaps = await prisma.auctionSnapshot.findMany({
+    where: { market: "neutral", timestamp: latest.timestamp },
+    select: { itemId: true, minPrice: true, marketPrice: true, quantity: true, numAuctions: true }
+  });
+  const items = await prisma.item.findMany({
+    where: { itemId: { in: snaps.map((snap) => snap.itemId) } },
+    select: { itemId: true, name: true, quality: true, category: true, subCategory: true, icon: true }
+  });
+  const byId = new Map(items.map((item) => [item.itemId, item]));
+  return {
+    scannedAt: latest.timestamp,
+    rows: snaps.map((snap) => {
+      const item = byId.get(snap.itemId);
+      return {
+        itemId: snap.itemId,
+        name: item?.name ?? `Item ${snap.itemId}`,
+        quality: item?.quality ?? "unknown",
+        category: item?.category ?? "unknown",
+        subCategory: item?.subCategory ?? "unknown",
+        icon: item?.icon ?? null,
+        minPrice: Number(snap.minPrice),
+        marketPrice: Number(snap.marketPrice),
+        quantity: Number(snap.quantity),
+        numAuctions: Number(snap.numAuctions)
+      };
+    })
+  };
 }
 
 // The item universe of the latest in-game scan round. The addon only ever

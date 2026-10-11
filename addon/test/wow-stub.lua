@@ -234,6 +234,10 @@ function date(format, when) return os.date(format, when or NOW) end
 function debugprofilestop() return 0 end -- never trip the per-frame yield budget
 function GetRealmName() return "TestRealm" end
 function UnitFactionGroup() return "Alliance" end
+-- Zone name for market-identity tests. Defaults to "" (outside both market
+-- zone whitelists) so existing listing-count discrimination tests keep the
+-- fallback path; tests that pin a market by zone set WowTest.zone first.
+function GetRealZoneText() return WowTest.zone or "" end
 -- Mirror the addon's Forever-client shim (WoWderhoiAH.lua): the beta client
 -- lacks the coin-icon formatter, so amounts render as "Ng Ns Nc".
 function GetCoinTextureString(copper)

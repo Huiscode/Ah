@@ -8,6 +8,7 @@ import {
   getAlertRules,
   getItemVendorPrices,
   getLatestAddonRoundItemIds,
+  getLatestSnapshotTime,
   getRadarRules,
   getRecipes,
   getWatchedItemIds
@@ -43,7 +44,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     quantity: "在售量"
   };
   const view = parseMarketView(await searchParams);
-  const [{ signals, latestSnapshotAt }, watchedIds, alertRules, storedRules, latestAddonRound, recipes, vendorPrices] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, watchedIds, alertRules, storedRules, latestAddonRound, recipes, vendorPrices, neutralSnapshotAt] = await Promise.all([
     getMarketSignals(),
     getWatchedItemIds(),
     getAlertRules(),
@@ -52,9 +53,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     // 关注配方面板展示配方库中被收藏的配方（craft + merchant 全量，
     // 面板按收藏过滤；收藏在 /recipes 配方库页设置）。
     getRecipes(),
-    getItemVendorPrices()
+    getItemVendorPrices(),
+    // 中立（三角路口营地）市场的新鲜度：独立于联盟主城市场展示，只读，
+    // 不参与任何联盟分析。
+    getLatestSnapshotTime("neutral")
   ]);
   const freshness = describeFreshness(latestSnapshotAt, new Date());
+  const neutralFreshness = describeFreshness(neutralSnapshotAt, new Date());
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
   const triggeredAlerts = evaluateAlertRules(alertRules, signals);
   // Route 2: the in-game options panel owns the radar thresholds; each scan
@@ -99,8 +104,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         </div>
         <div className="flex items-center gap-3 font-mono text-xs text-terminal-muted">
           <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
-            <RadioTower size={14} /> 数据更新于 {freshness.label}
+            <RadioTower size={14} /> 联盟·数据更新于 {freshness.label}
           </span>
+          <span className={neutralFreshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
+            <RadioTower size={14} /> 中立·更新于 {neutralFreshness.label}
+          </span>
+          <Link href="/neutral" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><RadioTower size={14} /> 中立市场</Link>
+          <Link href="/arbitrage" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ArrowLeftRight size={14} /> 跨市场</Link>
           <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><Hammer size={14} /> 配方库</Link>
           <Link href="/ledger" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ArrowLeftRight size={14} /> 成交账本</Link>
           <span className="flex items-center gap-1"><Bell size={14} /> 预警就绪</span>

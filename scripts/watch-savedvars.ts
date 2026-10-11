@@ -15,13 +15,14 @@ const rulesUrl = importUrl.replace(/\/addon-scan\/?$/, "/rules");
 const ledgerUrl = (process.env.AQT_IMPORT_URL ?? "http://localhost:3000/api/import/addon-scan").replace(/\/addon-scan\/?$/, "/ledger");
 
 const statePath = new URL("./.watch-state.json", import.meta.url);
-function readState(): { lastImportedScanAt: number } {
-  try { return JSON.parse(readFileSync(statePath, "utf8")); } catch { return { lastImportedScanAt: 0 }; }
+function readState(): { lastImportedScanAt: number; lastImportedNeutralScanAt: number } {
+  try { return JSON.parse(readFileSync(statePath, "utf8")); } catch { return { lastImportedScanAt: 0, lastImportedNeutralScanAt: 0 }; }
 }
-function writeState(state: { lastImportedScanAt: number }) { writeFileSync(statePath, JSON.stringify(state), "utf8"); }
+function writeState(state: { lastImportedScanAt: number; lastImportedNeutralScanAt: number }) { writeFileSync(statePath, JSON.stringify(state), "utf8"); }
 
 let state = readState();
 let lastImportedScanAt = state.lastImportedScanAt ?? 0;
+let lastImportedNeutralScanAt = state.lastImportedNeutralScanAt ?? 0;
 let lastSentRulesJson = "";
 let lastWebRulesJson = "";
 
@@ -119,9 +120,45 @@ async function importLatestScan() {
   const body = await response.json();
   if (!response.ok && response.status !== 409) throw new Error(`Import failed: ${JSON.stringify(body)}`);
   lastImportedScanAt = scan.scannedAt;
-  writeState({ lastImportedScanAt });
+  writeState({ lastImportedScanAt, lastImportedNeutralScanAt });
   if (radarRules !== undefined) lastSentRulesJson = JSON.stringify(radarRules);
   console.log(`Imported ${body.imported} items from scan ${body.scannedAt}.`);
+  } finally {
+    importInFlight = false;
+  }
+}
+
+// Neutral (goblin trade camp) scans ride in their own slot
+// (WoWderhoiAHDB.neutralScanData) with their own cursor, so a neutral scan
+// can never advance — or be gated by — the faction import cursor. The addon
+// parks neutral scans here without points/rules/recipes, so the payload is
+// the bare scan table; the route's normalizeAddonScan keeps market="neutral"
+// and importSnapshot stores rows under market='neutral', isolated from every
+// faction-only query. Shares the same in-flight lock: both imports read the
+// same SV file and both write the DB; serializing them keeps the
+// (timestamp, server, faction, market, source) dedupe probes race-free.
+async function importNeutralScan() {
+  if (importInFlight) return;
+  importInFlight = true;
+  try {
+    const parsed = parseSavedVariables(readFileSync(savedVarsPath!, "utf8"));
+    const db = parsed.WoWderhoiAHDB as Record<string, unknown> | undefined;
+    const neutral = db?.neutralScanData as
+      { scannedAt?: number; dataVersion?: number } | undefined;
+    if (!neutral || typeof neutral.scannedAt !== "number") return;
+    if (neutral.dataVersion !== SCAN_PIPELINE_VERSION) return;
+    if (neutral.scannedAt <= lastImportedNeutralScanAt) return;
+
+    const response = await fetch(importUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(neutral)
+    });
+    const body = await response.json();
+    if (!response.ok && response.status !== 409) throw new Error(`Neutral import failed: ${JSON.stringify(body)}`);
+    lastImportedNeutralScanAt = neutral.scannedAt;
+    writeState({ lastImportedScanAt, lastImportedNeutralScanAt });
+    console.log(`Imported ${body.imported} items from neutral scan ${body.scannedAt}.`);
   } finally {
     importInFlight = false;
   }
@@ -153,8 +190,10 @@ async function uploadLedger() {
 async function main() {
   console.log(`Watching ${savedVarsPath}`);
   await importLatestScan().catch(console.error);
+  await importNeutralScan().catch(console.error);
   watchFile(savedVarsPath!, { interval: 5000 }, () => {
     void importLatestScan().catch(console.error);
+    void importNeutralScan().catch(console.error);
     void uploadLedger().catch(console.error);
   });
   // Periodically pull web rules even when the game hasn't scanned, so a web

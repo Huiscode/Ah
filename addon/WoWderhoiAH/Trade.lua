@@ -86,6 +86,30 @@ local function itemIcon(itemId)
   return "Interface\\ICONS\\INV_Misc_QuestionMark"
 end
 
+-- The native AH name box matches against the item BASE name only. On green
+-- random-affix gear the affix ("能量之") is glued on by the client for display;
+-- the server-side search index does not contain it, so searching the full
+-- "能量之青布披风" returns 未发现物品, while "青布披风" returns every affix variant.
+-- For the native box we therefore feed the base name, not the display name.
+local function baseNameForSearch(itemId, fullName)
+  if not fullName or fullName == "" then return fullName end
+  if itemId then
+    local base = GetItemInfo(itemId)
+    if base and base ~= "" and #base < #fullName then return base end
+  end
+  -- Fallback: strip a leading short affix "X之" (Chinese random prefix, e.g.
+  -- 能量之/夜枭之/火焰防护之). Locate the first "之" and drop up to it; only
+  -- when the prefix is short (<=4 Chinese chars = 12 bytes) to avoid mangling
+  -- names that legitimately contain 之.
+  local zhi = "\228\185\139"
+  local pos = fullName:find(zhi, 1, true)
+  if pos and pos <= 13 then
+    local rest = fullName:sub(pos + #zhi)
+    if rest ~= "" then return rest end
+  end
+  return fullName
+end
+
 -- "查找" also fills the AH's own search box, so the buy quantity can be
 -- typed where the client wants it. Probe the retail SearchBar first, then
 -- the classic AuctionFrameBrowse search box; whichever exists gets the name.
@@ -1489,7 +1513,7 @@ renderRows = function()
         rowFrame.buy:SetText(L.FIND)
         rowFrame.buy:SetScript("OnClick", function()
           trade.searchBox:SetText(row.name)
-          fillAhSearch(row.name)
+          fillAhSearch(baseNameForSearch(row.itemId, row.name))
           mode = "results"
           trade.lastQuery = row.name
           refreshResults(row.name)

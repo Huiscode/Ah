@@ -91,6 +91,28 @@ describe("normalizeAddonScan", () => {
       .toThrow(/items/i);
   });
 
+  it("keeps market=neutral from the neutral slot and defaults everything else to faction", () => {
+    const neutral = normalizeAddonScan({
+      dataVersion: 4,
+      scannedAt: 1721700000,
+      server: "Anniversary",
+      faction: "Alliance",
+      market: "neutral",
+      zone: "艾尔文森林",
+      items: { 1529: { name: "翡翠", quality: 2, minPrice: 900, marketPrice: 1100, quantity: 1, numAuctions: 1 } }
+    });
+    expect(neutral.market).toBe("neutral");
+    // zone is auxiliary to the scan identity: the validator never gates
+    // market on it, and the snapshot row is tagged by market alone.
+    expect(neutral.items).toHaveLength(1);
+    // Old / unspecified payloads (and anything not explicitly "neutral") fall
+    // back to faction — the historical main-city meaning.
+    expect(normalizeAddonScan({ dataVersion: 4, scannedAt: 1721700000, server: "A", faction: "Alliance", items: { 1: { name: "x", quality: 1, minPrice: 1, marketPrice: 1, quantity: 1, numAuctions: 1 } } }).market)
+      .toBe("faction");
+    expect(normalizeAddonScan({ dataVersion: 4, scannedAt: 1721700000, server: "A", faction: "Alliance", market: "faction", items: { 1: { name: "x", quality: 1, minPrice: 1, marketPrice: 1, quantity: 1, numAuctions: 1 } } }).market)
+      .toBe("faction");
+  });
+
   it("rejects entries with non-positive prices", () => {
     const broken = {
       dataVersion: 4,

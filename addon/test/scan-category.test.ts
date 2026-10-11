@@ -130,6 +130,50 @@ describe("market discrimination (faction vs neutral)", () => {
     expect(pointsAfter).toBe(pointsBefore);
     expect(lua.eval("WoWderhoiAHDB.points[1529] == nil")).toBe(true);
   });
+
+  it("labels the market by zone: neutral whitelist wins over listing count", () => {
+    const lua = loadAddon();
+    // 阈值降到 1（2 挂单 ≥ 1 本应判 faction），但区域白名单（三角路口营地）
+    // 优先 —— 位置说了算，规模兜底。
+    lua.exec("WowTest.ns.MARKET_GRACE_DAYS = 0");
+    lua.exec("WowTest.ns.MARKET_SPLIT_AUCTIONS = 1");
+    lua.exec('WowTest.zone = "艾尔文森林"');
+    lua.setReplicate([
+      { name: "翡翠", texture: 134134, count: 1, qualityID: 2, usable: 1, level: 1, minBid: 900, minIncrement: 5, buyoutPrice: 1100, bidAmount: 0, owner: "C", saleStatus: 0, itemID: 1529, hasAllInfo: true }
+    ]);
+    lua.clearReplicateCooldown();
+    lua.runScan();
+    lua.exec('WowTest.fireEvent("REPLICATE_ITEM_LIST_UPDATE")');
+    lua.runOnUpdate();
+    lua.runOnUpdate();
+    expect(lua.eval("WoWderhoiAHDB.neutralScanData ~= nil")).toBe(true);
+    expect(lua.eval("WoWderhoiAHDB.neutralScanData.market")).toBe("neutral");
+    expect(lua.eval("WoWderhoiAHDB.neutralScanData.zone")).toBe("艾尔文森林");
+    expect(lua.eval("WoWderhoiAHDB.neutralScanData.items[1529] ~= nil")).toBe(true);
+    // 该账户从未做过主城扫描：中立首扫不得创建联盟槽位。
+    expect(lua.eval("WoWderhoiAH_ScanData == nil")).toBe(true);
+  });
+
+  it("labels the market by zone: faction whitelist wins over listing count", () => {
+    const lua = loadAddon();
+    // 阈值升到 1000（2 挂单 < 1000 本应判 neutral），但区域白名单（主城）
+    // 优先 —— 暴风城拍卖行必是阵营市场。
+    lua.exec("WowTest.ns.MARKET_GRACE_DAYS = 0");
+    lua.exec("WowTest.ns.MARKET_SPLIT_AUCTIONS = 1000");
+    lua.exec('WowTest.zone = "暴风城"');
+    lua.setReplicate([
+      { name: "亚麻布卷", texture: 0, count: 2, qualityID: 1, usable: 1, level: 1, minBid: 500, minIncrement: 5, buyoutPrice: 1000, bidAmount: 0, owner: "A", saleStatus: 0, itemID: 2580, hasAllInfo: true }
+    ]);
+    lua.clearReplicateCooldown();
+    lua.runScan();
+    lua.exec('WowTest.fireEvent("REPLICATE_ITEM_LIST_UPDATE")');
+    lua.runOnUpdate();
+    lua.runOnUpdate();
+    expect(lua.eval("WoWderhoiAH_ScanData.market")).toBe("faction");
+    expect(lua.eval("WoWderhoiAH_ScanData.zone")).toBe("暴风城");
+    expect(lua.scanned(2580)).toBe(true);
+    expect(lua.eval("WoWderhoiAHDB.neutralScanData == nil")).toBe(true);
+  });
 });
 
 // 开服宽限（0.3.7）：首次扫描起 7 天内，无论扫到多少挂单都按联盟拍卖行收，

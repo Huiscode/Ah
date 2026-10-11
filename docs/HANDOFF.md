@@ -1,7 +1,8 @@
 # AH 项目跟进文件（HANDOFF）
 
 > **本文件是进入本项目工作的唯一必读入口**：先读它，再按需精读具体文件，不要通读整个代码库。
-> 最后更新：2026-10-06（本地 UTC+2）。对应 git HEAD：`8a46464`（**未推**，origin 停在 `dd0ae7f`，本地 ahead 1；工作树含 0.3.7 插件、网页 market 维度、测试夹具等大量未提交改动，详见 §7）。
+> 最后更新：2026-10-09（本地 UTC+2）。对应 git HEAD：`20172a7`（**已推**，origin/main 同步；工作树仅
+> 3 个 untracked：`.dev-restart.log.err`、`addon\WoWderhoiAH\*.bak-0.3.6`，均属预期，勿入库）。
 > 语言：与用户用中文交流；代码/标识符保持英文。
 
 ## 1. 项目是什么
@@ -99,7 +100,8 @@ node -e "const{DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('p
 # 部署插件：把 addon\WoWderhoiAH\*.lua 复制到游戏插件目录并比对哈希
 ```
 
-## 6. 最近完成的工作（6.1~6.15 已提交并 push；6.16 之后状态见各小节——0.3.x 系列与市场维度均未推/未提交）
+## 6. 最近完成的工作（6.1~6.18 已提交并 push；6.19 及之后的状态见各小节——目前全部已提交，
+最新 commit `20172a7` 已推 origin/main；仅 6.23~6.26 中的部分改动有未部署项，见小节内说明）
 
 ### 6.1 出售助手窗口不关闭修复（commit f3e0cc9，Trade.lua）
 三个根因：hook 闭包引用了未声明 local 的 sellAssist（每处关闭都在 pcall 里静默死掉）、全局 itemId 残留、
@@ -267,11 +269,11 @@ POST /api/import/ledger（upsert by uid），只删 DB 会被下一次上传灌�
   `wah:secondary-materials:profession`）；
 - 雷达物品用**流通分**替代"被X配方"徽章（turnoverBadgeClass 五档）；删除"仅显示 XX"六字。
 
-### 6.19 最低盈利改整池筛选 + 配方库专业 tab 固定顺序（2026-10-06，commit 8a46464，**未推**）
+### 6.19 最低盈利改整池筛选 + 配方库专业 tab 固定顺序（2026-10-06，commit 8a46464，已随 20172a7 推送）
 捡漏雷达"必赚最低盈利"改名"最低盈利"且作用域=**整个雷达池**的最低盈利筛选（非单条必赚）；
-配方库专业 tab 顺序固定。此 commit 已提交未推（origin 停在 dd0ae7f，本地 ahead 1）。
+配方库专业 tab 顺序固定。
 
-### 6.20 市场隔离 0.3.5：中立扫描独立槽位 + 网页 market 维度（2026-10-04~06，**未提交**）
+### 6.20 市场隔离 0.3.5：中立扫描独立槽位 + 网页 market 维度（2026-10-04~06，已随 563cf47 提交、20172a7 推送）
 背景：用户问"扫描了中立拍卖行会不会覆盖错误数据到我的联盟拍卖行？"——核查：**会，且已发生**
 （10-04 10:29:37Z 一轮 523 商品/1717 挂单确为中立，污染了 523 种商品 7 日历史）。方案三件套：
 - 插件 0.3.5：`finishScan` 按挂单总数 ≥20000（WAH.MARKET_SPLIT_AUCTIONS）判 faction/neutral；
@@ -285,13 +287,13 @@ POST /api/import/ledger（upsert by uid），只删 DB 会被下一次上传灌�
 market 分布 faction 全量；首页实测正常。踩坑：Prisma generate 在 next dev 运行时 EPERM
 （DLL 被占用）→ 停进程再生成；雷达 0 条 = 2 小时新鲜度闸门设计行为（信号层健康）。
 
-### 6.21 0.3.6 相对阈值尝试 → 已回退（2026-10-06，**未提交**）
+### 6.21 0.3.6 相对阈值尝试 → 已回退（2026-10-06，已随 563cf47 提交、20172a7 推送）
 用户问"第一天扫不足两万条怎么办"→ 试做相对市场参考 + 冷启动（MARKET_MIN_FACTION_RATIO=0.25、
 classifyMarket、槽位记 auctions），测试 1 处失败未查。用户叫停并要求复原 0.3.5 → 已回退
 （游戏目录+源码恢复 0.3.5，哈希核对一致，测试回 74/74）。0.3.6 版本保留在
 `WoWderhoiAH.lua/toc.bak-0.3.6`（游戏目录与 addon 源码目录各一份）。
 
-### 6.22 0.3.7 开服 7 天宽限（2026-10-06，当前版本，**未提交**）
+### 6.22 0.3.7 开服 7 天宽限（2026-10-06，已随 563cf47 提交、20172a7 推送）
 采纳用户的时间方案替代绝对阈值冷启动：**首次扫描起 7 天内，无论扫到多少挂单一律按联盟拍卖行收；
 7 天后恢复 2 万阈值**（WAH.MARKET_GRACE_DAYS=7）。
 细节：游戏无服务器开服时间 API → 锚点 = 插件首次扫描时间（`WoWderhoiAHDB.firstScanAt`）；
@@ -299,24 +301,73 @@ classifyMarket、槽位记 auctions），测试 1 处失败未查。用户叫停
 测试 +2（宽限内 2 条挂单也按联盟收、老账户不重进宽限）：插件 76/76、全量 199/199、tsc 干净；
 游戏目录+源码哈希一致，TOC 0.3.7。用户已 /reload（SV 10-06 18:18 落盘）。
 
+### 6.23 上涨物品扫描 + 关注物品写入（2026-10-07，已随 20172a7 推送）
+- 用户要求：从开服至今持续上涨的物品（参照=褶皱地衣），最终口径（用户 10-07 拍板）：
+  **首周内 P10 均值 vs 最近一周内 P10 均值，涨幅 ≥30%，不管中间波动；最近一周在售量中位数 ≥100 件；基准价 ≥300 铜**。
+  首周=首轮起 7 天（2026-09-24~10-01），最近一周=最新轮往前 7 天；start/end=窗口内全部轮 P10 的**平均**。
+- 数据前置清理：10-04 两轮中立残留（07:26Z 549 行、10:29Z 523 行）从 faction 槽位 DELETEs 共 1072 行；
+  重建 10-04 日线 2502 行（脚本 `rebuild-daily2.cjs`，先 DELETE 当日旧行再 INSERT 9 列——`DailySummary`
+  表实际无 created_at/updated_at 列，schema 与库表不一致的遗留，插入勿写这两列）。
+- 结果 34 个（褶皱地衣 +54% 第 14 名入选；榜首无瑕皮革 +551%）；明细脚本
+  `analyze-rise-simple.cjs`（代理工作区），结果以 Markdown 表格交付（用户明示"不用划线"）。
+- 34 个全部写入 `Watchlist`（INSERT OR IGNORE：+30 新增、4 原有=褶皱地衣/坚固的石头/硫酸/天蓝染料）。
+  当前 Watchlist 19 条（用户后续自行增减过）。
+
+### 6.24 关注星标/配方即时同步（2026-10-07~08，已随 20172a7 推送）
+用户两次要求"加减关注立即体现、不需要手动刷新"：
+- **关注物品星标**（`watch-star.tsx`）：原仅 server action + revalidatePath，客户端不刷新→面板不即时。
+  重写为 useState 乐观翻转 + useEffect 同步 props + startTransition 内 await toggleWatchlist 后
+  `router.refresh()`（强制重拉 RSC），失败回滚。市场表/雷达/单品页/关注面板全部即时同步。
+- **关注配方**（收藏在 localStorage `wah:favorite-recipes`，非 DB）：`use-persisted-state.ts` 加
+  `window.addEventListener("storage")`——**跨标签页**（配方库页 ↔ 首页面板）双向即时同步；
+  同标签页本就即时。附带：所有 usePersistedState 状态跨标签页保持一致（增强，无副作用）。
+
+### 6.25 雷达筛选调整：删两条件 + 新增价位阶梯筛选（2026-10-08，已随 20172a7 推送）
+- 删除面板头部"价格上限"与"最低盈利"两个筛选（状态/过滤/输入框，localStorage 旧值残留无害），
+  保留 全部品类/仅限高流通商品/价格下限/条目计数。
+- 新增两个筛选："价位1比价位2低 %"、"价位2比价位3低 %"——**价位1/2/3 = 最新扫描挂单档位价格**
+  （`rawPayload.ladder` 前 3 档，从低到高，即"价格档位"面板的价格1/2/3），不是雷达表的
+  最低价/市场价/7日参考。语义：最低档 ≤ 次低档×(1-X%)、次低档 ≤ 第三档×(1-Y%)；启用时缺档的行被过滤。
+- 数据链路：`MarketHistory.ladder`（market-data.ts）← `getMarketUniverse` 新增**最新 addon 轮**
+  ladder 查询（repositories.ts；只取 MAX(timestamp) 一轮，避免 JSON 大字段拖慢全量查询）→
+  `MarketSignal.ladder` / `DealRadarRow.ladder`（analytics.ts）→ deal-radar-table 两输入框。
+- 覆盖率实测（10-07 最新轮 2574 行）：全部带 ladder，≥2 档 61%、≥3 档 43%；"价位1比价位2低30%"
+  样例命中 415 条。持久化键 `wah:deal-radar:ladder12` / `wah:deal-radar:ladder23`。
+
+### 6.26 插件复制失败背退 + 静默诊断（2026-10-08~09，已随 20172a7 推送；游戏目录已同步，需 /reload 生效）
+- 现象（用户 10-08 报"扫描卡住"）：主城复制请求经常被服务器**静默丢弃**（IsThrottled=no、事件不触发、
+  请求后 3 秒列表条目=0）——测试服主城大拍卖行（9 万+挂单）常态，注释里 Forever 亦有记录。
+- 原缺陷：watchdog 最终失败路径**不设置新冷却**（冷却只在 finishScan 成功时刷），自动重扫每 20s 检测
+  冷却→失败后几乎立即重发→无限循环 3 分钟等待 = 用户看到的"卡住"。
+- 修复（WoWderhoiAH.lua）：失败放弃后设 `replicateReadyAt = time() + REPLICATE_FAIL_BACKOFF(60s)`；
+  复制发起 3 秒后的应答探针改为静默记录 `scanState.replicateAckCount`，**仅最终失败时**打印
+  （`SCAN_DIAG_REPLICATE_ACK`，正常扫描聊天框干净）。重试路径保持不变（5s 后重试，最多 2 次）。
+- **TOC 版本号未升**（仍 0.3.7）；游戏目录=源码副本哈希一致；用户需 /reload 生效。
+
 ## 7. 当前状态与待办（重要）
 
-1. **插件当前版本 0.3.7**（游戏目录 + 源码副本哈希一致）：开服 7 天宽限 + 2 万阈值市场判定 + 中立
-   独立槽位。用户 10-06 已 /reload（SV 18:18 落盘），测试服行为与 0.3.5 一致（老账户无宽限）。
-2. **网页端市场维度已落地**：`AuctionSnapshot.market` 全量 faction（实测 391,971 行），10-04 中立轮
-   已清理（残留 0）；最新导入轮 `2026-10-06T13:30:56Z`（2493 商品 / 75565 挂单，market=faction）。
-3. **首页雷达当前 0 条属设计行为**：2 小时新鲜度闸门以"当前时刻"为准，最后一次扫描 15:30 已超
-   2 小时；以扫描时刻算信号层健康。下次主城扫描后自动恢复。
-4. **git 状态**：HEAD=`8a46464`（已提交**未推**，origin 停在 `dd0ae7f`，本地 ahead 1）；工作树未提交
-   改动 = 0.3.7 插件（lua/toc）、市场维度（schema/addon-scan/import-common/repositories/ladder 路由）、
-   测试夹具（deal-radar/settings-radar/scan-category/analytics/demo-history）。用户说"推"才 push。
-5. **用户 WIP 保持不动**（未提交勿改勿提交）：`scripts/backfill-df-recipes.ts`、`src/app/items/[itemId]/page.tsx`、
-   `src/app/ledger/page.tsx`、`src/app/recipes/page.tsx`（git status 中 M 属既有改动）。
+1. **插件 0.3.8 + 区域白名单市场判定**（游戏目录 + 源码副本哈希一致，TOC 版本号未升）：zone 白名单
+   （主城→faction、三角路口→neutral）优先于挂单数阈值，未知区域回退旧阈值；中立写独立槽位
+   neutralScanData（含 zone）。已部署，**用户需 /reload 生效**；测试服主城复制请求被服务器静默丢弃
+   属常态（会自动重试，失败后 1 分钟再试）。
+2. **中立市场已入网页（M1）+ 跨市场倒卖面板（M2）**：watcher 独立游标导入 neutral 槽位
+   （market='neutral' 落库）；首页双新鲜度 + `/neutral` 只读页 + `/arbitrage` 跨市场比较面板
+   （价差/方向/净利/量差 + 筛选排序）。实测 DB：AuctionSnapshot 全量 faction（463,546 行），
+   **尚无 neutral 行**（等用户 /reload 后去三角路口扫描，扫完 /arbitrage 即有真实结果）。
+   Watchlist 当前 19 条。
+3. **雷达面板筛选现状**：只剩 全部品类/仅限高流通商品/价格下限 + 新增"价位1比价位2低 % /
+   价位2比价位3低 %"（阶梯筛选，见 6.25）；雷达条数取决于最近扫描的新鲜度（2 小时闸门，见 §8）。
+4. **git 状态**：HEAD=`20172a7`，**已推 origin/main 同步**。工作树含 **6.27 未提交改动**（插件
+   WoWderhoiAH.lua、watch-savedvars.ts、repositories.ts、page.tsx、/neutral 页、addon-scan 测试、
+   scan-category 测试、wow-stub、handoff 本节）；另有 3 个 untracked：`.dev-restart.log.err`（可忽略/
+   删除）、`addon\WoWderhoiAH\WoWderhoiAH.lua/toc.bak-0.3.6`（0.3.6 尝试备份，保留勿删勿入库）。
+   用户说"推"才 push（20172a7 为最近一次已推）。
+5. **用户 WIP**：无（`backfill-df-recipes.ts`、`items/[itemId]`、`ledger`、`recipes` 页面改动已随
+   20172a7 一并提交）。
 6. **待办（用户 10-06 指示）**：**公测开始时清空全部运行时数据**——网页 SQLite（快照/信号/历史）、
    插件 SavedVariables（scanData/Points/firstScanAt）、导入进度 `.watch-state.json`；代码与 git 保留。
    用户届时会通知触发（已记入偏好 p1_AQFJGcEGWaE，见 §9）。
-7. 遗留：`.dev-restart.log.err`（next dev 重启日志，可忽略/删除）；addon 源码目录
-   `WoWderhoiAH.lua/toc.bak-0.3.6`（0.3.6 尝试备份，保留勿删）。
+7. 遗留：`.dev-restart.log.err`（可忽略/删除）；addon 源码目录 `*.bak-0.3.6`（保留勿删）。
 
 ## 8. 已知坑 / 机制限制（务必记住）
 
@@ -342,6 +393,56 @@ classifyMarket、槽位记 auctions），测试 1 处失败未查。用户叫停
   时刻计信号层仍健康。排查时先用扫描时刻口径判断是否真的没数据。
 - **addon 源码目录内的 `*.bak-x.y.z` 是版本备份**（0.3.5/0.3.6 等），游戏目录同样有；勿删勿入库
   （会出现在 git untracked，属预期）。
+- **价位阶梯筛选的数据源 = `rawPayload.ladder`**（插件每轮扫描带回的挂单分档，从低到高）：
+  `getMarketUniverse` 只取**最新一轮**（MAX timestamp）解析前 3 档，拼进 `MarketSignal.ladder`；
+  覆盖率随市场变化（10-07 实测 2574 行全带、≥2 档 61%、≥3 档 43%）。启用阶梯筛选时**缺档的行被过滤**。
+- **Prisma `$queryRaw` 对 Json 列返回已反序列化对象**：repositories.ts 的 ladder 解析兼容两种形态
+  （`typeof raw_payload === "string"` 才 JSON.parse，否则直接当对象读），新增类似查询时同样处理。
+- **主城复制请求被服务器静默丢弃是常态**（IsThrottled=no、事件不触发、3 秒后列表条目=0）：插件自动
+  重试（5s 后，最多 2 次）+ 最终失败 60s 背退；"复制发起 3 秒后列表条目"探针**仅在最终失败时打印**。
+  用户报"扫描卡住"时先想到这一点，而非插件死锁。
+
+### 6.27 中立拍卖行入网页 M1（zone 判定 + neutral 导入 + /neutral 页，未提交未推）
+
+用户确认中立拍卖行 = **艾尔文森林 ↔ 赤脊山交界三角路口贸易营地**（板条箱提交点），要求把中立数据
+做到网页并规划跨市场倒卖（M2 待做）。本轮交付 M1：
+- **插件 0.3.8（WoWderhoiAH.lua）**：新增 `WAH.MARKET_ZONES_FACTION/NEUTRAL` 区域白名单（中英文 zone
+  名）；`finishScan` 市场判定改为 **宽限 → 中立白名单 → 阵营白名单 → 挂单数阈值兜底**，并把
+  `zone = GetRealZoneText()` 写进 scanData / neutralScanData。未知 zone 回退旧阈值逻辑，行为不变。
+- **watcher（watch-savedvars.ts）**：新增 `importNeutralScan()`，独立游标 `lastImportedNeutralScanAt`
+  （.watch-state.json），读 `WoWderhoiAHDB.neutralScanData` POST 同一 import 端点（market="neutral"
+  由 normalizeAddonScan 透传 → importSnapshot 落库 market='neutral'）；与 faction 导入共用一把锁。
+- **查询/页面**：`getLatestSnapshotTime(market?)` 参数化；新增 `getNeutralMarketLatest()`（中立最新
+  一轮物品+价格）；首页头部双新鲜度（"联盟·数据更新于 / 中立·更新于"）+ 中立市场链接；
+  新页 `src/app/neutral/page.tsx` 只读表格（P10/最低挂单/在售量/挂单数，按市场价降序）。
+- **测试**：scan-category 新增 zone 白名单 2 用例（wow-stub 加可配置 GetRealZoneText，默认 "" 走阈值
+  兜底）；addon-scan 新增 market=neutral 归一用例。全量 **202 用例通过、tsc 0 错、next build 成功**。
+- **部署**：插件已复制游戏目录哈希一致；watcher 已重启（新代码生效）；`/neutral` 页 HTTP 200（当前
+  空状态提示"尚无中立市场数据"）。**用户需游戏内 /reload + 去三角路口扫一次中立**，SV 落盘后
+  neutralScanData.zone 可见真实 zone 名，网页 /neutral 即有数据。
+- 未做：zone 不落库（AuctionSnapshot 无 zone 列，M1 页面文案写死位置）；M2 跨市场差价面板待做。
+- 遗留决策点：中立费率是否按 15% 经典值；是否需要中立 Points 历史（当前中立不写 points）。
+
+### 6.28 跨市场倒卖比较面板 M2（未提交未推）
+
+用户"做下一步吧"后实施 M2（核心功能），当前 DB **尚无 neutral 行**（等用户 /reload + 三角路口
+扫描），页面空态已按"缺哪边"精确提示。
+- **src/data/market-fees.ts**：费率常量 `{ faction: 0.05, neutral: 0.15 }`（经典怀旧服值，页面标注
+  "以游戏实收为准"，成交一单核对后改这里）。
+- **src/lib/cross-market.ts**（纯函数 + 单测）：`buildCrossMarketRows` 两市场最新轮配对（只取两市场
+  都有物品）、价差% = |f−n|/min、方向（联盟→中立 / 中立→联盟）、预计净利 = 卖侧 P10×(1−卖侧费率)
+  − 买侧最低档价（ladder 第 1 档，无则 P10 兜底）、陈旧门槛 7 天（任一侧超时标"陈旧"，不参与
+  "仅可操作"）；`attachItemMeta` 回填名称/品质/分类/图标。
+- **repositories.ts `getCrossMarketSides()`**：faction/neutral 各自最新轮按 item_id JOIN 输入；任一方
+  无数据返回空数组但保留有数据侧的时间戳（页面据此区分缺哪边）。
+- **/arbitrage 页**：跨市场倒卖面板 —— 联盟价/中立价/价差%/方向/预计净利/买侧量/卖侧量/挂单数/
+  状态；筛选：价差≥（10/30/50/100%）、买侧量≥（无/5/20/50）、仅可操作、排序（净利/价差%），
+  全 URL 参数；免责标注费率假设 + 中立价可能陈旧 + 低量慎倒 + 跑图成本提示；首页头部加"跨市场"
+  链接（/neutral 与 /arbitrage 并列）。
+- **验证**：vitest 206 用例全过（新增 cross-market 4 用例）；tsc 0 错；next build 成功（/arbitrage
+  已注册）；HTTP 200 且空态正确显示"已有联盟数据，但还没有中立数据"；首页含 /arbitrage 链接。
+- 未做：M3 清单（配方利润面板增强/挂单深度/抄底信号/中立供给差高亮等，见计划 §5）；费率实测。
+- 注意：/arbitrage 空态判断用时间戳而非数组长度（查询在任一方无数据时两侧数组都为空）——已修。
 
 ## 9. 用户偏好 / 协作纪律
 

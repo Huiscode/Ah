@@ -72,10 +72,28 @@ WAH.MARKET_SPLIT_AUCTIONS = 20000
 -- opens a window of this many days during which EVERY scan is treated as
 -- the faction market, whatever the listing count — a day-one faction book
 -- that is still small is never parked in the neutral slot and lost. After
--- the grace, the listing split above applies. Accounts that already have
--- scan data (upgrading from 0.3.5) never re-enter the grace. Lives on the
--- WAH namespace so the test harness can override it per-test.
+-- the grace, the market identity rules below apply. Accounts that already
+-- have scan data (upgrading from 0.3.5) never re-enter the grace. Lives on
+-- the WAH namespace so the test harness can override it per-test.
 WAH.MARKET_GRACE_DAYS = 7
+
+-- Market identity by zone (0.3.8): the zone IS the market. The faction
+-- (main-city) books sit in the capital cities, the single neutral goblin
+-- book sits at the trade camp on the Elwynn Forest / Redridge Mountains
+-- border (the crate drop point), so GetRealZoneText() at scan time is a
+-- natural, exact market tag. The whitelist wins whenever the zone matches;
+-- anything outside it falls back to the listing-count split below, so an
+-- unknown zone can never mislabel a scan. The client localizes zone names,
+-- so both zhCN and enUS spellings are whitelisted. Lives on the WAH
+-- namespace so the test harness can override it per-test.
+WAH.MARKET_ZONES_FACTION = {
+  ["暴风城"] = true, ["铁炉堡"] = true, ["达纳苏斯"] = true,
+  ["Stormwind City"] = true, ["Ironforge"] = true, ["Darnassus"] = true
+}
+WAH.MARKET_ZONES_NEUTRAL = {
+  ["艾尔文森林"] = true, ["赤脊山"] = true,
+  ["Elwynn Forest"] = true, ["Redridge Mountains"] = true
+}
 
 local scanState = nil -- { mode="replicate", itemsById, itemInfoCache, processing, cursor, pending, pendingOnly }
 local pendingRounds = 0 -- revisit passes over incomplete entries, capped to avoid a stall
@@ -349,14 +367,17 @@ local function finishScan(totalAuctions)
   end
   -- Market identity. Within the launch grace (7 days from the addon's very
   -- first scan on a fresh account) every scan counts as the faction market,
-  -- so a day-one economy is never lost. After the grace the listing split
-  -- applies: the faction (main-city) book replicates ~75-88k listings on
-  -- this realm, the neutral goblin book only a few thousand. Scans at or
-  -- above the split are faction-market scans; anything below is treated as
-  -- the neutral market. A neutral scan is parked in its own slot and never
-  -- touches the faction scan slot, the points history, or the web import —
-  -- it can neither overwrite the Alliance market data in-game nor pollute
-  -- the terminal's references (med7/趋势/环比) with another market's prices.
+  -- so a day-one economy is never lost. After the grace, the zone whitelist
+  -- wins: the faction (main-city) books live in the capital cities, the
+  -- neutral goblin book at the Elwynn Forest / Redridge Mountains trade camp
+  -- (the crate drop point), so the scan zone is an exact market tag. Zones
+  -- outside both whitelists fall back to the listing split: the faction book
+  -- replicates ~75-88k listings on this realm, the neutral book only a few
+  -- thousand; at or above the split is faction, below is neutral. A neutral
+  -- scan is parked in its own slot and never touches the faction scan slot,
+  -- the points history, or the web import — it can neither overwrite the
+  -- Alliance market data in-game nor pollute the terminal's references
+  -- (med7/趋势/环比) with another market's prices.
   local firstScanAt = WoWderhoiAHDB.firstScanAt
   if not firstScanAt and not WoWderhoiAH_ScanData then
     firstScanAt = time() -- 冷启动锚点：真正的首扫才开启 7 天宽限
@@ -364,10 +385,16 @@ local function finishScan(totalAuctions)
   end
   local graceDays = WAH.MARKET_GRACE_DAYS or 7
   local inGrace = firstScanAt and (time() - firstScanAt) < graceDays * 86400
+  local zone = GetRealZoneText() or ""
   local market
   if inGrace then
     market = "faction" -- 开服 7 天内：无论扫到多少都按联盟收
+  elseif WAH.MARKET_ZONES_NEUTRAL[zone] then
+    market = "neutral" -- 三角路口贸易营地：位置即中立市场
+  elseif WAH.MARKET_ZONES_FACTION[zone] then
+    market = "faction" -- 主城拍卖行：位置即阵营市场
   else
+    -- 未知区域：按挂单数兜底，永不误标。
     market = (totalAuctions or 0) >= (WAH.MARKET_SPLIT_AUCTIONS or 20000) and "faction" or "neutral"
   end
   if market == "faction" then
@@ -385,6 +412,7 @@ local function finishScan(totalAuctions)
       server = GetRealmName(),
       faction = UnitFactionGroup("player"),
       market = market,
+      zone = zone,
       items = items
     }
     WoWderhoiAHDB.scanData = WoWderhoiAH_ScanData -- persist under the single WoWderhoiAHDB variable
@@ -423,13 +451,15 @@ local function finishScan(totalAuctions)
       end
     end
   else
-    -- 中立市场：独立槽位，不覆盖主城 scanData、不写 points、不进网页导入。
+    -- 中立市场：独立槽位，不覆盖主城 scanData、不写 points。zone 记录了
+    -- 扫描区域（三角路口营地），供网页端标注中立行情来源。
     WoWderhoiAHDB.neutralScanData = {
       dataVersion = WAH.PIPELINE_VERSION,
       scannedAt = time(),
       server = GetRealmName(),
       faction = UnitFactionGroup("player"),
       market = "neutral",
+      zone = zone,
       items = items
     }
   end
