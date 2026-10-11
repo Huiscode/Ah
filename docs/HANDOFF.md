@@ -357,11 +357,10 @@ classifyMarket、槽位记 auctions），测试 1 处失败未查。用户叫停
    Watchlist 当前 19 条。
 3. **雷达面板筛选现状**：只剩 全部品类/仅限高流通商品/价格下限 + 新增"价位1比价位2低 % /
    价位2比价位3低 %"（阶梯筛选，见 6.25）；雷达条数取决于最近扫描的新鲜度（2 小时闸门，见 §8）。
-4. **git 状态**：HEAD=`20172a7`，**已推 origin/main 同步**。工作树含 **6.27 未提交改动**（插件
-   WoWderhoiAH.lua、watch-savedvars.ts、repositories.ts、page.tsx、/neutral 页、addon-scan 测试、
-   scan-category 测试、wow-stub、handoff 本节）；另有 3 个 untracked：`.dev-restart.log.err`（可忽略/
-   删除）、`addon\WoWderhoiAH\WoWderhoiAH.lua/toc.bak-0.3.6`（0.3.6 尝试备份，保留勿删勿入库）。
-   用户说"推"才 push（20172a7 为最近一次已推）。
+4. **git 状态**：HEAD=`4b59cee`（6.27 M1 + 6.28 M2 + Trade.lua 搜索修复），**已推 origin/main 同步**。
+   工作树仅 3 个 untracked：`.dev-restart.log.err`（可忽略/删除）、
+   `addon\WoWderhoiAH\WoWderhoiAH.lua/toc.bak-0.3.6`（0.3.6 尝试备份，保留勿删勿入库）。
+   用户说"推"才 push（4b59cee 为最近一次已推）。
 5. **用户 WIP**：无（`backfill-df-recipes.ts`、`items/[itemId]`、`ledger`、`recipes` 页面改动已随
    20172a7 一并提交）。
 6. **待办（用户 10-06 指示）**：**公测开始时清空全部运行时数据**——网页 SQLite（快照/信号/历史）、
