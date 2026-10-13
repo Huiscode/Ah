@@ -10,7 +10,8 @@ import {
   getLatestRoundItemIds,
   getLatestSnapshotTime,
   getRecipes,
-  getWatchedItemIds
+  getWatchedItemIds,
+  type MarketMode
 } from "@/lib/repositories";
 import { getMarketSignals } from "@/lib/market-signals";
 import { AUCTIONATOR_STALE_MAX_AGE_MS, describeFreshness } from "@/lib/freshness";
@@ -31,6 +32,9 @@ import { InstructionsPanel } from "@/components/instructions-panel";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import Link from "next/link";
 
+// 数据口径断点：2026-10-13 起为 Auctionator 最低价；此前为自研插件 Beta P10。
+export const DATA_SWITCH_DAY = "2026-10-13";
+
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   // Chinese labels for the alert metrics surfaced on the dashboard; kept in
   // sync with components/trader-panels.tsx.
@@ -41,13 +45,15 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     discountPercent: "折扣%",
     quantity: "在售量"
   };
-  const view = parseMarketView(await searchParams);
+  const raw = await searchParams;
+  const mode: MarketMode = raw.history === "1" ? "history" : "current";
+  const view = parseMarketView(raw);
   const [{ signals, latestSnapshotAt }, watchedIds, alertRules, latestRound, recipes, vendorPrices] = await Promise.all([
-    getMarketSignals(),
+    getMarketSignals(mode),
     getWatchedItemIds(),
     getAlertRules(),
-    // 雷达 universe：最新一轮 Auctionator 扫描的在售物品集合。
-    getLatestRoundItemIds(),
+    // 雷达 universe：该模式最新一轮扫描的在售物品集合。
+    getLatestRoundItemIds(mode),
     // 关注配方面板展示配方库中被收藏的配方（craft + merchant 全量，
     // 面板按收藏过滤；收藏在 /recipes 配方库页设置）。
     getRecipes(),
@@ -59,8 +65,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // 雷达阈值：网页侧常量（market-rules.ts）——插件下线后无游戏内权威面板。
   const radarRules = dealRadarRules;
   const allDeals = buildDealRadar(signals, radarRules);
-  // 最新 Auctionator 扫描轮 owns the radar's universe: 只推荐游戏内当前在售
-  // 的物品——旧行无法在游戏里买到。无 Auctionator 数据时雷达保持空态。
+  // 该模式最新扫描轮 owns the radar's universe：只推荐该模式数据源在售的物品。
   const deals = latestRound === null ? allDeals : allDeals.filter((deal) => latestRound.has(deal.itemId));
   const radarCategories = groupedCategoryOptions(Array.from(new Set(deals.map((deal) => deal.category))));
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
@@ -100,14 +105,32 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         </div>
       </div>
 
+      {mode === "history" ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-amber/50 bg-amber-500/10 px-4 py-2 font-mono text-xs">
+          <span className="flex items-center gap-2 text-terminal-amber">
+            <RadioTower size={14} /> 历史模式 · Beta 删档数据 · P10 口径（{DATA_SWITCH_DAY} 前自研插件）——仅供参考，与当前 Auctionator 最低价不同
+          </span>
+          <Link href="/" className="text-terminal-amber underline">← 返回当前数据（Auctionator 最低价）</Link>
+        </div>
+      ) : (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel2 px-4 py-2 font-mono text-xs text-terminal-muted">
+          <span>数据口径自 {DATA_SWITCH_DAY} 起为 <span className="text-terminal-amber">Auctionator 最低买入价</span>（旧 Beta P10 数据保留在库中）</span>
+          <Link href="/?history=1" className="text-terminal-amber underline">查看 Beta 历史数据（P10）→</Link>
+        </div>
+      )}
+
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · 必赚 + 最低买入价 vs 7日参考价</span>} />
+            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · 必赚 + {mode === "history" ? "最低价 vs 7日参考价（P10）" : "最低买入价 vs 7日参考价"}</span>} />
             <div className="p-3 font-mono text-xs">
               {deals.length === 0 ? (
                 <div className="text-terminal-muted">
-                  {signals.length === 0 ? "暂无市场数据。请在游戏内用 Auctionator 全量扫描拍卖行（每次进入拍卖行时），然后重跑导入。" : "当前没有满足利润与参考价门槛的捡漏挂单。"}
+                  {signals.length === 0
+                    ? mode === "history"
+                      ? "历史模式无 addon 数据。"
+                      : "暂无市场数据。请在游戏内用 Auctionator 全量扫描拍卖行（每次进入拍卖行时），然后重跑导入。"
+                    : "当前没有满足利润与参考价门槛的捡漏挂单。"}
                 </div>
               ) : (
                 <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} productItemIds={productItemIds} />
@@ -155,7 +178,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       </div>
       <InstructionsPanel />
       <footer className="mt-3 border border-terminal-border bg-terminal-panel px-4 py-2 font-mono text-[10px] leading-relaxed text-terminal-muted">
-        数据来源：Auctionator 插件（Forever 客户端适配版）SavedVariables 导入——价格口径 = 最低买入价（m）；7日参考 = 近 7 日每日收盘的中位数。旧 Beta 版自研插件数据（P10）保留在库中，供历史模式参考。
+        {mode === "history"
+          ? "历史模式：数据来源 = 旧自研插件 Beta 删档扫描（P10 口径，截至 2026-10 停用）；仅供开服前参考，与当前 Auctionator 最低价口径不同。"
+          : "数据来源：Auctionator 插件（Forever 客户端适配版）SavedVariables 导入——价格口径 = 最低买入价（m）；7日参考 = 近 7 日每日收盘的中位数。旧 Beta 版自研插件数据（P10）保留在库中，可在页头切换到历史模式参考。"}
       </footer>
     </main>
   );

@@ -6,7 +6,8 @@ import {
   getItemVendorPricesByIds,
   getLatestPricesByItemIds,
   getRecipesProducing,
-  getWatchedItemIds
+  getWatchedItemIds,
+  type MarketMode
 } from "@/lib/repositories";
 import { buildFloorPriceIndex, computeRecipeProfits, professionLabel } from "@/lib/recipe-profits";
 import { FOOD_EFFECTS } from "@/data/food-effects";
@@ -19,12 +20,15 @@ import { AUCTIONATOR_STALE_MAX_AGE_MS, describeFreshness } from "@/lib/freshness
 import { CandlestickChart, TimeSeriesChart } from "@/components/charts";
 import { WatchStar } from "@/components/watch-star";
 import { CloseTabButton } from "@/components/close-tab-button";
+import { markBaitDays } from "@/lib/bait-filter";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 
-export default async function ItemDetail({ params }: { params: Promise<{ itemId: string }> }) {
+export default async function ItemDetail({ params, searchParams }: { params: Promise<{ itemId: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { itemId } = await params;
+  const raw = await searchParams;
+  const mode: MarketMode = raw.history === "1" ? "history" : "current";
   const numericItemId = Number(itemId);
-  const item = await getItemDetail(numericItemId);
+  const item = await getItemDetail(numericItemId, mode);
   if (!item) notFound();
 
   // 制作配方面板按需取数：只查产出此物品的配方，以及这些配方涉及的
@@ -40,7 +44,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     for (const output of recipe.outputs) involvedItemIds.add(output.itemId);
   }
   const [priceByItemId, vendorPrices] = await Promise.all([
-    getLatestPricesByItemIds(Array.from(involvedItemIds)),
+    getLatestPricesByItemIds(Array.from(involvedItemIds), mode),
     getItemVendorPricesByIds(Array.from(involvedItemIds))
   ]);
   const floorPriceIndex = buildFloorPriceIndex(producingRecipes, vendorPrices);
@@ -49,13 +53,13 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const foodEffect = FOOD_EFFECTS[numericItemId];
   const now = new Date();
   const hasSnapshots = item.snapshots.length > 0;
-  const signal = hasSnapshots ? buildMarketSignal(item, now) : null;
+  const signal = hasSnapshots ? buildMarketSignal(item, now, mode) : null;
   const latestSnapshot = item.snapshots[item.snapshots.length - 1];
   const freshness = describeFreshness(latestSnapshot?.timestamp ?? null, now, AUCTIONATOR_STALE_MAX_AGE_MS);
-  // Daily candles and seasonality follow the auctionator channel — the only
-  // channel produced now; legacy addon rows are excluded so the K-line never
-  // blends two price metrics.
-  const sameSourceSummaries = item.dailySummaries.filter((summary) => (summary.source ?? "auctionator") === "auctionator");
+  // Daily candles and seasonality follow the active mode's channel — legacy
+  // addon rows never blend with auctionator rows inside one view.
+  const modeSource = mode === "history" ? "addon" : "auctionator";
+  const sameSourceSummaries = item.dailySummaries.filter((summary) => (summary.source ?? "auctionator") === modeSource);
   const seasonality = buildWeekdaySeasonality(sameSourceSummaries);
   const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
   const candleData = sameSourceSummaries.map((summary) => ({
@@ -66,23 +70,29 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     low: summary.lowPrice,
     volume: summary.volume
   }));
-  // 近 7 日最低/最高双线：Auctionator 每日一轮收盘，raw snapshots 只有最新
-  // 一批（无逐次扫描曲线），走势用 daily 的 low/high 双线表达当日振幅。
-  const rangeByTs = new Map<number, { low: number; high: number; volume?: number }>();
+  // 近 7 日走势线：Auctionator 每日一轮收盘（high≈low=当日代表价），当前模式
+  // 用单线表达收盘，并剔除相对自身历史的钓单日（极少挂单/极低价格，bait-filter）；
+  // 历史模式（旧插件多次扫描）保留当日最高/最低双线振幅。
+  const baitTs = mode === "history" ? null : markBaitDays(sameSourceSummaries.map((s) => ({ ts: s.date.getTime(), close: s.closePrice, volume: s.volume })));
+  const rangeByTs = new Map<number, { low: number; high: number; close?: number; volume?: number }>();
   for (const summary of sameSourceSummaries) {
     const ts = summary.date.getTime();
-    const entry = rangeByTs.get(ts) ?? { low: summary.lowPrice, high: summary.highPrice, volume: summary.volume };
+    if (baitTs && baitTs.has(ts)) continue; // 钓单日不入走势
+    const entry = rangeByTs.get(ts) ?? { low: summary.lowPrice, high: summary.highPrice, close: summary.closePrice, volume: summary.volume };
     entry.low = Math.min(entry.low, summary.lowPrice);
     entry.high = Math.max(entry.high, summary.highPrice);
+    entry.close = summary.closePrice;
     rangeByTs.set(ts, entry);
   }
   const rangeData = Array.from(rangeByTs.entries())
     .sort(([left], [right]) => left - right)
     .map(([ts, entry]) => ({ ts, ...entry }));
-  const rangeSeries = [
-    { key: "high" as const, color: "#ff5c7a", name: "当日最高" },
-    { key: "low" as const, color: "#39d98a", name: "当日最低" }
-  ];
+  const rangeSeries = mode === "history"
+    ? [
+        { key: "high" as const, color: "#ff5c7a", name: "当日最高" },
+        { key: "low" as const, color: "#39d98a", name: "当日最低" }
+      ]
+    : [{ key: "close" as const, color: "#39d98a", name: "每日收盘" }];
 
   return (
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
@@ -108,14 +118,31 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
           <CloseTabButton />
         </div>
       </div>
+      {mode === "history" ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-amber/50 bg-amber-500/10 px-4 py-2 font-mono text-xs">
+          <span className="text-terminal-amber">历史模式 · Beta 删档数据 · P10 口径（2026-10-13 前自研插件）——仅供参考</span>
+          <Link href={`/items/${numericItemId}`} className="text-terminal-amber underline">← 返回当前数据（Auctionator 最低价）</Link>
+        </div>
+      ) : (
+        <div className="mb-3 flex items-center justify-between gap-3 border border-terminal-border bg-terminal-panel2 px-4 py-2 font-mono text-xs text-terminal-muted">
+          <span>数据口径自 2026-10-13 起为 Auctionator 最低买入价</span>
+          <Link href={`/items/${numericItemId}?history=1`} className="text-terminal-amber underline">查看 Beta 历史 P10 →</Link>
+        </div>
+      )}
       <div className="grid gap-3 xl:grid-cols-[1fr_420px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="近7日最低/最高走势 (日线)" />
+            <PanelHeader title={mode === "history" ? "近7日最低/最高走势 (日线)" : "近7日收盘走势 (日线)"} />
             <div className="p-3">
               {rangeData.length >= 2
                 ? <TimeSeriesChart data={rangeData} series={rangeSeries} />
-                : <div className="p-4 font-mono text-xs text-terminal-muted">双线走势需要至少 2 天的 Auctionator 扫描数据——每次进入拍卖行后保持全量扫描积累</div>}
+                : <div className="p-4 font-mono text-xs text-terminal-muted">
+                    {mode === "history"
+                      ? "历史 addon 数据中没有可用的日线"
+                      : baitTs && baitTs.size > 0
+                        ? `不足 2 天有效数据（已剔除 ${baitTs.size} 天疑似钓单：极少挂单的极高价格）`
+                        : "收盘走势需要至少 2 天的 Auctionator 扫描数据——每次进入拍卖行后保持全量扫描积累"}
+                  </div>}
             </div>
           </Panel>
           <Panel>
@@ -152,14 +179,14 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
               {signal && (
                 <>
                   <div>
-                    <div className="text-xs uppercase text-terminal-muted">最低买入价</div>
+                    <div className="text-xs uppercase text-terminal-muted">{mode === "history" ? "市场价 · P10" : "最低买入价"}</div>
                     <div className="text-2xl"><Coins copper={signal.price} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div><div className="text-terminal-muted">最低价</div><div><Coins copper={signal.minPrice} /></div></div>
-                    <div><div className="text-terminal-muted">7日参考（最低价均值）</div><div><Coins copper={signal.med7} /></div></div>
+                    <div><div className="text-terminal-muted">7日参考（{mode === "history" ? "P10" : "最低价均值"}）</div><div><Coins copper={signal.med7} /></div></div>
                     <div><div className="text-terminal-muted">折扣</div><div className={signal.discountPercent >= 15 ? "text-terminal-green" : ""}>{signal.discountPercent.toFixed(0)}%</div></div>
-                    <div><div className="text-terminal-muted">环比昨日</div><div className={trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</div></div>
+                    <div><div className="text-terminal-muted">{mode === "history" ? "环比上次" : "环比昨日"}</div><div className={trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</div></div>
                     <div><div className="text-terminal-muted">在售量</div><div>{signal.quantity.toLocaleString("en-US")}</div></div>
                   </div>
                 </>

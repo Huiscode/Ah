@@ -1,0 +1,9 @@
+## Interface: 16001, 120100, 120000, 50504, 38000, 20506, 11508, 11509
+## Title: WoWderhoiAH-Transcript
+## Notes: 转录拍卖行完整价格档位（供 WoWderhoiAH 网页版使用）。打开拍卖行后 /wahscan start 开始逐物品扫描。
+## Author: WoWderhoiAH
+## Version: 0.1.0
+## SavedVariables: WAHTranscribeDB
+## SavedVariables: WAHTranscribeState
+
+Transcript.lua

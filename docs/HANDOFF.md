@@ -1,107 +1,146 @@
 # AH 项目跟进文件（HANDOFF）
 
 > **本文件是进入本项目工作的唯一必读入口**：先读它，再按需精读具体文件，不要通读整个代码库。
-> 最后更新：2026-10-09（本地 UTC+2）。对应 git HEAD：`20172a7`（**已推**，origin/main 同步；工作树仅
-> 3 个 untracked：`.dev-restart.log.err`、`addon\WoWderhoiAH\*.bak-0.3.6`，均属预期，勿入库）。
+> 最后更新：2026-10-13（本地 UTC+2）。对应 git HEAD：`8ca4f53`（M1+M2 迁移，**本地已提交未推送**；
+> M3 收尾 + 走势单线 + bait-filter 三版 + **M4 转录插件/档位过滤**全部未提交）。工作树含上述未提交改动。
 > 语言：与用户用中文交流；代码/标识符保持英文。
+>
+> **2026-10-13 重大变更：数据源已从自研插件切换为 Auctionator**（见 §2/§6.29/§7）。
+> 旧自研插件已废除（游戏目录已移除，源码归档在 `archive/addon/`）；网页当前口径 = Auctionator
+> **最低买入价**；旧 Beta 插件数据（47 万行 P10）保留在库，通过**历史模式**（`?history=1`）查看。
+> **M4（2026-10-13 晚）：新增转录插件 WoWderhoiAH-Transcript + 档位过滤**——Auctionator 存档只有
+> 聚合价（m/l/h/a），无价格档位；转录插件用暴雪官方 API 逐物品扫出完整档位落盘，网页端按档位做
+> "稀薄+断层"钓单过滤（见 §6.30）。
 
 ## 1. 项目是什么
 
-WoW Forever 私服（`C:\Program Files (x86)\World of Warcraft\_classic_beta_\`，可执行 WowB.exe）拍卖行插件
-**WoWderhoiAH**（Lua）+ **Next.js 本地网页终端**（localhost:3000）混合项目。插件在游戏内扫拍卖行/收件箱，
-数据经 SavedVariables 落盘后被本地 Node 脚本导入 SQLite，网页展示行情、捡漏雷达、成交账本、配方利润。
+WoW Forever 私服（`C:\Program Files (x86)\World of Warcraft\_classic_beta_\`，可执行 WowB.exe）拍卖行
+行情**网页终端**（Next.js 本地）。数据来源：游戏内 **Auctionator** 插件（Forever 适配版）SavedVariables
+落盘 + **M4 转录插件**（WoWderhoiAH-Transcript，完整价格档位落盘）→ 本地 Node 脚本解码导入 SQLite →
+网页展示行情、捡漏雷达、配方利润、历史 P10 参考。自研插件（WoWderhoiAH.lua 扫描链路）已于 2026-10-13
+废除并归档。
 
 技术栈：
-- 插件：Lua（WoW 1.12 系 API，私服有魔改）
-- 脚本：Node + tsx（`scripts\`）
+- 数据源：Auctionator 插件（`Interface\AddOns\Auctionator`，SV 为 Lua + CBOR 编码，**仅聚合价**）；
+  转录插件 `Interface\AddOns\WoWderhoiAH-Transcript`（SV 明文 Lua，**完整档位**）
+- 脚本：Node + tsx（`scripts\auctionator-import.ts`、`scripts\transcript-import.ts` 一次性导入；无常驻 watcher）
 - 网页：Next.js App Router + Tailwind，Prisma + SQLite
-- 测试：vitest + fengari（在 Node 中加载真实 Lua 测试插件逻辑）
+- 测试：vitest
 
 仓库：`origin=https://github.com/Huiscode/Ah.git`，分支 `main`。
 项目根：`C:\Users\Hz\Documents\Workspace\Ah`。
 
-## 2. 数据链路（核心）
+## 2. 数据链路（核心，2026-10-13 起）
 
 ```
-游戏内插件（WoWderhoiAH.lua 扫描 AH + Ledger.lua 扫邮箱）
-   │  ① 内存表：WoWderhoiAH_ScanData（全局，SCAN_PIPELINE_VERSION=4）、WoWderhoiAHDB.ledger
+游戏内 Auctionator 插件（扫描拍卖行 → 内存价格库，落盘只有聚合价 m/l/h/a）
+   │  ① 玩家手动触发全量扫描（每次进拍卖行）；价格库含每日快照 + 7 日历史
    │  ② 只有登出 / /reload 时客户端才把 SavedVariables 落盘（插件无法强制写盘）
    ▼
-SavedVariables 文件（AQT_SAVEDVARS_PATH）
-   │  ③ scripts\watch-savedvars.ts 轮询文件（每 tick）：
-   │     - importLatestScan：dataVersion===4 且 scannedAt 严格 > lastImportedScanAt 才导入
-   │       → POST /api/import/addon-scan（写 AuctionSnapshot，source="addon"）
-   │     - uploadLedger：每 tick 上传账本 → POST /api/import/ledger（upsert by uid，幂等）
+SavedVariables 文件（AQ_AUCTIONATOR_SV_PATH）
+   │  ③ scripts\auctionator-import.ts（一次性，幂等：先删后插）：
+   │     - 解码 Auctionator.lua（ASCII 转义 + 原始二进制混合 → 字节保真读；
+   │       Lua 字符串 \DDD 十进制转义；CBOR byte-string 键 → 递归转对象）
+   │     - PvP 槽价格库（按服务器类型命名，见 §8）→ AuctionSnapshot (source='auctionator')
+   │     - 每日收盘 → DailySummary (source='auctionator')
+   │     - VENDOR_PRICE_CACHE（单位=银，×100 转铜）→ Item.vendorPrice
+   ▼
+游戏内 转录插件 WoWderhoiAH-Transcript（M4，打开拍卖行 /wahscan start）
+   │  ④ 逐物品 SendSearchQuery → 事件读完整拍卖条目 → 按单价聚合档位 [{p,q}]
+   │     （暴雪官方 API，独立实现；物品清单 = AUCTIONATOR_PRICE_DATABASE 的 key）
+   │  ⑤ 登出 / /reload 落盘 WAHTranscribeDB.lua（每物品只留最新一轮）
+   ▼
+scripts\transcript-import.ts（npm run transcript:import，幂等：先删后插）
+   │  ⑥ fengari 执行存档取表 → AuctionTier (source='transcript'，完整档位)
+   │     → tier-filter 有效最低价（剔除稀薄+断层钓单档）→ DailySummary (source='transcript')
    ▼
 SQLite（Prisma）：prisma\dev.db
    ▼
-网页：src\app\page.tsx（首页）/ ledger（成交账本）/ items\[itemId]（单品）/ recipes（配方库）
+网页：src\app\page.tsx（首页）/ items\[itemId]（单品）/ recipes（配方库）
 ```
 
-**关键机制**：网页只能看到已落盘的数据。游戏内扫完想立刻同步 → 游戏里 `/reload` 或登出。
+**关键机制**：网页只能看到已落盘的数据。游戏内扫完想立刻同步 → 游戏里 `/reload` 或登出，然后重跑
+`npm run auctionator:import`（聚合价）+ `npm run transcript:import`（档位）。
 
-> 2026-10-01：AHledger 网站数据通道已整体移除（importer 进程、路由、toggle、相关脚本与
-> 历史数据全部清理）。`AuctionSnapshot` 增列 `alt_price`（P50 close，展示用）；市场价/7日参考
-> 仍统一为插件扫描的 P10 口径，P50 仅作单品页盘中走势的展示曲线，不参与雷达与参考价。
->
-> 2026-10-06：**市场隔离（0.3.5+）**——插件扫描完成时判定市场：开服宽限内（0.3.7，见 §6.22）
-> 一律 faction；之后按挂单总数 ≥20000 判 faction，否则 neutral。faction 写 `WoWderhoiAH_ScanData`
-> （+ Points，进网页导入）；neutral 写 `WoWderhoiAHDB.neutralScanData` 独立槽位（不覆盖 scanData、
-> 不写 Points、**不进网页导入**）。`AuctionSnapshot` 增 `market` 列（默认 "faction"）+ 索引；
-> 导入链路透传 market，全部查询（最新轮/信号/med7/走势/ladder）按 `market='faction'` 过滤。
+**三种数据源并存（source 列区分）**：
+- `source='transcript'`（M4 起，**档位主源**）：最新价/在售量 = 最新一轮 AuctionTier 经 tier-filter
+  的**有效最低价**（剔除"稀薄+断层"钓单档：第一档 1 单 vs 第二档 100 单取第二档；组累计稀薄且
+  断层整组剔除）；7日参考 = transcript DailySummary 收盘中位数；雷达 universe/新鲜度锚点 = transcript
+  最新轮。**无 transcript 的物品回退 auctionator**（渐进切换，扫到自然补齐）。
+- `source='auctionator'`：当前口径 = **最低买入价 m**（最新快照）；7日参考 = 近 7 日
+  DailySummary 收盘中位数（med7）；环比 = 日环比；雷达 universe = 最新 Auctionator 扫描轮。
+  （M4 后仅作 transcript 缺失时的回退与历史参照。）
+- `source='addon'`：旧自研插件 Beta 删档数据（47 万行 P10，截至 2026-10-06），仅**历史模式**
+  （`?history=1`）查看：市场价 = P10，7日参考 = 快照 7 日 P10 中位数，环比 = 上次扫描。
+- 页面两种模式互不混源：首页/单品页都有模式开关（URL 参数 `history=1`）；med7 SQL、走势、
+  K线、配方价全部按模式过滤 source。口径断点 = **2026-10-13**（页头有标注）。
+
+**已下线（2026-10-13）**：自研插件（游戏目录已删，归档 `archive/addon/`）、中立市场 `/neutral`、
+跨市场 `/arbitrage`、成交账本 `/ledger`、价位阶梯面板、插件配套脚本（watch-savedvars、
+gen-lua-rules、compare-radar-plugin-web 等）——全部归档在 `archive/`，路由已从网页移除。
+
+> 历史背景（旧链路，已废除，仅留档）：自研插件曾以 `WoWderhoiAH_ScanData` 全局表（P10/P50 加权分位）
+> 经 watch-savedvars 轮询导入。2026-10-06 曾有中立市场隔离（faction/neutral 槽位）；10-13 随插件
+> 废除整体下线。
 
 ## 3. 关键路径速查
 
 | 用途 | 路径 |
 |---|---|
 | 项目根 | `C:\Users\Hz\Documents\Workspace\Ah` |
-| 插件源码 | `addon\WoWderhoiAH\`（WoWderhoiAH.lua 主入口/扫描、Trade.lua 出售助手、Ledger.lua 邮箱账本、Settings.lua、GUI.lua、GeneratedRules.lua、Locale.lua） |
-| 游戏插件目录（部署目标，需哈希一致） | `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\WoWderhoiAH\` |
-| SavedVariables（AQT_SAVEDVARS_PATH） | `C:\Program Files (x86)\World of Warcraft\_classic_beta_\WTF\Account\1120133458#1\SavedVariables\WoWderhoiAH.lua` |
-| 数据库 | **`prisma\dev.db`**（~90MB；根目录 `dev.db` 是 0 字节空文件，勿用） |
-| watcher 状态 | `scripts\.watch-state.json`（`lastImportedScanAt`） |
-| 日志 | `logs\`（addon-watch / web 的 out/err.log；node stdout 是文件缓冲，0 字节≠没跑，stderr 空才说明无错误）；历史遗留日志归档在 `logs\archive\` |
-| 插件测试 | `addon\test\`（wow-lua.ts 桥 + wow-stub.lua 桩 + 各 *.test.ts） |
-| 启动服务 | `scripts\launch-services.ps1`（幂等，重复运行不会重复启动） |
-| 环境变量 | `.env`：DATABASE_URL(file:./dev.db→实际 prisma/dev.db)、AQT_SAVEDVARS_PATH、AQT_IMPORT_URL（AHL_* 为已移除通道的残留配置，无代码读取） |
+| Auctionator 插件（游戏内，勿动） | `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\Auctionator\` |
+| Auctionator SV（数据源） | `C:\Program Files (x86)\World of Warcraft\_classic_beta_\WTF\Account\1120133458#1\SavedVariables\Auctionator.lua` |
+| **转录插件（M4，游戏内）** | `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\WoWderhoiAH-Transcript\`（仓库副本 `addon-transcript\`） |
+| **转录存档（档位数据源）** | `C:\Program Files (x86)\World of Warcraft\_classic_beta_\WTF\Account\1120133458#1\SavedVariables\WAHTranscribeDB.lua` |
+| 自研插件归档（旧代码，勿恢复） | `archive\addon\WoWderhoiAH\`（游戏目录已移除） |
+| 下线功能归档 | `archive\`（pages/ api/ lib/ components/ data/ scripts/ addon/ + README） |
+| 数据库 | **`prisma\dev.db`**（根目录 `dev.db` 是 0 字节空文件，勿用） |
+| 共享解码库 | `src\lib\auctionator-sv.ts`（readAuctionatorSavedVars、auctionatorDayToUtcDay、decodeLuaString） |
+| 导入脚本 | `scripts\auctionator-import.ts`（`npm run auctionator:import`，幂等） |
+| **档位导入脚本（M4）** | `scripts\transcript-import.ts`（`npm run transcript:import`，幂等；fengari 解析 Lua 存档） |
+| **档位过滤公式（M4）** | `src\lib\tier-filter.ts`（effectiveLowestPrice：稀薄+断层剔除；常量可调）+ 测试 `tier-filter.test.ts` |
+| M0 验证工具 | `scripts\auctionator-m0-decode.ts` |
+| 迁移计划（唯一权威） | `docs\plans\auctionator-migration-plan.md` |
+| 环境变量（导入用） | `AQ_AUCTIONATOR_SV_PATH`、`AQ_AUCTIONATOR_REALM_SLOT="PvP"`、`AQ_SERVER="Classic Beta PvP 2"`、`AQ_FACTION="Alliance"`；`.env` 里 DATABASE_URL(file:./dev.db→实际 prisma/dev.db) |
 
-网页库模块（src\lib\）：`analytics.ts`（行情信号/雷达）、`repositories.ts`（DB 访问）、`market-signals.ts`（按快照代缓存）、
-`freshness.ts`（"数据更新于"标签）、`market-filter.ts`、`alerts.ts`、`recipe-profits.ts`、`ladders.ts`、`addon-scan.ts`、`scan-import.ts`、`import-common.ts`、`daily-summary.ts`。
+网页库模块（src\lib\）：`repositories.ts`（DB 访问，MarketMode 参数）、`analytics.ts`（行情信号/雷达，
+buildMarketSignal 支持 mode）、`market-signals.ts`（按快照代+mode 缓存）、`freshness.ts`（7 天窗口）、
+`auctionator-sv.ts`（解码）、`market-data.ts`（SnapshotSource）、`recipe-profits.ts`、`alerts.ts`、
+`secondary-materials.ts`、`market-filter.ts`、`market-rules.ts`（雷达阈值常量）。
 
-## 4. 运行中的服务与进程（2026-10-06 18:46 重启后）
+## 4. 运行中的服务与进程
 
-| 服务 | 进程（tsx 父→node 子 = **1 个逻辑实例**，勿当重复杀） | 说明 |
-|---|---|---|
-| watch-savedvars | 4316 → 11892（Program Files node） | 监视 SV → 导入（已加并发锁） |
-| next dev | 13216 → 22440 → 22700（监听 3000） | 网页（Program Files node） |
-| 游戏 | WowB.exe（用户环境） | — |
+**无常驻数据导入服务**（watch-savedvars 已随插件废除下线）。只有网页服务：
+- next（dev 或 start，监听 3000）：用 `C:\Program Files\nodejs\node.exe` 启动，勿用沙箱版 node。
+  手动示例：`Start-Process "C:\Program Files\nodejs\node.exe" -ArgumentList "node_modules\next\dist\bin\next","start","-p","3000" -WorkingDirectory <root> -WindowStyle Hidden -RedirectStandardOutput logs\web.out.log -RedirectStandardError logs\web.err.log`。
 
-进程 PID 随重启变化，以上为 10-06 实况；确认方式：`Get-NetTCPConnection -State Listen -LocalPort 3000` /
-`Get-Process -Name node`。
-
-**不要**因为看到每个脚本 2 个 node 进程就去 kill：那是 tsx CLI 父 + 执行子进程的一对。
-
-> 2026-10-01：ahledger-importer 已随通道移除而停掉并删除，不再启动。
-> **服务必须用 `C:\Program Files\nodejs\node.exe` 启动**——agent 工具环境的 PATH 里 node 是 DoubaoWork 沙箱版
-> （sandbox_runtime\...\node.exe），用它启动会生成挂在沙箱下的服务进程，与用户环境不一致。手动启动示例：
-> `Start-Process "C:\Program Files\nodejs\node.exe" -ArgumentList "node_modules\next\dist\bin\next","dev","--webpack" -WorkingDirectory <root> -WindowStyle Hidden -RedirectStandardOutput logs\web.out.log -RedirectStandardError logs\web.err.log`。
+数据更新流程：游戏内扫描 → /reload 落盘 → 手动 `npm run auctionator:import` → 刷新网页。
+（`scripts\launch-services.ps1` 仅启网页服务，如需可查看内容。）
 
 ## 5. 测试与验证命令
 
 ```powershell
 cd C:\Users\Hz\Documents\Workspace\Ah
-npx vitest run addon/test/     # 插件测试：10 文件 76 用例（scan-category 5、sell-assist 6、ledger-mail 4 等）
 npx tsc --noEmit               # 全项目类型检查，退出 0
-npx vitest run                 # 全量：29 文件 199 用例
-# 网页账本现状：
-Invoke-RestMethod http://localhost:3000/api/import/ledger
+npx vitest run                 # 全量测试（当前 123 用例）
+npm run build                  # 生产构建
+# 导入 Auctionator 数据（幂等，先删后插）：
+#   AQ_AUCTIONATOR_SV_PATH=... AQ_AUCTIONATOR_REALM_SLOT="PvP" AQ_SERVER="Classic Beta PvP 2" AQ_FACTION="Alliance" npm run auctionator:import
 # 直接查 DB（node 22 内置 sqlite）：
 node -e "const{DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('prisma/dev.db');console.log(JSON.stringify(db.prepare('SELECT source,COUNT(*) n,MAX(timestamp) latest FROM AuctionSnapshot GROUP BY source').all()))"
-# 部署插件：把 addon\WoWderhoiAH\*.lua 复制到游戏插件目录并比对哈希
+# 冒烟（起服务后）：首页、历史模式、单品页两模式、配方页
+#   Invoke-WebRequest http://localhost:3000/            （当前模式，含口径标注）
+#   Invoke-WebRequest "http://localhost:3000/?history=1"（历史模式横幅）
+#   Invoke-WebRequest http://localhost:3000/items/2589          / "...?history=1"
+#   Invoke-WebRequest http://localhost:3000/recipes
+# 注意：Next 增量构建偶发旧 chunk 残留（如历史模式 500），先 `Remove-Item .next -Recurse -Force` 全量重建
 ```
 
-## 6. 最近完成的工作（6.1~6.18 已提交并 push；6.19 及之后的状态见各小节——目前全部已提交，
-最新 commit `20172a7` 已推 origin/main；仅 6.23~6.26 中的部分改动有未部署项，见小节内说明）
+## 6. 最近完成的工作
+
+> **6.1~6.28 均为旧自研插件时代的记录，已随 2026-10-13 数据源迁移全部失效**（插件已废除）。
+> 当前状态只看 **6.29（迁移）** 与 **§7**；旧记录保留仅作历史留档，勿据此恢复功能。
+> （6.1~6.18 已提交并 push；6.19~6.28 随 `20172a7` 提交推送；迁移后为 `55b2c8e` → `8ca4f53`，见 6.29。）
 
 ### 6.1 出售助手窗口不关闭修复（commit f3e0cc9，Trade.lua）
 三个根因：hook 闭包引用了未声明 local 的 sellAssist（每处关闭都在 pcall 里静默死掉）、全局 itemId 残留、
@@ -346,60 +385,54 @@ classifyMarket、槽位记 auctions），测试 1 处失败未查。用户叫停
 
 ## 7. 当前状态与待办（重要）
 
-1. **插件 0.3.8 + 区域白名单市场判定**（游戏目录 + 源码副本哈希一致，TOC 版本号未升）：zone 白名单
-   （主城→faction、三角路口→neutral）优先于挂单数阈值，未知区域回退旧阈值；中立写独立槽位
-   neutralScanData（含 zone）。已部署，**用户需 /reload 生效**；测试服主城复制请求被服务器静默丢弃
-   属常态（会自动重试，失败后 1 分钟再试）。
-2. **中立市场已入网页（M1）+ 跨市场倒卖面板（M2）**：watcher 独立游标导入 neutral 槽位
-   （market='neutral' 落库）；首页双新鲜度 + `/neutral` 只读页 + `/arbitrage` 跨市场比较面板
-   （价差/方向/净利/量差 + 筛选排序）。实测 DB：AuctionSnapshot 全量 faction（463,546 行），
-   **尚无 neutral 行**（等用户 /reload 后去三角路口扫描，扫完 /arbitrage 即有真实结果）。
-   Watchlist 当前 19 条。
-3. **雷达面板筛选现状**：只剩 全部品类/仅限高流通商品/价格下限 + 新增"价位1比价位2低 % /
-   价位2比价位3低 %"（阶梯筛选，见 6.25）；雷达条数取决于最近扫描的新鲜度（2 小时闸门，见 §8）。
-4. **git 状态**：HEAD=`4b59cee`（6.27 M1 + 6.28 M2 + Trade.lua 搜索修复），**已推 origin/main 同步**。
-   工作树仅 3 个 untracked：`.dev-restart.log.err`（可忽略/删除）、
-   `addon\WoWderhoiAH\WoWderhoiAH.lua/toc.bak-0.3.6`（0.3.6 尝试备份，保留勿删勿入库）。
-   用户说"推"才 push（4b59cee 为最近一次已推）。
-5. **用户 WIP**：无（`backfill-df-recipes.ts`、`items/[itemId]`、`ledger`、`recipes` 页面改动已随
-   20172a7 一并提交）。
-6. **待办（用户 10-06 指示）**：**公测开始时清空全部运行时数据**——网页 SQLite（快照/信号/历史）、
-   插件 SavedVariables（scanData/Points/firstScanAt）、导入进度 `.watch-state.json`；代码与 git 保留。
-   用户届时会通知触发（已记入偏好 p1_AQFJGcEGWaE，见 §9）。
-7. 遗留：`.dev-restart.log.err`（可忽略/删除）；addon 源码目录 `*.bak-0.3.6`（保留勿删）。
+1. **数据源（M4 起）= transcript 档位主源 + Auctionator 聚合回退**；旧 Beta P10 数据（47 万行 addon）
+   在**历史模式**（`?history=1`）可看，两模式页面/查询互不混源。DB 现状：AuctionSnapshot addon
+   473,663 / auctionator 3,519；DailySummary addon 47,606 / auctionator 6,771 / **transcript 0**（等
+   用户真实扫描导入）；Item 5,445+65 占位；**AuctionTier 0 行（等真实扫描）**。口径断点 2026-10-13
+   已在页头标注。
+2. **git**：HEAD=`8ca4f53`（M1+M2 迁移，本地已提交**未推送**）；`55b2c8e` 为迁移前最后快照。
+   **M3 + 走势单线 + bait-filter 三版 + M4 全部未提交**（用户说"提交git"才提交本地，说"推"才 push）。
+   工作树无残留杂物。
+3. **待办（用户已拍板，按优先级）**：
+   - **转录插件首扫（M4 落地关键）**：用户游戏内 /reload → 打开拍卖行 → `/wahscan start`（约 1-2
+     小时/轮，后台挂着）→ 登出/重载 → `npm run transcript:import` → 网页档位口径生效。首轮前
+     transcript 表为空、网页回退 auctionator（当前可见行为不变）。
+   - **M1b 网站数据源**：foreverchanges.pro（https://foreverchanges.pro/zh-cn）设为物品/配方数据源
+     （抓取限速）；配方缺价/缺记录标注"缺货"；拍卖行物品扫到自然补齐；过一段时间用户会让扫一次
+     看有没有新增可赚金币物品（M1b 抓取未开工，物品名缺失目前靠现有 Item 表兜底）。
+   - **雷达流动性门观察**：已删挂单数门槛（Auctionator 无挂单数），用户先观察是否要加"最低价钓单
+     防护"（l 均值/在售量门槛）；M4 档位过滤已覆盖扫描内钓单，雷达维度是否联动未拍板。
+   - **开服后清空全部运行时数据**（网页 SQLite + 插件 SavedVariables + 导入进度），代码与 git 保留，
+     由用户通知触发；清空后历史 P10 曲线仍可经历史模式参考，之后再按用户指示删除。
+4. **游戏内现状**：AddOns 含 Auctionator, Baganator, Cell, DungeonsForever, ForeverMapFix, OPie,
+   Syndicator, **WoWderhoiAH-Transcript（M4 新增）**（**WoWderhoiAH 已移除**）。
+5. **测试基线**：154 用例 + tsc 0 错 + production build 全绿（M4 冒烟已验证两模式页面 200、模拟档位
+   数据有效价正确）。
 
 ## 8. 已知坑 / 机制限制（务必记住）
 
-- **SV 落盘时机**：实测该客户端不周期性落盘（10-01 5:44 启动 → 5:50 落盘 → 6:23 再落盘）。登出//reload 才写。
-  插件 API 无法强制写盘。→ 游戏内扫完必须 /reload 或登出，网页才能看到新数据。
-- **Prisma `$queryRaw` 的 Json 列**（如 AuctionSnapshot.raw_payload）返回的是**已反序列化的 JS 对象**，不要再 `JSON.parse`；拿不到需要的列时明确 `SELECT` 列而非 `SELECT *`（避免 Prisma 对 11 万行大字段做反序列化）。
-- **Forever `GetInboxHeaderInfo` 布局错位**（见 6.2，Ledger.lua 已按内容锚点处理）。
-- **真实 DB 是 `prisma\dev.db`**；根目录 `dev.db`（0 字节）是陷阱。Prisma 相对路径基于 schema 目录解析。
-- **tsx 父子进程对**：见第 4 节，勿杀。
-- **logs\ 0 字节**：node stdout 文件缓冲，不代表进程没干活；stderr 为空才说明无错误。
-- 时间换算锚点：1790826407 = 2026-10-01 03:46:47 UTC = 05:46:47 CEST（本地 UTC+2）；
-  1790803107 ≈ 2026-09-30 23:18 CEST；1790822889 = 10-01 04:48:09 CEST。
-- 关键物品 ID：大型铜壳炸弹=4370（成交 3s / 买入 2s25c）、魔纹布=4338、亚麻布=2589、小飞刀=2947、美味鼠尾鱼=21217。
-- **P10/P50 语义**：P10=按挂单量加权的 10 分位价（买家真实成交价，市场价/7日参考口径）；
-  P50=同扫描的 50 分位价（市场中心，仅展示）。P50 历史上有 v2 用其做市场价被高价钓单污染的教训，故只做展示。
-- **游戏无"服务器开服时间"API** → 0.3.7 宽限锚点取插件首扫时间（`WoWderhoiAHDB.firstScanAt`）；
-  老账户（已有 scanData）不重进宽限。用户若要在精确开服日启用，可后续加设置项。
-- **市场口径**：网页市场监控"3325/3325 项"= 去重**商品种类数**；插件端"8 万多物品"= 挂单**条目数**
-  （约 25 挂单/种），两者自洽不冲突。
-- **Prisma generate 与运行中的 next dev 互斥**：DLL 被占用报 EPERM → 先停 next dev 进程再
-  `npx prisma generate`，完事用 Program Files node 重启。
-- **雷达 2 小时新鲜度闸门**：以"当前时刻"计，距最后一次扫描 >2h 则雷达 0 条（设计行为）；以扫描
-  时刻计信号层仍健康。排查时先用扫描时刻口径判断是否真的没数据。
-- **addon 源码目录内的 `*.bak-x.y.z` 是版本备份**（0.3.5/0.3.6 等），游戏目录同样有；勿删勿入库
-  （会出现在 git untracked，属预期）。
-- **价位阶梯筛选的数据源 = `rawPayload.ladder`**（插件每轮扫描带回的挂单分档，从低到高）：
-  `getMarketUniverse` 只取**最新一轮**（MAX timestamp）解析前 3 档，拼进 `MarketSignal.ladder`；
-  覆盖率随市场变化（10-07 实测 2574 行全带、≥2 档 61%、≥3 档 43%）。启用阶梯筛选时**缺档的行被过滤**。
-- **Prisma `$queryRaw` 对 Json 列返回已反序列化对象**：repositories.ts 的 ladder 解析兼容两种形态
-  （`typeof raw_payload === "string"` 才 JSON.parse，否则直接当对象读），新增类似查询时同样处理。
-- **主城复制请求被服务器静默丢弃是常态**（IsThrottled=no、事件不触发、3 秒后列表条目=0）：插件自动
-  重试（5s 后，最多 2 次）+ 最终失败 60s 背退；"复制发起 3 秒后列表条目"探针**仅在最终失败时打印**。
-  用户报"扫描卡住"时先想到这一点，而非插件死锁。
+- **SV 落盘时机**：Auctionator 与旧插件相同——不周期性落盘，登出 / /reload 才写；插件 API 无法强制
+  写盘。游戏内扫完必须 /reload 或登出，再跑导入脚本，网页才能看到新数据。
+- **Auctionator.lua 解码三坑**（`src/lib/auctionator-sv.ts` 已处理）：① 文件是 ASCII 转义 + 原始二进制
+  混合 → `readFileSync` 无编码（latin1）字节保真读；② Lua 字符串转义含 `\DDD` 十进制；③ CBOR 键是
+  byte string → 返回 Map 需递归转对象。改解码逻辑后用 M0 脚本验证真实样本。
+- **VENDOR_PRICE_CACHE 单位=银**（经典 GetMerchantItemPrice 返回银）→ 导入 ×100 转铜。
+- **槽名 `PvP` 按服务器类型命名**（价格库 `["PvP"]` 槽），换服务器需改 `AQ_AUCTIONATOR_REALM_SLOT`。
+- **TimeOfLastBrowseScan 是"浏览"而非全量扫描时间**：以 SV 文件 mtime / 快照 MAX(timestamp) 为准；
+  新鲜度窗口 7 天（AUCTIONATOR_STALE_MAX_AGE_MS）吸收手动扫描间隔。
+- **Auctionator 无 P10/P50/ladder/挂单数**：当前口径=最低买入价 m（易被低价钓单拉低，捡漏假阳性
+  概率上升——阈值已改网页侧常量 market-rules.ts）；7日参考=每日收盘中位数；走势只有日线无盘中。
+- **PostingRecord 表已建但 POSTING_HISTORY 当前为空**（`{__dbversion=1}`），结构未适配；Auctionator
+  配置开启 posting history 后才有数据。
+- **Prisma `$queryRaw` 的 Json 列**返回已反序列化对象，不要再 `JSON.parse`。
+- **真实 DB 是 `prisma\dev.db`**；根目录 `dev.db`（0 字节）是陷阱。
+- **Next 增量构建偶发旧 chunk 残留**（症状：单页 500 而源码/直调正常）→ `Remove-Item .next -Recurse
+  -Force` 后 `npm run build` 全量重建。
+- **首页冷查询 ~7.5s**（47 万行聚合），market-signals 有内存缓存，首跳后正常；历史模式首页同样较重。
+- 时间换算锚点：1790826407 = 2026-10-01 03:46:47 UTC；关键物品 ID：亚麻布=2589、魔纹布=4338、
+  小飞刀=2947、美味鼠尾鱼=21217、大型铜壳炸弹=4370。
+- 旧插件时代的坑（P10/P50 语义、中立市场、faction/neutral 槽位、插件部署哈希等）**已随插件废除
+  失效**，见 §6 历史留档。
 
 ### 6.27 中立拍卖行入网页 M1（zone 判定 + neutral 导入 + /neutral 页，未提交未推）
 
@@ -443,22 +476,101 @@ classifyMarket、槽位记 auctions），测试 1 处失败未查。用户叫停
 - 未做：M3 清单（配方利润面板增强/挂单深度/抄底信号/中立供给差高亮等，见计划 §5）；费率实测。
 - 注意：/arbitrage 空态判断用时间戳而非数组长度（查询在任一方无数据时两侧数组都为空）——已修。
 
+### 6.29 数据源迁移至 Auctionator（M0~M3，2026-10-13，commit 8ca4f53 已提交本地未推送）
+
+用户拍板（10-13）：**废除自研插件版**，改用同客户端已安装的 Auctionator 插件为网页提供数据——
+纯解析其 SavedVariables（CBOR），不装桥接插件。规划 `docs/plans/auctionator-migration-plan.md` 为唯一权威。
+逐项决策：① 放弃中立/跨市场/账本（下线归档）；② 老 Beta P10 数据保留，**历史模式开关**
+（首页/单品页 `?history=1`）查看；③ 接受最低买入价 m 口径（Auctionator 无 P10/P50/ladder），
+7日参考=近 7 日每日收盘中位数；④ 采纳：历史模式开关、代码归档不删、POSTING_HISTORY 解析口子、
+网站抓取限速；否决：最低价钓单防护、price_history_days 调大、抓取节奏当周化（用户先观察）；
+⑤ 物品名来源=foreverchanges.pro（M1b 未开工）；配方缺价改"缺货"标注。
+
+- **M0 PoC**：`scripts/auctionator-m0-decode.ts` 验证真实 SV 解码，三坑：ASCII 转义+原始二进制混合
+  → 字节保真读（readFileSync 无编码 → latin1）；Lua `\DDD` 十进制转义；CBOR byte-string 键 → Map
+  递归转对象。3145 物品，SCAN_DAY_0=2020-01-01 本地时区；亚麻布 19 铜与 DB 旧数据吻合。
+- **M1 数据层**：`src/lib/auctionator-sv.ts`（共享解码）+ `scripts/auctionator-import.ts`（先删后插幂等）
+  + schema 新增 `PostingRecord`。**VENDOR_PRICE_CACHE 单位=银**（经典 GetMerchantItemPrice 返回银）
+  → ×100 转铜（小飞刀 14 银=1400 铜验证）。入库：3144 快照 + 3621 每日（day 2471~2477）+ 127 vendor
+  更新 + 64 新 Item 占位。
+- **M2 页面/查询适配**：med7=近 7 日 DailySummary 收盘中位数、当前价=最新快照 m、环比=日环比、
+  雷达 universe=最新 Auctionator 轮、新鲜度窗口 7 天（AUCTIONATOR_STALE_MAX_AGE_MS，手动扫描频率）。
+  下线功能归档 `archive/`（/neutral /arbitrage /ledger 页面+API、cross-market/ladders/market-fees、
+  价位阶梯面板、清账本按钮、自研插件本体 addon/、gen-lua-rules/compare-radar-plugin-web/
+  watch-savedvars 脚本）。雷达删除挂单数流动性门（无挂单数，用户选择先观察不加替代门槛），阈值
+  改网页侧常量 market-rules.ts。配方"缺价"→"缺货"。验证：123 tests + typecheck + build 全绿；
+  真实启动验证首页/配方页/单品页 200 无下线残留。**commit 8ca4f53**（68 文件 +1845/-507，本地未推）。
+- **M3 收尾**（本小节完成，未提交）：游戏内 `Interface\AddOns\WoWderhoiAH` 目录已移除（17 文件，
+  仓库 archive/addon/ 有备份）；查询层全面支持 `mode`（repositories.ts getMed7Aggregates/
+  getMarketUniverse/getItemDetail/getLatestPricesByItemIds/getLatestRoundItemIds/getLatestSnapshotTime、
+  analytics.ts buildMarketSignal(mode) 恢复旧 P10 口径、market-signals.ts 缓存 key 含 mode）；
+  页面层历史模式开关（URL `?history=1`，首页/单品页横幅 + 口径断点标注"数据口径自 2026-10-13 起为
+  Auctionator 最低价"）；全量验证 123 tests + tsc + build 绿，冒烟：首页两模式、单品页两模式
+  （item 2589 history 200 含 P10）、api items 全 200。**坑**：Next 增量构建曾产生旧 chunk 致单品页
+  历史模式 500（"Argument itemId is missing"），`Remove-Item .next` 全量重建后消失——遇此先重建。
+- 遗留小项：TimeOfLastBrowseScan=1791349669（2026-10-07，"浏览"而非全量扫描时间，7 天窗口已吸收）；
+  POSTING_HISTORY 当前空（{__dbversion=1}，结构未适配，表已建）；首页全量查询 ~7.5s 冷（market-signals
+  内存缓存后正常）。
+
+### 6.30 M4：转录插件 + 档位过滤（2026-10-13 晚，未提交）
+
+背景（用户连续拍板）：
+- Auctionator 存档**只有聚合价**（探查 3529 物品全部字段 = a,l,h,m），无价格档位；但其 UI 显示档位表
+  （内存有完整列表）。用户要求档位级钓单过滤：**第一档 1 单 vs 第二档 100 单 → 记录第二单**；
+  "1+2 档累计比第三档少一半且断层 → 整组剔除"；**量大低价是捡漏机会，绝不剔**；目标=把 NPC 必赚式
+  极低钓单与极端高价钓单摘出 7 日均线，同时保留捡漏信号。
+- Auctionator 仓库自带 AGENTS.md 版权声明（不得以其代码为参考基准）→ 转录插件**独立实现**
+  （暴雪官方 C_AuctionHouse API + 老插件自有逻辑参考，只读 Auctionator SV 数据作物品清单，不抄其代码）。
+
+交付：
+- **M4a 转录插件** `addon-transcript\`（已装游戏 `Interface\AddOns\WoWderhoiAH-Transcript\`，luaparse
+  语法校验过）：打开拍卖行 `/wahscan start [fresh]|stop|resume|status` → 逐物品 SendSearchQuery →
+  COMMODITY/ITEM_SEARCH_RESULTS_UPDATED 事件读完整条目 → 按单价聚合档位 [{p,q}] → 落盘
+  `WAHTranscribeDB.lua`（每物品只留最新一轮；断点续扫存 `WAHTranscribeState`；事件驱动串行 + 0.6s
+  节流 + 8s 超时跳过）。物品清单 = `AUCTIONATOR_PRICE_DATABASE` 的 itemId 键（数据互操作）+ 可选
+  `WAH_TRANSCRIPT_EXTRA` 白名单。**提示用户：扫描约 1-2 小时/轮（3529 物品 × ~0.6s），保持拍卖行
+  打开，扫完正常登出/重载才落盘。**
+- **M4b 档位过滤公式** `src/lib/tier-filter.ts`（纯函数 + 13 测试）：`effectiveLowestPrice(tiers)`——
+  按"价格组"处理：同组=与下一档价差 < gapRatio(1.3)；遇断层时若"组累计 < 下一档数量 × cumRatio(0.5)"
+  → 整组剔除，否则取组内最低档为有效最低价；总量 < minTotal(3) 不过滤（真实低流通保底）；最后一档
+  恒稳定。常量 `TIER_FILTER_RULES` 可调。
+- **M4c 数据层**：schema 新增 `AuctionTier`（itemId/ts/server/faction/market/source/price/qty，索引
+  [itemId,ts]、[ts]）；`scripts/transcript-import.ts`（npm run transcript:import）用 **fengari** 执行
+  存档取表（坑：fengari 需 `to_luastring` 转换、`lua_next` 迭代体内不可递归、数组/记录按 **key 的
+  Lua 类型**区分——字符串 "2589" 与数字 2589 不同键）→ AuctionTier 全量重建 + tier-filter 聚合
+  transcript DailySummary（每日代表价 = 当日最后扫描有效价，先删后插幂等）。
+- **查询层接入**（当前模式 transcript 优先，无则回退 auctionator；历史模式不动）：
+  `getTranscriptLatestSnapshots()` 合成快照（有效最低价 + 有效档在售量）→ getMarketUniverse /
+  getItemDetail / getLatestPricesByItemIds；getMed7Aggregates 按 `CASE source='transcript' THEN 0
+  ELSE 1` 优先选源；getLatestRoundItemIds / getLatestSnapshotTime 优先 transcript 最新轮。analytics/
+  页面零改动（合成快照 source='transcript' 与 transcript daily 同源对齐）。
+- **验证**：154 tests 全过（tier-filter 13 + bait-filter 全量）+ tsc 0 错 + 全量 build；模拟存档导入
+  验证：8172 钓单（5000×1 vs 10000×100）→ 有效价 10000 ✓；9999（总量<3）保底 50 ✓；2589 正常 100 ✓；
+  无 transcript 物品（36）回退 auctionator ✓；历史模式 8172 仍 addon 39900 ✓。测试假数据已清理。
+- **坑**：fengari 无类型声明（src/types/fengari.d.ts 补）；luaparse 曾临时 --no-save 安装做 Lua 语法
+  校验（未污染 package.json）；prisma db push 遇 web 服务占用 query_engine dll → 先停 3000 再 push。
+
 ## 9. 用户偏好 / 协作纪律
 
 - **回复用中文**；称呼、语气自然。
-- **git**：不主动提交/推送；只有用户明确说"推/推一版"才 push；只提交点名范围；用户工作区常有大堆未提交 WIP，保持原样。
-- **公测清空（偏好 p1_AQFJGcEGWaE）**：用户通知"公测开始"时清空全部运行时数据（网页 SQLite +
-  插件 SavedVariables + `.watch-state.json` 导入进度），代码/git/备份保留；届时先与用户确认范围再执行。
-- 网页/数据库等长期运行服务都在本机跑着（见第 4 节），改动后注意别重启/杀错进程。
-- 游戏内改动部署到游戏目录后要提示用户 /reload 生效。
+- **git**：不主动提交/推送；只有用户明确说"推/推一版"才 push；说"提交git"才提交本地；只提交点名范围。
+- **公测清空（偏好）**：用户通知"公测开始"时清空全部运行时数据（网页 SQLite + 插件 SavedVariables +
+  导入进度），代码/git/备份保留；届时先与用户确认范围再执行。清空后历史模式仍可参考旧 P10 曲线，
+  之后可删。
+- 网页等长期运行服务在本机跑着，改动后注意别重启/杀错进程；导入数据是手动脚本，无常驻 watcher。
 
 ## 10. 下一步常见场景速查（给下一个 AI）
 
-- **用户说"网页没更新/数据更新于 X 前"** → 先查：SV 文件 scannedAt 与 LastWriteTime、`.watch-state.json`、
-  DB `MAX(timestamp) GROUP BY source`。结论几乎总是"游戏没落盘"，按第 7 节答复。
-- **动插件逻辑** → 读 `addon\WoWderhoiAH\` 对应 .lua；测试改 `addon\test\`（桥/桩：wow-lua.ts、wow-stub.lua）；改完跑 vitest + tsc，复制到游戏目录并比对哈希。
-- **市场判定相关** → 插件 `finishScan` 的 classify 逻辑（WAH.MARKET_SPLIT_AUCTIONS=20000 + WAH.MARKET_GRACE_DAYS=7）：
-  宽限内一律 faction；之后 ≥20000=faction 写 scanData+Points，<20000=neutral 写 neutralScanData（不进网页）。
-  网页侧凡新增查询记得按 `market='faction'` 过滤（repositories.ts / ladder 路由已示范）。
-- **动网页** → 读 `src\lib\` + `src\app\` 对应文件；页面/组件改动跑 tsc；DB 结构改动需注意 prisma/dev.db 与 schema 一致性（加列用 `npx prisma db push`，勿忘同时改 `addon-scan.ts`/`import-common.ts`/`repositories.ts`/`market-data.ts` 的类型与 SQL SELECT 列）。
-- **查账本** → `GET http://localhost:3000/api/import/ledger`；**清空账本** → 账本页页头按钮（二次确认，`POST /api/ledger/clear`）。
+- **用户说"网页没更新/数据更新于 X 前"** → 先查：Auctionator SV 文件 LastWriteTime、DB
+  `MAX(timestamp) GROUP BY source`。结论几乎总是"游戏没落盘"：让用户 /reload 或登出，然后重跑
+  `npm run auctionator:import`。
+- **用户问"XX 物品怎么没名字/没价格"** → 名字缺失=foreverchanges.pro 数据源未抓（M1b 待做，现有
+  Item 表兜底）；价格缺失=该物品未被 Auctionator 扫描到，扫到自然补齐；配方页标"缺货"。
+- **动查询/口径** → 读 `src\lib\repositories.ts`（mode 分叉）/ `analytics.ts`（buildMarketSignal）/
+  `market-signals.ts`（缓存 key）；页面层 `src\app\page.tsx`、`items\[itemId]\page.tsx`（history 开关）。
+- **历史模式相关** → URL `?history=1`；查询层 getMed7Aggregates(itemIds, mode) 等全部带 mode 参数；
+  history=addon 快照 P10 旧口径，current=auctionator 最低价。
+- **雷达条数异常** → 先分模式看：current 模式雷达只推荐最新 Auctionator 轮在售物品（universe 过滤）；
+  历史模式看 addon 轮。阈值在 `src\lib\market-rules.ts`。
+- **Import 报错** → 读报错按 §8 解码三坑排查；脚本幂等可重跑；`scripts\auctionator-m0-decode.ts`
+  可独立验证解码。

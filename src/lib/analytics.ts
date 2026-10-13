@@ -41,15 +41,60 @@ function snapshotSource(snapshot: { source?: string }): SnapshotSource {
   return snapshot.source === "addon" ? "addon" : "auctionator";
 }
 
-export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal {
+export type SignalMode = "current" | "history";
+
+export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMode = "current"): MarketSignal {
   const snapshots = [...item.snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
   if (snapshots.length === 0) {
     throw new Error(`buildMarketSignal: item ${item.itemId} has no snapshots — filter empty items before signalling`);
   }
   const latest = snapshots[snapshots.length - 1];
   const source = snapshotSource(latest);
-  // 走势与参考价来自 DailySummary（Auctionator 每日一轮收盘），与最新
-  // 快照同 source。legacy addon 行不混入：同一 med7 窗口绝不混合两种口径。
+  // 历史模式（旧 Beta P10 数据）：沿用旧口径——med7 = 7 天窗口内 addon
+  // 快照 P10 中位数；环比 = 上一次扫描；折扣 = 最低挂单价 vs P10。
+  if (mode === "history") {
+    const sameSource = snapshots.filter((snapshot) => snapshotSource(snapshot) === "addon");
+    const previous = sameSource[sameSource.length - 2];
+    let med7: number;
+    let med7Samples: number;
+    let med7Distinct: number;
+    if (item.med7Info && item.med7Info.samples > 0) {
+      med7 = item.med7Info.med7;
+      med7Samples = item.med7Info.samples;
+      med7Distinct = item.med7Info.distinct;
+    } else {
+      const windowStart = now.getTime() - MED_WINDOW_DAYS * DAY_MS;
+      const windowPrices = sameSource
+        .filter((snapshot) => snapshot.timestamp.getTime() >= windowStart)
+        .map((snapshot) => snapshot.marketPrice);
+      med7 = windowPrices.length > 0 ? median(windowPrices) : latest.marketPrice;
+      med7Samples = windowPrices.length;
+      med7Distinct = new Set(windowPrices).size;
+    }
+    return {
+      itemId: item.itemId,
+      name: item.name,
+      category: item.category,
+      quality: item.quality,
+      icon: item.icon,
+      source: "addon",
+      price: latest.marketPrice,
+      minPrice: latest.minPrice,
+      quantity: latest.quantity,
+      numAuctions: latest.numAuctions,
+      vendorPrice: item.vendorPrice,
+      med7,
+      med7Samples,
+      med7Distinct,
+      discountPercent: med7 > 0 ? (1 - latest.minPrice / med7) * 100 : 0,
+      changePercent: previous && previous.marketPrice > 0 ? ((latest.marketPrice - previous.marketPrice) / previous.marketPrice) * 100 : 0,
+      latestAt: latest.timestamp,
+      turnoverScore: item.turnoverScore ?? 0,
+      isVendorItem: item.isVendorItem ?? false
+    };
+  }
+  // 当前模式（Auctionator）：走势与参考价来自 DailySummary，与最新快照
+  // 同 source。legacy addon 行不混入：同一 med7 窗口绝不混合两种口径。
   const daily = [...(item.dailySummaries ?? [])]
     .filter((summary) => snapshotSource(summary) === source)
     .sort((left, right) => left.date.getTime() - right.date.getTime());

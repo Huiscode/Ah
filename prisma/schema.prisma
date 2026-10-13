@@ -23,6 +23,7 @@ model Item {
   isVendorItem     Boolean           @default(false) @map("is_vendor_item")
   snapshots        AuctionSnapshot[]
   dailySummaries   DailySummary[]
+  tiers            AuctionTier[]
   alerts           AlertRule[]
   watchlistEntry   Watchlist?
   createdAt        DateTime          @default(now()) @map("created_at")
@@ -65,6 +66,25 @@ model DailySummary {
 
   @@unique([itemId, date, source])
   @@index([date])
+}
+
+// M4：转录插件（WoWderhoiAH-Transcript）落盘的完整价格档位——单次扫描内
+// 每个单价档位一行（同价合并）。网页端据此做"稀薄+断层"钓单过滤（tier-filter），
+// 得到有效最低价，并聚合成 transcript 源 DailySummary（每日代表价）。
+model AuctionTier {
+  id      String   @id @default(cuid())
+  itemId  Int      @map("item_id")
+  ts      DateTime // 扫描时间戳（插件 GetServerTime）
+  server  String
+  faction String
+  market  String   @default("faction")
+  source  String   @default("transcript")
+  price   BigInt   @map("price") // 档位单价（铜）
+  qty     Int                 // 该档在售量
+  item    Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+
+  @@index([itemId, ts])
+  @@index([ts])
 }
 
 // Single-operator local terminal: no userId columns anywhere.

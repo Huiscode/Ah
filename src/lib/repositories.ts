@@ -1,6 +1,12 @@
 import { Prisma, prisma } from "@/lib/prisma";
 import { type MarketHistory } from "@/lib/market-data";
 import type { DbRecipe, RecipeMaterial } from "@/lib/recipe-profits";
+import { filterThinDays } from "@/lib/bait-filter";
+import { effectiveLowestPrice } from "@/lib/tier-filter";
+
+// M4 常量：转录合成快照的行标识（server/faction 与 transcript 导入一致）。
+const TRANSCRIPT_SERVER = "Classic Beta PvP 2";
+const TRANSCRIPT_FACTION = "Alliance";
 
 type ItemRaw = {
   id: string;
@@ -66,52 +72,144 @@ function toNumber(v: bigint | number): number {
 // ceil for the median index).
 type Med7Raw = { item_id: number; med7: bigint | number; samples: number; distinct_cnt: number };
 
-async function getMed7Aggregates(itemIds?: number[]): Promise<Map<number, { med7: number; samples: number; distinct: number }>> {
+// 数据源模式："current" = Auctionator 最低价（默认）；"history" = 旧自研插件
+// 的 Beta 删档 P10 数据（开服后供历史参考，主页面加开关切换）。
+export type MarketMode = "current" | "history";
+
+async function getMed7Aggregates(itemIds?: number[], mode: MarketMode = "current"): Promise<Map<number, { med7: number; samples: number; distinct: number }>> {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  // 单品页只关心一个物品的 med7：把窗口聚合限定到目标物品。
   const idCond = itemIds && itemIds.length > 0 ? Prisma.sql`AND "item_id" IN (${Prisma.join(itemIds)})` : Prisma.empty;
-  const rows = await prisma.$queryRaw<Med7Raw[]>`
+  if (mode === "history") {
+    // 历史模式 = 旧口径：addon 快照在 7 天窗口内的 P10 (market_price) 中位数。
+    const rows = await prisma.$queryRaw<Med7Raw[]>`
+      WITH win AS (
+        SELECT "item_id", "market_price"
+        FROM "AuctionSnapshot"
+        WHERE "source" = 'addon' AND "market" = 'faction' AND "timestamp" >= ${cutoff} ${idCond}
+      ),
+      med AS (
+        SELECT "item_id", "market_price",
+               ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "market_price") AS rn,
+               COUNT(*) OVER (PARTITION BY "item_id") AS cnt
+        FROM win
+      )
+      SELECT "item_id",
+             MAX(CASE WHEN rn = (cnt + 1) / 2 THEN "market_price" END) AS "med7",
+             MAX(cnt) AS "samples",
+             COUNT(DISTINCT "market_price") AS "distinct_cnt"
+      FROM med
+      GROUP BY "item_id"
+    `;
+    const out = new Map<number, { med7: number; samples: number; distinct: number }>();
+    for (const r of rows) {
+      out.set(Number(r.item_id), { med7: toNumber(r.med7), samples: Number(r.samples), distinct: Number(r.distinct_cnt) });
+    }
+    return out;
+  }
+  // 当前模式：近 7 日 DailySummary 收盘中位数（优先 transcript 每日——档位
+  // 过滤后的有效最低价；无 transcript 的物品回退 auctionator；同 source 不混
+  // 算）。med7 只反映正常流动性下的价格中枢：剔除所有极少挂单日（不论价格
+  // 高低，bait-filter.ts）——少量日价格不可靠，低价个例计入会拉低参考价制造
+  // 假捡漏，高价钓单会拉高。样本不足时不过滤。
+  const rows = await prisma.$queryRaw<Array<{ itemId: number | bigint; date: Date; closePrice: number | bigint; volume: number | bigint }>>(
+    Prisma.sql`
     WITH latest AS (
       SELECT "item_id", "source",
-             ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "date" DESC) AS rn
+             ROW_NUMBER() OVER (
+               PARTITION BY "item_id"
+               ORDER BY CASE WHEN "source" = 'transcript' THEN 0 ELSE 1 END, "date" DESC
+             ) AS rn
       FROM "DailySummary"
       WHERE "date" >= ${cutoff} ${idCond}
     ),
-    lsrc AS (SELECT "item_id", "source" FROM latest WHERE rn = 1),
-    win AS (
-      SELECT d."item_id", d."close_price"
-      FROM "DailySummary" d
-      JOIN lsrc ON lsrc."item_id" = d."item_id" AND lsrc."source" = d."source"
-      WHERE d."date" >= ${cutoff}
-    ),
-    med AS (
-      SELECT "item_id", "close_price" AS "market_price",
-             ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "close_price") AS rn,
-             COUNT(*) OVER (PARTITION BY "item_id") AS cnt
-      FROM win
-    )
-    SELECT "item_id",
-           MAX(CASE WHEN rn = (cnt + 1) / 2 THEN "market_price" END) AS "med7",
-           MAX(cnt) AS "samples",
-           COUNT(DISTINCT "market_price") AS "distinct_cnt"
-    FROM med
-    GROUP BY "item_id"
-  `;
-  const out = new Map<number, { med7: number; samples: number; distinct: number }>();
+    lsrc AS (SELECT "item_id", "source" FROM latest WHERE rn = 1)
+    SELECT d."item_id" AS "itemId", d."date" AS "date",
+           d."close_price" AS "closePrice", d."volume" AS "volume"
+    FROM "DailySummary" d
+    JOIN lsrc ON lsrc."item_id" = d."item_id" AND lsrc."source" = d."source"
+    WHERE d."date" >= ${cutoff}
+  `
+  );
+  const byItem = new Map<number, Array<{ date: Date; closePrice: number; volume: number }>>();
   for (const r of rows) {
-    out.set(Number(r.item_id), { med7: toNumber(r.med7), samples: Number(r.samples), distinct: Number(r.distinct_cnt) });
+    const id = Number(r.itemId);
+    let list = byItem.get(id);
+    if (!list) byItem.set(id, (list = []));
+    list.push({ date: r.date, closePrice: toNumber(r.closePrice), volume: Number(r.volume) });
+  }
+  const out = new Map<number, { med7: number; samples: number; distinct: number }>();
+  for (const [itemId, days] of byItem) {
+    const kept = filterThinDays(days);
+    const prices = kept.map((d) => d.closePrice).sort((a, b) => a - b);
+    out.set(itemId, {
+      med7: prices.length > 0 ? prices[Math.floor(prices.length / 2)] : 0,
+      samples: kept.length,
+      distinct: new Set(prices).size
+    });
   }
   return out;
 }
 
-export async function getMarketUniverse(): Promise<MarketHistory[]> {
-  const [items, snaps, dailies, med7s] = await Promise.all([
+// M4：当前模式"转录合成快照"——取每物品最新一轮 AuctionTier 档位，经
+// tier-filter 算有效最低价（剔除稀薄+断层钓单档）。返回按 itemId 索引的
+// 合成快照行；transcript 没有的物品不返回（调用方回退 auctionator）。
+async function getTranscriptLatestSnapshots(itemIds?: number[]): Promise<Map<number, SnapshotRaw>> {
+  const idCond = itemIds && itemIds.length > 0 ? Prisma.sql`AND t."item_id" IN (${Prisma.join(itemIds)})` : Prisma.empty;
+  const rows = await prisma.$queryRaw<Array<{ itemId: number | bigint; ts: Date; price: number | bigint; qty: number | bigint }>>(
+    Prisma.sql`
+    WITH latest AS (
+      SELECT "item_id" AS "itemId", MAX("ts") AS "ts"
+      FROM "AuctionTier"
+      WHERE "source" = 'transcript' AND "market" = 'faction'
+      GROUP BY "item_id"
+    )
+    SELECT t."item_id" AS "itemId", t."ts" AS "ts", t."price" AS "price", t."qty" AS "qty"
+    FROM "AuctionTier" t
+    JOIN latest l ON l."itemId" = t."item_id" AND l."ts" = t."ts"
+    WHERE t."source" = 'transcript' AND t."market" = 'faction' ${idCond}
+  `
+  );
+  const byItem = new Map<number, Array<{ price: number; qty: number }>>();
+  for (const r of rows) {
+    const id = Number(r.itemId);
+    const list = byItem.get(id);
+    if (list) list.push({ price: toNumber(r.price), qty: Number(r.qty) });
+    else byItem.set(id, [{ price: toNumber(r.price), qty: Number(r.qty) }]);
+  }
+  const out = new Map<number, SnapshotRaw>();
+  const tsByItem = new Map<number, Date>();
+  for (const r of rows) tsByItem.set(Number(r.itemId), toDate(r.ts));
+  for (const [itemId, tiers] of byItem) {
+    const result = effectiveLowestPrice(tiers);
+    if (result.effectivePrice === null) continue;
+    out.set(itemId, {
+      id: `tr-${itemId}`,
+      item_id: itemId,
+      timestamp: tsByItem.get(itemId) ?? new Date(),
+      server: TRANSCRIPT_SERVER,
+      faction: TRANSCRIPT_FACTION,
+      market: "faction",
+      source: "transcript",
+      min_price: result.effectivePrice,
+      market_price: result.effectivePrice,
+      alt_price: null,
+      quantity: result.effectiveQty,
+      num_auctions: 0,
+      raw_payload: null
+    });
+  }
+  return out;
+}
+
+export async function getMarketUniverse(mode: MarketMode = "current"): Promise<MarketHistory[]> {
+  const srcCond = mode === "history" ? Prisma.sql`AND "source" = 'addon'` : Prisma.empty;
+  const [items, snaps, dailies, med7s, transcriptSnaps] = await Promise.all([
     prisma.$queryRaw<ItemRaw[]>`SELECT * FROM "Item" ORDER BY "name" ASC`,
     prisma.$queryRaw<SnapshotRaw[]>`
       WITH ranked AS (
         SELECT *, ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "timestamp" DESC) AS rn
         FROM "AuctionSnapshot"
-        WHERE "market" = 'faction'
+        WHERE "market" = 'faction' ${srcCond}
       )
       SELECT "id", "item_id", "timestamp", "server", "faction", "market", "source",
              "min_price", "market_price", "alt_price", "quantity", "num_auctions"
@@ -120,9 +218,11 @@ export async function getMarketUniverse(): Promise<MarketHistory[]> {
       WITH ranked AS (
         SELECT *, ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "date" DESC) AS rn
         FROM "DailySummary"
+        WHERE 1 = 1 ${srcCond}
       )
       SELECT * FROM ranked WHERE rn <= 30 ORDER BY "item_id", "date" ASC`,
-    getMed7Aggregates()
+    getMed7Aggregates(undefined, mode),
+    mode === "history" ? Promise.resolve(new Map<number, SnapshotRaw>()) : getTranscriptLatestSnapshots()
   ]);
 
   const snapsByItem = new Map<number, SnapshotRaw[]>();
@@ -130,6 +230,11 @@ export async function getMarketUniverse(): Promise<MarketHistory[]> {
     const list = snapsByItem.get(s.item_id);
     if (list) list.push(s);
     else snapsByItem.set(s.item_id, [s]);
+  }
+  // M4：transcript 有档位的物品，其"最新快照"替换为档位有效最低价合成行
+  // （雷达/行情表读取的最新价与在售量从此以钓单过滤后的口径为准）。
+  for (const [itemId, snap] of transcriptSnaps) {
+    snapsByItem.set(itemId, [snap]);
   }
   const dailyByItem = new Map<number, DailyRaw[]>();
   for (const d of dailies) {
@@ -181,18 +286,40 @@ export async function getMarketUniverse(): Promise<MarketHistory[]> {
 }
 
 
-export async function getItemDetail(itemId: number): Promise<MarketHistory | null> {
+export async function getItemDetail(itemId: number, mode: MarketMode = "current"): Promise<MarketHistory | null> {
+  const srcCond = mode === "history" ? { source: "addon" } : undefined;
   const row = await prisma.item.findUnique({
     where: { itemId },
     include: {
-      snapshots: { orderBy: { timestamp: "asc" }, take: -96 },
-      dailySummaries: { orderBy: { date: "asc" }, take: -60 }
+      snapshots: { where: srcCond, orderBy: { timestamp: "asc" }, take: -96 },
+      dailySummaries: { where: srcCond, orderBy: { date: "asc" }, take: -60 }
     }
   });
   if (row) {
     for (const s of (row as any).snapshots) { s.minPrice = Number(s.minPrice); s.marketPrice = Number(s.marketPrice); s.altPrice = s.altPrice === null ? undefined : Number(s.altPrice); }
     for (const d of (row as any).dailySummaries) { d.openPrice = Number(d.openPrice); d.closePrice = Number(d.closePrice); d.highPrice = Number(d.highPrice); d.lowPrice = Number(d.lowPrice); }
-    const med7s = await getMed7Aggregates([itemId]);
+    // M4：当前模式且该物品有 transcript 档位 → 快照替换为有效最低价合成行。
+    if (mode === "current") {
+      const transcriptSnaps = await getTranscriptLatestSnapshots([itemId]);
+      const snap = transcriptSnaps.get(itemId);
+      if (snap) {
+        (row as any).snapshots = [{
+          id: snap.id,
+          itemId,
+          timestamp: toDate(snap.timestamp),
+          server: snap.server,
+          faction: snap.faction,
+          market: snap.market,
+          source: snap.source,
+          minPrice: toNumber(snap.min_price),
+          marketPrice: toNumber(snap.market_price),
+          altPrice: undefined,
+          quantity: toNumber(snap.quantity),
+          numAuctions: 0
+        }];
+      }
+    }
+    const med7s = await getMed7Aggregates([itemId], mode);
     (row as any).med7Info = med7s.get(itemId) ?? null;
   }
   return row as any;
@@ -208,9 +335,18 @@ export async function getAlertRules() {
 }
 
 
-export async function getLatestSnapshotTime(market: string = "faction") {
+export async function getLatestSnapshotTime(market: string = "faction", mode: MarketMode = "current") {
+  if (mode === "current") {
+    // M4：当前模式新鲜度锚点优先 transcript 最新轮（档位扫描时间）。
+    const tr = await prisma.auctionTier.findFirst({
+      where: { source: "transcript", market },
+      orderBy: { ts: "desc" },
+      select: { ts: true }
+    });
+    if (tr) return tr.ts;
+  }
   const row = await prisma.auctionSnapshot.findFirst({
-    where: { market },
+    where: { market, ...(mode === "history" ? { source: "addon" } : {}) },
     orderBy: { timestamp: "desc" },
     select: { timestamp: true }
   });
@@ -229,18 +365,34 @@ export async function getItemMetaVersion(): Promise<number> {
 // 查询已归档（archive/lib/cross-market.ts、archive/pages/）。中立/账本数据
 // 不再新进；旧行保留在库中供历史模式展示。
 
-// 最新一轮 Auctionator 扫描的物品宇宙。雷达的 universe 与游戏内当前在售
-// 一致：没有数据源的物品不能被买入，也不应作为捡漏推荐。返回 null 表示
-// 尚无 Auctionator 快照——雷达此时无宇宙、保持空态。
-export async function getLatestRoundItemIds(): Promise<Set<number> | null> {
+// 最新一轮扫描的物品宇宙（雷达 universe）。当前模式 = transcript 最新轮
+// （有档位数据时；否则回退 Auctionator 最新轮）；历史模式 = addon 最新轮。
+// 返回 null 表示该模式尚无快照——雷达保持空态。
+export async function getLatestRoundItemIds(mode: MarketMode = "current"): Promise<Set<number> | null> {
+  if (mode === "current") {
+    const latest = await prisma.auctionTier.findFirst({
+      where: { source: "transcript", market: "faction" },
+      orderBy: { ts: "desc" },
+      select: { ts: true }
+    });
+    if (latest) {
+      const rows = await prisma.auctionTier.findMany({
+        where: { source: "transcript", market: "faction", ts: latest.ts },
+        distinct: ["itemId"],
+        select: { itemId: true }
+      });
+      return new Set(rows.map((row) => row.itemId));
+    }
+  }
+  const src = mode === "history" ? "addon" : "auctionator";
   const latest = await prisma.auctionSnapshot.findFirst({
-    where: { source: "auctionator", market: "faction" },
+    where: { source: src, market: "faction" },
     orderBy: { timestamp: "desc" },
     select: { timestamp: true }
   });
   if (!latest) return null;
   const rows = await prisma.auctionSnapshot.findMany({
-    where: { source: "auctionator", market: "faction", timestamp: latest.timestamp },
+    where: { source: src, market: "faction", timestamp: latest.timestamp },
     select: { itemId: true }
   });
   return new Set(rows.map((row) => row.itemId));
@@ -255,20 +407,28 @@ export async function getRadarRules(): Promise<unknown> {
   return row?.rules ?? null;
 }
 
-// 按 itemId 批量取每个物品最新快照的市场价（Auctionator m，即最低买入价）。
-// 配方利润只需要这些价，不需要全市场信号。
-export async function getLatestPricesByItemIds(itemIds: number[]): Promise<Map<number, number>> {
+// 按 itemId 批量取每个物品最新快照的市场价。当前模式 = transcript 档位
+// 有效最低价（钓单过滤后；无 transcript 回退 Auctionator m）；历史模式 =
+// addon 最新 P10。配方利润按模式取价。
+export async function getLatestPricesByItemIds(itemIds: number[], mode: MarketMode = "current"): Promise<Map<number, number>> {
   if (itemIds.length === 0) return new Map();
+  const out = new Map<number, number>();
+  if (mode === "current") {
+    const transcriptSnaps = await getTranscriptLatestSnapshots(itemIds);
+    for (const [itemId, snap] of transcriptSnaps) out.set(itemId, toNumber(snap.market_price));
+    itemIds = itemIds.filter((id) => !out.has(id)); // 剩余物品回退 auctionator
+    if (itemIds.length === 0) return out;
+  }
+  const srcCond = mode === "history" ? Prisma.sql`"source" = 'addon' AND` : Prisma.sql`"source" = 'auctionator' AND`;
   const rows = await prisma.$queryRaw<Array<{ itemId: bigint | number; marketPrice: bigint | number }>>`
     WITH ranked AS (
       SELECT "item_id" AS "itemId", "market_price" AS "marketPrice",
              ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "timestamp" DESC) AS rn
       FROM "AuctionSnapshot"
-      WHERE "source" = 'auctionator' AND "item_id" IN (${Prisma.join(itemIds)})
+      WHERE ${srcCond} "item_id" IN (${Prisma.join(itemIds)})
     )
     SELECT "itemId", "marketPrice" FROM ranked WHERE rn = 1
   `;
-  const out = new Map<number, number>();
   for (const r of rows) out.set(Number(r.itemId), toNumber(r.marketPrice));
   return out;
 }

@@ -14,6 +14,7 @@
     "db:push": "prisma db push",
     "addon:watch": "tsx scripts/watch-savedvars.ts",
     "auctionator:import": "tsx scripts/auctionator-import.ts",
+    "transcript:import": "tsx scripts/transcript-import.ts",
     "gen:lua-rules": "tsx scripts/gen-lua-rules.ts",
     "icons:fetch": "tsx scripts/fetch-icons.ts",
     "perf:seed": "tsx scripts/perf/seed.ts",
