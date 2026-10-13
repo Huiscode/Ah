@@ -107,7 +107,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             <RadioTower size={14} /> 联盟·数据更新于 {freshness.label}
           </span>
           <span className={neutralFreshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
-            <RadioTower size={14} /> 中立·更新于 {neutralFreshness.label}
+            <RadioTower size={14} /> 中立·{neutralSnapshotAt === null ? "无数据" : `更新于 ${neutralFreshness.label}`}
           </span>
           <Link href="/neutral" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><RadioTower size={14} /> 中立市场</Link>
           <Link href="/arbitrage" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ArrowLeftRight size={14} /> 跨市场</Link>
