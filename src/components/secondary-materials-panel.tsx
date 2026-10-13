@@ -91,7 +91,7 @@ export function SecondaryMaterialsPanel({ rows, prices, floorPrices, turnoverByI
       <div className="max-h-[300px] space-y-3 overflow-y-auto p-3 font-mono text-xs">
         {rows.length === 0 && (
           <div className="text-terminal-muted">
-            暂无数据。先 /wahscan 扫描并导入，或到 <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="text-terminal-amber hover:underline">配方库</Link> 确认材料价格。
+            暂无数据。先在游戏内用 Auctionator 全量扫描并导入，或到 <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="text-terminal-amber hover:underline">配方库</Link> 确认材料价格。
           </div>
         )}
         {visibleGroups.map(([profession, groupRows]) => (

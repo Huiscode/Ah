@@ -4,7 +4,7 @@ import { buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
 import {
   getItemDetail,
   getItemVendorPricesByIds,
-  getLatestAddonPricesByItemIds,
+  getLatestPricesByItemIds,
   getRecipesProducing,
   getWatchedItemIds
 } from "@/lib/repositories";
@@ -15,7 +15,7 @@ import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import { Coins } from "@/components/coins";
 import { qualityColorClass } from "@/lib/quality";
 import { ItemIcon } from "@/components/item-icon";
-import { describeFreshness } from "@/lib/freshness";
+import { AUCTIONATOR_STALE_MAX_AGE_MS, describeFreshness } from "@/lib/freshness";
 import { CandlestickChart, TimeSeriesChart } from "@/components/charts";
 import { WatchStar } from "@/components/watch-star";
 import { CloseTabButton } from "@/components/close-tab-button";
@@ -40,7 +40,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     for (const output of recipe.outputs) involvedItemIds.add(output.itemId);
   }
   const [priceByItemId, vendorPrices] = await Promise.all([
-    getLatestAddonPricesByItemIds(Array.from(involvedItemIds)),
+    getLatestPricesByItemIds(Array.from(involvedItemIds)),
     getItemVendorPricesByIds(Array.from(involvedItemIds))
   ]);
   const floorPriceIndex = buildFloorPriceIndex(producingRecipes, vendorPrices);
@@ -51,11 +51,11 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
   const hasSnapshots = item.snapshots.length > 0;
   const signal = hasSnapshots ? buildMarketSignal(item, now) : null;
   const latestSnapshot = item.snapshots[item.snapshots.length - 1];
-  const freshness = describeFreshness(latestSnapshot?.timestamp ?? null, now);
-  // Daily candles and seasonality follow the addon channel — the only
-  // channel that exists now; legacy ahledger rows (pre-purge) are excluded
-  // so the K-line never blends two price metrics.
-  const sameSourceSummaries = item.dailySummaries.filter((summary) => (summary.source ?? "addon") === "addon");
+  const freshness = describeFreshness(latestSnapshot?.timestamp ?? null, now, AUCTIONATOR_STALE_MAX_AGE_MS);
+  // Daily candles and seasonality follow the auctionator channel — the only
+  // channel produced now; legacy addon rows are excluded so the K-line never
+  // blends two price metrics.
+  const sameSourceSummaries = item.dailySummaries.filter((summary) => (summary.source ?? "auctionator") === "auctionator");
   const seasonality = buildWeekdaySeasonality(sameSourceSummaries);
   const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
   const candleData = sameSourceSummaries.map((summary) => ({
@@ -66,32 +66,22 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
     low: summary.lowPrice,
     volume: summary.volume
   }));
-  // Intraday view: raw scan snapshots. AH prices swing hour to hour; with
-  // auto-rescan every ~15 min this is the actual trading chart. Each scan
-  // carries both closes from the SAME scan: P10 (market price) and P50
-  // (display-only market center), so the two curves are directly
-  // comparable. Points predating the P50 curve have no alt value and the
-  // P50 line simply starts there.
-  const intradayByTs = new Map<number, { price?: number; alt?: number; volume?: number }>();
-  for (const snapshot of item.snapshots) {
-    if ((snapshot.source ?? "addon") !== "addon") continue;
-    const ts = snapshot.timestamp.getTime();
-    const entry = intradayByTs.get(ts) ?? {};
-    if (entry.price === undefined) {
-      entry.price = snapshot.marketPrice;
-      entry.volume = snapshot.quantity;
-    }
-    if (entry.alt === undefined && snapshot.altPrice !== undefined) {
-      entry.alt = snapshot.altPrice;
-    }
-    intradayByTs.set(ts, entry);
+  // 近 7 日最低/最高双线：Auctionator 每日一轮收盘，raw snapshots 只有最新
+  // 一批（无逐次扫描曲线），走势用 daily 的 low/high 双线表达当日振幅。
+  const rangeByTs = new Map<number, { low: number; high: number; volume?: number }>();
+  for (const summary of sameSourceSummaries) {
+    const ts = summary.date.getTime();
+    const entry = rangeByTs.get(ts) ?? { low: summary.lowPrice, high: summary.highPrice, volume: summary.volume };
+    entry.low = Math.min(entry.low, summary.lowPrice);
+    entry.high = Math.max(entry.high, summary.highPrice);
+    rangeByTs.set(ts, entry);
   }
-  const intradayData = Array.from(intradayByTs.entries())
+  const rangeData = Array.from(rangeByTs.entries())
     .sort(([left], [right]) => left - right)
     .map(([ts, entry]) => ({ ts, ...entry }));
-  const intradaySeries = [
-    { key: "price" as const, color: "#56c7ff", name: "P10" },
-    { key: "alt" as const, color: "#ffc46b", name: "P50" }
+  const rangeSeries = [
+    { key: "high" as const, color: "#ff5c7a", name: "当日最高" },
+    { key: "low" as const, color: "#39d98a", name: "当日最低" }
   ];
 
   return (
@@ -121,11 +111,11 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
       <div className="grid gap-3 xl:grid-cols-[1fr_420px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="盘中走势 (逐次扫描)" />
+            <PanelHeader title="近7日最低/最高走势 (日线)" />
             <div className="p-3">
-              {intradayData.length >= 2
-                ? <TimeSeriesChart data={intradayData} series={intradaySeries} />
-                : <div className="p-4 font-mono text-xs text-terminal-muted">盘中曲线需要多次扫描——开 /wahauto 挂机自动积累（每约 15 分钟一个点），P50 曲线从下次扫描起积累</div>}
+              {rangeData.length >= 2
+                ? <TimeSeriesChart data={rangeData} series={rangeSeries} />
+                : <div className="p-4 font-mono text-xs text-terminal-muted">双线走势需要至少 2 天的 Auctionator 扫描数据——每次进入拍卖行后保持全量扫描积累</div>}
             </div>
           </Panel>
           <Panel>
@@ -137,7 +127,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
             </div>
           </Panel>
           <Panel>
-            <PanelHeader title="星期几季节性 (P10收盘 · 相对全部天数中位数的偏差)" />
+            <PanelHeader title="星期几季节性 (收盘 · 相对全部天数中位数的偏差)" />
             <div className="grid grid-cols-7 gap-px bg-terminal-border font-mono text-xs">
               {seasonality.map((day) => (
                 <div key={day.weekday} className="bg-terminal-panel px-2 py-3 text-center">
@@ -162,48 +152,18 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
               {signal && (
                 <>
                   <div>
-                    <div className="text-xs uppercase text-terminal-muted">市场价 · P10</div>
+                    <div className="text-xs uppercase text-terminal-muted">最低买入价</div>
                     <div className="text-2xl"><Coins copper={signal.price} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div><div className="text-terminal-muted">最低价</div><div><Coins copper={signal.minPrice} /></div></div>
-                    <div><div className="text-terminal-muted">7日参考（P10）</div><div><Coins copper={signal.med7} /></div></div>
+                    <div><div className="text-terminal-muted">7日参考（最低价均值）</div><div><Coins copper={signal.med7} /></div></div>
                     <div><div className="text-terminal-muted">折扣</div><div className={signal.discountPercent >= 15 ? "text-terminal-green" : ""}>{signal.discountPercent.toFixed(0)}%</div></div>
-                    <div><div className="text-terminal-muted">环比上次</div><div className={trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</div></div>
+                    <div><div className="text-terminal-muted">环比昨日</div><div className={trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</div></div>
                     <div><div className="text-terminal-muted">在售量</div><div>{signal.quantity.toLocaleString("en-US")}</div></div>
-                    <div><div className="text-terminal-muted">挂单数</div><div>{signal.numAuctions.toLocaleString("en-US")}</div></div>
                   </div>
                 </>
               )}
-            </div>
-          </Panel>
-          <Panel>
-            <PanelHeader title="价格档位" />
-            <div className="p-4 font-mono text-xs">
-              {(() => {
-                const rp = latestSnapshot?.rawPayload as { ladder?: Array<{ price: number; count: number }> } | null;
-                const ladder = rp?.ladder;
-                if (!ladder || ladder.length === 0) return <div className="text-terminal-muted">最近一次扫描未记录价格档位（下次 /wahscan 后自动出现）</div>;
-                return (
-                  <table className="w-full">
-                    <thead className="text-terminal-muted">
-                      <tr><td className="py-1">价格</td><td className="text-right">数量</td><td className="text-right">累计</td></tr>
-                    </thead>
-                    <tbody>
-                      {ladder.slice(0, 5).map((row, i) => {
-                        const cum = ladder.slice(0, i + 1).reduce((s, r) => s + r.count, 0);
-                        return (
-                          <tr key={i} className={i === 0 ? "text-terminal-amber" : ""}>
-                            <td className="py-1"><Coins copper={row.price} /></td>
-                            <td className="text-right">{row.count}</td>
-                            <td className="text-right text-terminal-muted">{cum}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                );
-              })()}
             </div>
           </Panel>
           <Panel>
@@ -229,7 +189,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                         <Coins copper={Math.abs(row.profit)} />
                       </span>
                     ) : (
-                      <span className="shrink-0 text-terminal-red">缺价</span>
+                      <span className="shrink-0 text-terminal-red">缺货</span>
                     )}
                   </div>
                   <div className="mt-1 flex flex-wrap gap-x-1.5 gap-y-0.5 leading-relaxed text-terminal-muted">
@@ -238,7 +198,7 @@ export default async function ItemDetail({ params }: { params: Promise<{ itemId:
                         <span key={material.name}>材料 {material.name}×{material.quantity}（<span className="text-slate-200"><Coins copper={material.price} /></span>）</span>
                       ))
                     ) : (
-                      row.missing.map((name) => <span key={name}>缺价：{name}</span>)
+                      row.missing.map((name) => <span key={name}>缺货：{name}</span>)
                     )}
                   </div>
                 </div>

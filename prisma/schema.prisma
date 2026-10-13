@@ -130,6 +130,7 @@ model TradeRecord {
 // client never exposes a spell id from the trade-skill window, so the
 // composite (name, profession) is the identity: re-scans upsert over the
 // same key (idempotent, "重复扫描覆盖同名配方"). reagents/outputs keep the
+// same key (idempotent, "重复扫描覆盖同名配方"). reagents/outputs keep the
 // addon's field names (itemId/name/quantity/vendorP) so the terminal's
 // profit engine can price every craft from the live market with the vendor
 // floor as fallback. skillLevel is the character's current skill rank at
@@ -154,4 +155,22 @@ model Recipe {
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   @@unique([name, profession, category])
+}
+
+// Auctionator 挂单历史（AUCTIONATOR_POSTING_HISTORY，用户 2026-10-13 采纳的"账本口子"）。
+// 记录自己在拍卖行的挂单行为（Auctionator 语义，非邮箱成交账本）；游戏内当前为空，
+// 导入端先保留解析能力，等积累后可做轻量"我的挂单记录"页。无页面依赖，仅导入端写入。
+model PostingRecord {
+  id        String   @id @default(cuid())
+  uid       String   @unique // Auctionator 挂单事件的唯一键
+  itemId    Int      @map("item_id")
+  qty       Int
+  unitPrice BigInt   @map("unit_price")
+  total     BigInt
+  kind      String // 挂单事件类型（Auctionator 语义，如 sold/cancelled/bought）
+  ts        DateTime
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([itemId])
+  @@index([ts])
 }

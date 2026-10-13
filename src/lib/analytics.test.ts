@@ -5,10 +5,14 @@ import { generateDemoHistory } from "@/lib/demo-history";
 const DAY = 24 * 60 * 60 * 1000;
 const now = new Date("2026-07-24T12:00:00Z");
 
+// Auctionator 口径 fixture：快照 = 每次导入的最新一批（每物品 1 行，m =
+// 最低买入价）；每日汇总 = 每扫描日一行收盘（close = 当日 m，low/high
+// 按当日快照振幅）。med7/环比都从 daily 计算（与生产一致）。
 function history(
   snapshots: Array<{ daysAgo: number; marketPrice: number; minPrice?: number; quantity?: number; numAuctions?: number }>,
   overrides?: { vendorPrice?: number; itemId?: number; name?: string }
 ) {
+  const source = "auctionator";
   return {
     itemId: overrides?.itemId ?? 2770,
     name: overrides?.name ?? "铜矿石",
@@ -24,35 +28,49 @@ function history(
       server: "Anniversary",
       faction: "Alliance",
       market: "faction",
-      minPrice: snap.minPrice ?? Math.round(snap.marketPrice * 0.9),
+      source,
+      minPrice: snap.minPrice ?? snap.marketPrice,
       marketPrice: snap.marketPrice,
       quantity: snap.quantity ?? 100,
-      numAuctions: snap.numAuctions ?? 10
+      numAuctions: snap.numAuctions ?? 0
     })),
-    dailySummaries: []
+    // 每天一行：close/high/low 均为当日快照价（单次导入），volume=在售量。
+    dailySummaries: snapshots.map((snap) => {
+      const date = new Date(now.getTime() - snap.daysAgo * DAY);
+      date.setUTCHours(0, 0, 0, 0);
+      return {
+        date,
+        source,
+        openPrice: snap.marketPrice,
+        closePrice: snap.marketPrice,
+        highPrice: snap.marketPrice,
+        lowPrice: snap.marketPrice,
+        volume: snap.quantity ?? 100
+      };
+    })
   };
 }
 
 describe("buildMarketSignal", () => {
-  it("derives snapshot-based stats: latest P10, min, med7, discount", () => {
+  it("derives auctionator-based stats: latest m, min, med7, discount", () => {
     const signal = buildMarketSignal(
       history([
         { daysAgo: 2, marketPrice: 100 },
         { daysAgo: 1, marketPrice: 120 },
-        { daysAgo: 0, marketPrice: 110, minPrice: 80, quantity: 240, numAuctions: 12 }
+        { daysAgo: 0, marketPrice: 90, minPrice: 80, quantity: 240 }
       ]),
       now
     );
-    expect(signal.price).toBe(110);
+    expect(signal.price).toBe(90); // latest 最低买入价
     expect(signal.minPrice).toBe(80);
     expect(signal.quantity).toBe(240);
-    expect(signal.numAuctions).toBe(12);
-    expect(signal.med7).toBe(110); // median of [100, 110, 120]
-    expect(signal.discountPercent).toBeCloseTo((1 - 80 / 110) * 100, 5);
-    expect(signal.changePercent).toBeCloseTo(((110 - 120) / 120) * 100, 5);
+    expect(signal.numAuctions).toBe(0); // Auctionator 无挂单数
+    expect(signal.med7).toBe(100); // daily closes [100, 120, 90] 中位数
+    expect(signal.discountPercent).toBeCloseTo((1 - 90 / 100) * 100, 5);
+    expect(signal.changePercent).toBeCloseTo(((90 - 120) / 120) * 100, 5);
   });
 
-  it("median ignores snapshots older than 7 days and resists outliers", () => {
+  it("median ignores days older than 7 days and resists outliers", () => {
     const signal = buildMarketSignal(
       history([
         { daysAgo: 10, marketPrice: 999999 }, // outside window
@@ -63,7 +81,7 @@ describe("buildMarketSignal", () => {
       ]),
       now
     );
-    // window prices [100, 999999, 105, 95] -> sorted [95,100,105,999999] -> lower middle 100
+    // window daily closes [100, 999999, 105, 95] -> sorted [95,100,105,999999] -> lower middle 100
     expect(signal.med7).toBe(100);
   });
 
@@ -94,12 +112,11 @@ describe("buildMarketSignal", () => {
 });
 
 describe("buildDealRadar", () => {
-  // Mirrors the in-game radar (addon/WoWderhoiAH/Trade.lua): vendor
-  // arbitrage (any listing below NPC sell price, no profit floor — the
-  // NPC always buys, so even a 1c spread is risk-free) plus median
-  // discount (gated on the 30c dust floor + 25% relative floor because
-  // reselling carries risk).
-  const liquid = { quantity: 100, numAuctions: 10 };
+  // Auctionator 口径：必赚（NPC 倒卖）= 最低买入价低于 NPC 卖价，无历史
+  // 要求、无利润下限；捡漏 = 最低买入价 ≤ 7日参考 × discount，门控
+  // 30c 绝对利润 + 25% 相对利润 + 3 天历史 + 参考可信度。挂单数门已删除
+  // （Auctionator 无挂单数；用户选择不加替代门槛）。
+  const liquid = { quantity: 100, numAuctions: 0 };
 
   function signals(items: Parameters<typeof buildMarketSignal>[0][]) {
     return items.map((item) => buildMarketSignal(item, now));
@@ -127,9 +144,7 @@ describe("buildDealRadar", () => {
     expect(deals[0].profit).toBe(1);
   });
 
-  it("requires the 25% relative discount, 3-scan depth, 3-auction liquidity, and 30c floor together", () => {
-    // Closes vary scan to scan so every rejection below is attributable to
-    // the gate under test, not to the flat-series guard.
+  it("requires the 25% relative discount, 3-day depth, and 30c floor together", () => {
     const base = [
       { daysAgo: 2, marketPrice: 9800, ...liquid },
       { daysAgo: 1, marketPrice: 10000, ...liquid }
@@ -137,7 +152,6 @@ describe("buildDealRadar", () => {
     const qualifying = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 7000, ...liquid }]);
     const thinDiscount = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 9000, ...liquid }], { itemId: 2 });
     const shallowHistory = history([{ daysAgo: 0, marketPrice: 10200, minPrice: 7000, ...liquid }], { itemId: 3 });
-    const illiquid = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 7000, quantity: 2, numAuctions: 2 }], { itemId: 4 });
     const subFloor = history(
       [
         { daysAgo: 2, marketPrice: 98, ...liquid },
@@ -146,10 +160,26 @@ describe("buildDealRadar", () => {
       ],
       { itemId: 5 }
     );
-    const deals = buildDealRadar(signals([qualifying, thinDiscount, shallowHistory, illiquid, subFloor]), undefined, now);
+    const deals = buildDealRadar(signals([qualifying, thinDiscount, shallowHistory, subFloor]), undefined, now);
     expect(deals.map((deal) => deal.itemId)).toEqual([2770]);
     expect(deals[0].vendor).toBe(false);
     expect(deals[0].profit).toBe(2500);
+  });
+
+  it("no auction-count gate: a thin listing can still qualify if the reference holds", () => {
+    // quantity=2（在售量极少）：旧口径的挂单数门会拦下，新口径没有挂单数
+    // 概念——只要 med7 可信、价格够低，就入选（用户选择先观察，不加
+    // 替代门槛）。
+    const thin = history(
+      [
+        { daysAgo: 2, marketPrice: 9800, ...liquid },
+        { daysAgo: 1, marketPrice: 10000, ...liquid },
+        { daysAgo: 0, marketPrice: 10200, minPrice: 7000, quantity: 2 }
+      ],
+      { itemId: 4 }
+    );
+    const deals = buildDealRadar(signals([thin]), undefined, now);
+    expect(deals.map((deal) => deal.itemId)).toEqual([4]);
   });
 
   it("orders vendor deals first, then by absolute profit", () => {
@@ -166,8 +196,8 @@ describe("buildDealRadar", () => {
     expect(deals.map((deal) => deal.itemId)).toEqual([1, 2]);
   });
 
-  it("rejects a flat 7d P10 series — one camper's ask is not a reference price", () => {
-    // Every scan saw the same P10: a single seller holding the bottom of a
+  it("rejects a flat 7d series — one camper's ask is not a reference price", () => {
+    // Every scan saw the same m: a single seller holding the bottom of a
     // thin book. med7 is that player's asking price, and nothing ever
     // traded against it, so the "discount" measures nothing.
     const camper = history([
@@ -179,8 +209,7 @@ describe("buildDealRadar", () => {
   });
 
   it("rejects implausible discounts — past the cap the reference is broken", () => {
-    // 6240 against a med7 of 49240 is 87% off: the shape the in-game radar
-    // was ranking as its best deal, and always bad reference data.
+    // 6240 against a med7 of 49240 is 87% off: always bad reference data.
     const absurd = history([
       { daysAgo: 2, marketPrice: 49000, ...liquid },
       { daysAgo: 1, marketPrice: 49240, ...liquid },
@@ -190,12 +219,14 @@ describe("buildDealRadar", () => {
   });
 
   it("keeps a discount sitting exactly on the plausibility cap", () => {
+    // daily closes [10000, 10000, 2500] -> med7 10000；今日最低买入 2500
+    // = 恰 75% off（maxDiscount 边界，允许）。
     const atCap = history([
-      { daysAgo: 2, marketPrice: 9000, ...liquid },
+      { daysAgo: 2, marketPrice: 10000, ...liquid },
       { daysAgo: 1, marketPrice: 10000, ...liquid },
-      { daysAgo: 0, marketPrice: 11000, minPrice: 2500, ...liquid }
+      { daysAgo: 0, marketPrice: 2500, ...liquid }
     ]);
-    const deals = buildDealRadar(signals([atCap]), undefined, now); // med7 10000, min 2500 = 75% off
+    const deals = buildDealRadar(signals([atCap]), undefined, now);
     expect(deals).toHaveLength(1);
     expect(deals[0].discountPercent).toBeCloseTo(75, 5);
   });

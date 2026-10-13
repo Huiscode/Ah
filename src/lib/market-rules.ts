@@ -1,27 +1,23 @@
-﻿// Single source of truth for the deal-radar rules and the scan pipeline
-// version. The in-game addon (Lua) cannot import this at runtime — the
-// game has no build step — so scripts/gen-lua-rules.ts compiles these
-// values into addon/WoWderhoiAH/GeneratedRules.lua, and a drift test
-// (scripts/gen-lua-rules.test.ts) asserts the committed Lua matches. Every
-// TS consumer imports the constants here directly; nothing re-declares them.
+﻿// Single source of truth for the deal-radar rules. The in-game addon is
+// retired (2026-10-13): rules no longer compile into Lua and there is no
+// game-side authority panel — the web constants below are the only source.
 
 // Pricing pipeline version, stamped into every scan. Consumers (tooltip,
 // deal radar, desktop importer) reject any other value: a bump means the
 // meaning of the stored prices changed, not just their values.
+// 旧自研插件管线版本 = 4（插件已下线，不再产生新扫描；Auctionator 导入
+// 不校验此版本）。保留原值以便历史 addon 数据与其测试继续成立。
 export const SCAN_PIPELINE_VERSION = 4;
 
 // Auction house cut on a successful sale (5%). Vendor deals are exempt:
 // selling to an NPC charges no cut. Used to turn gross spreads into net profit.
 export const AH_CUT = 0.05;
 
-// DealRadarRules are the plugin-authority thresholds: they are compiled into
-// GeneratedRules.lua and the in-game options panel is the only place that can
-// change them. Every field here must exist in the addon's RADAR table.
+// DealRadarRules are web-side thresholds (no plugin authority anymore).
 export type DealRadarRules = {
   minProfit: number;
   minProfitRatio: number;
   discount: number;
-  minAuctions: number;
   minHistory: number;
   minMed7Distinct: number;
   maxDiscount: number;
@@ -31,14 +27,13 @@ export type DealRadarRules = {
 export const dealRadarRules: DealRadarRules = {
   minProfit: 30, // 30c absolute dust floor: below this the spread is noise, not a deal
   minProfitRatio: 0.25, // profit must also be >= 25% of med7: scales with the (early-server) economy
-  discount: 0.85, // min price at 85% of med7 or lower
-  minAuctions: 3, // liquidity guard: fewer sellers = no real market
-  minHistory: 3, // the P10 median needs depth before it means anything
-  // Credibility guards on med7 itself. minHistory counts samples but says
+  discount: 0.85, // 最低买入价 at 85% of med7 or lower
+  minHistory: 3, // med7 needs 3+ days of daily closes before it means anything
+  // Credibility guards on med7 itself. minHistory counts days but says
   // nothing about whether they mean anything: on a thin realm the bottom of
   // the book is often one camper, so every scan records that player's ask
   // and med7 becomes a price no listing ever traded against.
-  minMed7Distinct: 2, // a flat 7d P10 series is one seller, not a market
+  minMed7Distinct: 2, // a flat 7d series is one seller, not a market
   maxDiscount: 0.75, // past 75% off, the reference is broken, not the listing cheap
   // Supply cap: 0 = off; >0 excludes items whose latest listed quantity
   // exceeds this (oversupplied goods are a hoarding risk).
@@ -58,10 +53,9 @@ export const localFilterDefaults: LocalFilterRules = {
   maxPrice: 0
 };
 
-// Route-2 overrides arrive with each scan import (the in-game options panel
-// is the authority). Merge them over the compiled defaults, accepting only
-// the known fields and only with sane types — anything malformed keeps the
-// default so a bad payload can never cripple the radar.
+// Legacy route-2 overrides may still sit in RadarRule; merge them over the
+// defaults, accepting only the known fields with sane types. (The plugin
+// panel that wrote them is retired, so this is only a safety net.)
 export function mergeRadarRules(overrides: unknown): DealRadarRules {
   if (typeof overrides !== "object" || overrides === null) return dealRadarRules;
   const source = overrides as Record<string, unknown>;

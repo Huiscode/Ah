@@ -113,7 +113,7 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices }: {
                   <span className={row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}>{formatPercent(row.marginPercent)}</span>
                 </>
               ) : (
-                <span className="truncate text-[10px] text-terminal-muted">缺价 · 缺 {row.missing.join("、")}</span>
+                <span className="truncate text-[10px] text-terminal-muted">缺货 · 缺 {row.missing.join("、")}</span>
               )}
             </span>
             {/* Hover: full craft chain — per-material cost (AH or floor),

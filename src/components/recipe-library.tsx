@@ -496,7 +496,7 @@ export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
                       </span>
                     </>
                   ) : (
-                    <span className="truncate text-[10px] text-terminal-muted">缺价 · 缺 {row.missing.join("、")}</span>
+                    <span className="truncate text-[10px] text-terminal-muted">缺货 · 缺 {row.missing.join("、")}</span>
                   )}
                 </div>
                 <div className="mt-0.5 h-4 truncate text-[9px] text-terminal-muted/90" title={row.recipe.reagents.map((m) => `${m.name}×${m.quantity}`).join(" + ") || "—"}>
@@ -516,7 +516,7 @@ export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
                             <span className="text-terminal-muted">)</span>
                           </span>
                         ) : (
-                          <span className="text-terminal-muted"> (缺价)</span>
+                          <span className="text-terminal-muted"> (缺货)</span>
                         )}
                       </span>
                     );

@@ -1,7 +1,6 @@
 import { Prisma, prisma } from "@/lib/prisma";
 import { type MarketHistory } from "@/lib/market-data";
 import type { DbRecipe, RecipeMaterial } from "@/lib/recipe-profits";
-import type { CrossMarketSide } from "@/lib/cross-market";
 
 type ItemRaw = {
   id: string;
@@ -58,10 +57,10 @@ function toNumber(v: bigint | number): number {
 
 // The homepage universe: every item plus its most recent 48 snapshots and 30
 // daily summaries. Written as raw SQL because the Prisma include form pulls
-// ALL snapshot rows (37x10^4+) through the ORM just to truncate in JS —
-// measured ~5s; the window-function version is a few hundred ms.
-// 7d same-source median, computed at the SQL layer over ALL snapshots inside
-// the window (not the truncated chart arrays). One aggregate per item.
+// ALL snapshot rows through the ORM just to truncate in JS — measured ~5s;
+// the window-function version is a few hundred ms.
+// med7 = 近 7 日 DailySummary 收盘中位数（Auctionator 最低价口径，按每物品
+// 最新 daily 的 source 过滤，避免新旧口径混算）。每个物品一个聚合。
 // Median = JS median() convention: sorted[ceil(n/2)-1], i.e. the upper
 // middle element — implemented as rn = (cnt+1)/2 (integer division matches
 // ceil for the median index).
@@ -69,26 +68,25 @@ type Med7Raw = { item_id: number; med7: bigint | number; samples: number; distin
 
 async function getMed7Aggregates(itemIds?: number[]): Promise<Map<number, { med7: number; samples: number; distinct: number }>> {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  // 商品终端等单品页只关心一个物品的 med7：把窗口聚合限定到目标物品，
-  // 避免对全表 37 万行快照做 ROW_NUMBER + 聚合（单品页加载慢的元凶）。
+  // 单品页只关心一个物品的 med7：把窗口聚合限定到目标物品。
   const idCond = itemIds && itemIds.length > 0 ? Prisma.sql`AND "item_id" IN (${Prisma.join(itemIds)})` : Prisma.empty;
   const rows = await prisma.$queryRaw<Med7Raw[]>`
     WITH latest AS (
       SELECT "item_id", "source",
-             ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "timestamp" DESC) AS rn
-      FROM "AuctionSnapshot"
-      WHERE "market" = 'faction' ${idCond}
+             ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "date" DESC) AS rn
+      FROM "DailySummary"
+      WHERE "date" >= ${cutoff} ${idCond}
     ),
     lsrc AS (SELECT "item_id", "source" FROM latest WHERE rn = 1),
     win AS (
-      SELECT s."item_id", s."market_price"
-      FROM "AuctionSnapshot" s
-      JOIN lsrc ON lsrc."item_id" = s."item_id" AND lsrc."source" = s."source"
-      WHERE s."timestamp" >= ${cutoff} AND s."market" = 'faction'
+      SELECT d."item_id", d."close_price"
+      FROM "DailySummary" d
+      JOIN lsrc ON lsrc."item_id" = d."item_id" AND lsrc."source" = d."source"
+      WHERE d."date" >= ${cutoff}
     ),
     med AS (
-      SELECT "item_id", "market_price",
-             ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "market_price") AS rn,
+      SELECT "item_id", "close_price" AS "market_price",
+             ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "close_price") AS rn,
              COUNT(*) OVER (PARTITION BY "item_id") AS cnt
       FROM win
     )
@@ -107,26 +105,6 @@ async function getMed7Aggregates(itemIds?: number[]): Promise<Map<number, { med7
 }
 
 export async function getMarketUniverse(): Promise<MarketHistory[]> {
-  // 最新 addon 轮的挂单档位（rawPayload.ladder 前 3 档价格）。只取最新一轮
-  // 而非全部 48 轮，避免把 JSON 大字段拖进首页全量查询。
-  const ladderRows = await prisma.$queryRaw<Array<{ item_id: bigint | number; raw_payload: unknown }>>`
-    SELECT "item_id", "raw_payload"
-    FROM "AuctionSnapshot"
-    WHERE "market" = 'faction' AND "source" = 'addon'
-      AND "timestamp" = (SELECT MAX("timestamp") FROM "AuctionSnapshot" WHERE "market" = 'faction' AND "source" = 'addon')
-  `;
-  const ladderByItem = new Map<number, number[]>();
-  for (const row of ladderRows) {
-    let payload: { ladder?: Array<{ price: number }> } | null = null;
-    try {
-      payload = typeof row.raw_payload === "string" ? JSON.parse(row.raw_payload) : (row.raw_payload as { ladder?: Array<{ price: number }> } | null);
-    } catch {
-      payload = null;
-    }
-    const ladder = payload?.ladder;
-    if (Array.isArray(ladder)) ladderByItem.set(Number(row.item_id), ladder.slice(0, 3).map((p) => Number(p.price)));
-  }
-
   const [items, snaps, dailies, med7s] = await Promise.all([
     prisma.$queryRaw<ItemRaw[]>`SELECT * FROM "Item" ORDER BY "name" ASC`,
     prisma.$queryRaw<SnapshotRaw[]>`
@@ -174,7 +152,6 @@ export async function getMarketUniverse(): Promise<MarketHistory[]> {
     createdAt: toDate(i.created_at),
     updatedAt: toDate(i.updated_at),
     med7Info: med7s.get(Number(i.item_id)),
-    ladder: ladderByItem.get(Number(i.item_id)),
     snapshots: (snapsByItem.get(Number(i.item_id)) ?? []).map((s) => ({
       id: s.id,
       itemId: Number(s.item_id),
@@ -248,152 +225,22 @@ export async function getItemMetaVersion(): Promise<number> {
   return row._max.updatedAt?.getTime() ?? 0;
 }
 
-// M2 跨市场倒卖：联盟/中立各自最新一轮快照的配对输入。返回两侧原始快照
-// + Item 元数据；页面用 buildCrossMarketRows + attachItemMeta 计算指标。
-// 任一方还没有扫描时返回空数组（页面提示去扫描），绝不编造价格。
-export async function getCrossMarketSides(): Promise<{
-  factionAt: Date | null;
-  neutralAt: Date | null;
-  faction: CrossMarketSide[];
-  neutral: CrossMarketSide[];
-  items: Array<{ itemId: number; name: string; quality: string; category: string; subCategory: string; icon: string | null }>;
-}> {
-  const [fLatest, nLatest] = await Promise.all([
-    prisma.auctionSnapshot.findFirst({ where: { market: "faction" }, orderBy: { timestamp: "desc" }, select: { timestamp: true } }),
-    prisma.auctionSnapshot.findFirst({ where: { market: "neutral" }, orderBy: { timestamp: "desc" }, select: { timestamp: true } })
-  ]);
-  if (!fLatest || !nLatest) {
-    return {
-      factionAt: fLatest?.timestamp ?? null,
-      neutralAt: nLatest?.timestamp ?? null,
-      faction: [],
-      neutral: [],
-      items: []
-    };
-  }
-  const [fSnaps, nSnaps] = await Promise.all([
-    prisma.auctionSnapshot.findMany({
-      where: { market: "faction", timestamp: fLatest.timestamp },
-      select: { itemId: true, marketPrice: true, minPrice: true, quantity: true, numAuctions: true, rawPayload: true }
-    }),
-    prisma.auctionSnapshot.findMany({
-      where: { market: "neutral", timestamp: nLatest.timestamp },
-      select: { itemId: true, marketPrice: true, minPrice: true, quantity: true, numAuctions: true, rawPayload: true }
-    })
-  ]);
-  const itemIds = [...new Set([...fSnaps.map((snap) => snap.itemId), ...nSnaps.map((snap) => snap.itemId)])];
-  const items = await prisma.item.findMany({
-    where: { itemId: { in: itemIds } },
-    select: { itemId: true, name: true, quality: true, category: true, subCategory: true, icon: true }
-  });
-  const mapSnap = (snap: { itemId: number; marketPrice: bigint; minPrice: bigint; quantity: number; numAuctions: number; rawPayload: unknown }, at: Date): CrossMarketSide => ({
-    itemId: snap.itemId,
-    marketPrice: Number(snap.marketPrice),
-    minPrice: Number(snap.minPrice),
-    ladderFloor: ladderFloorOfPayload(snap.rawPayload),
-    quantity: Number(snap.quantity),
-    numAuctions: Number(snap.numAuctions),
-    timestamp: at
-  });
-  return {
-    factionAt: fLatest.timestamp,
-    neutralAt: nLatest.timestamp,
-    faction: fSnaps.map((snap) => mapSnap(snap, fLatest.timestamp)),
-    neutral: nSnaps.map((snap) => mapSnap(snap, nLatest.timestamp)),
-    items: items.map((item) => ({
-      itemId: item.itemId,
-      name: item.name,
-      quality: item.quality,
-      category: item.category,
-      subCategory: item.subCategory,
-      icon: item.icon
-    }))
-  };
-}
+// M2 跨市场倒卖与中立市场（/neutral /arbitrage）随中立市场整体下线，相关
+// 查询已归档（archive/lib/cross-market.ts、archive/pages/）。中立/账本数据
+// 不再新进；旧行保留在库中供历史模式展示。
 
-// rawPayload 的 ladder 第 1 档价格（真实买入成本）。Prisma findMany 对
-// Json 列可能返回已反序列化对象，也可能返回字符串，两种形态都处理。
-function ladderFloorOfPayload(payload: unknown): number | null {
-  if (!payload) return null;
-  let raw: unknown = payload;
-  if (typeof payload === "string") {
-    try { raw = JSON.parse(payload); } catch { return null; }
-  }
-  const ladder = (raw as { ladder?: Array<{ price: number }> } | null)?.ladder;
-  if (!Array.isArray(ladder) || ladder.length === 0) return null;
-  const price = Number(ladder[0].price);
-  return Number.isFinite(price) ? Math.round(price) : null;
-}
-
-// The neutral (goblin trade camp) market's latest round: every listed item
-// with its prices and quantities at the most recent neutral scan. Read-only
-// surface for M1 — the neutral book never feeds faction analyses. Returns an
-// empty list until the first neutral scan has been imported.
-export async function getNeutralMarketLatest(): Promise<{
-  scannedAt: Date | null;
-  rows: Array<{
-    itemId: number;
-    name: string;
-    quality: string;
-    category: string;
-    subCategory: string;
-    icon: string | null;
-    minPrice: number;
-    marketPrice: number;
-    quantity: number;
-    numAuctions: number;
-  }>;
-}> {
+// 最新一轮 Auctionator 扫描的物品宇宙。雷达的 universe 与游戏内当前在售
+// 一致：没有数据源的物品不能被买入，也不应作为捡漏推荐。返回 null 表示
+// 尚无 Auctionator 快照——雷达此时无宇宙、保持空态。
+export async function getLatestRoundItemIds(): Promise<Set<number> | null> {
   const latest = await prisma.auctionSnapshot.findFirst({
-    where: { market: "neutral" },
-    orderBy: { timestamp: "desc" },
-    select: { timestamp: true }
-  });
-  if (!latest) return { scannedAt: null, rows: [] };
-  const snaps = await prisma.auctionSnapshot.findMany({
-    where: { market: "neutral", timestamp: latest.timestamp },
-    select: { itemId: true, minPrice: true, marketPrice: true, quantity: true, numAuctions: true }
-  });
-  const items = await prisma.item.findMany({
-    where: { itemId: { in: snaps.map((snap) => snap.itemId) } },
-    select: { itemId: true, name: true, quality: true, category: true, subCategory: true, icon: true }
-  });
-  const byId = new Map(items.map((item) => [item.itemId, item]));
-  return {
-    scannedAt: latest.timestamp,
-    rows: snaps.map((snap) => {
-      const item = byId.get(snap.itemId);
-      return {
-        itemId: snap.itemId,
-        name: item?.name ?? `Item ${snap.itemId}`,
-        quality: item?.quality ?? "unknown",
-        category: item?.category ?? "unknown",
-        subCategory: item?.subCategory ?? "unknown",
-        icon: item?.icon ?? null,
-        minPrice: Number(snap.minPrice),
-        marketPrice: Number(snap.marketPrice),
-        quantity: Number(snap.quantity),
-        numAuctions: Number(snap.numAuctions)
-      };
-    })
-  };
-}
-
-// The item universe of the latest in-game scan round. The addon only ever
-// iterates the items it just scanned, so the terminal's deal radar must do
-// the same: an item the game is not currently listing cannot be bought, and
-// offering it as a deal would promise a trade that does not exist. Returns
-// null when no addon scan has ever been imported — the radar then has no
-// universe and stays empty.
-export async function getLatestAddonRoundItemIds(): Promise<Set<number> | null> {
-  const latest = await prisma.auctionSnapshot.findFirst({
-    where: { source: "addon", market: "faction" },
+    where: { source: "auctionator", market: "faction" },
     orderBy: { timestamp: "desc" },
     select: { timestamp: true }
   });
   if (!latest) return null;
   const rows = await prisma.auctionSnapshot.findMany({
-    where: { source: "addon", market: "faction", timestamp: latest.timestamp },
+    where: { source: "auctionator", market: "faction", timestamp: latest.timestamp },
     select: { itemId: true }
   });
   return new Set(rows.map((row) => row.itemId));
@@ -406,6 +253,24 @@ export async function getLatestAddonRoundItemIds(): Promise<Set<number> | null> 
 export async function getRadarRules(): Promise<unknown> {
   const row = await prisma.radarRule.findFirst({ orderBy: { updatedAt: "desc" } });
   return row?.rules ?? null;
+}
+
+// 按 itemId 批量取每个物品最新快照的市场价（Auctionator m，即最低买入价）。
+// 配方利润只需要这些价，不需要全市场信号。
+export async function getLatestPricesByItemIds(itemIds: number[]): Promise<Map<number, number>> {
+  if (itemIds.length === 0) return new Map();
+  const rows = await prisma.$queryRaw<Array<{ itemId: bigint | number; marketPrice: bigint | number }>>`
+    WITH ranked AS (
+      SELECT "item_id" AS "itemId", "market_price" AS "marketPrice",
+             ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "timestamp" DESC) AS rn
+      FROM "AuctionSnapshot"
+      WHERE "source" = 'auctionator' AND "item_id" IN (${Prisma.join(itemIds)})
+    )
+    SELECT "itemId", "marketPrice" FROM ranked WHERE rn = 1
+  `;
+  const out = new Map<number, number>();
+  for (const r of rows) out.set(Number(r.itemId), toNumber(r.marketPrice));
+  return out;
 }
 
 // P0-B: the recipe library. category filters "craft" (professional crafts,
@@ -474,24 +339,6 @@ export async function getRecipesProducing(itemId: number): Promise<DbRecipe[]> {
   return rows.map(mapRecipeRow);
 }
 
-// 按 itemId 批量取每个物品最新 addon 快照的市场价（P10，与 buildMarketSignal
-// 的 price 口径一致）。配方利润只需要这些价，不需要全市场信号。
-export async function getLatestAddonPricesByItemIds(itemIds: number[]): Promise<Map<number, number>> {
-  if (itemIds.length === 0) return new Map();
-  const rows = await prisma.$queryRaw<Array<{ itemId: bigint | number; marketPrice: bigint | number }>>`
-    WITH ranked AS (
-      SELECT "item_id" AS "itemId", "market_price" AS "marketPrice",
-             ROW_NUMBER() OVER (PARTITION BY "item_id" ORDER BY "timestamp" DESC) AS rn
-      FROM "AuctionSnapshot"
-      WHERE "source" = 'addon' AND "item_id" IN (${Prisma.join(itemIds)})
-    )
-    SELECT "itemId", "marketPrice" FROM ranked WHERE rn = 1
-  `;
-  const out = new Map<number, number>();
-  for (const r of rows) out.set(Number(r.itemId), toNumber(r.marketPrice));
-  return out;
-}
-
 // 按 itemId 批量取 NPC 保底价（Item.vendorPrice > 0），供配方利润引擎兜底。
 export async function getItemVendorPricesByIds(itemIds: number[]): Promise<Map<number, number>> {
   if (itemIds.length === 0) return new Map();
@@ -502,9 +349,9 @@ export async function getItemVendorPricesByIds(itemIds: number[]): Promise<Map<n
   return new Map(rows.map((row) => [row.itemId, Number(row.vendorPrice)]));
 }
 
-// Vendor floors the import pipeline picked up from the addon scan channel
-// (Item.vendorPrice, currently populated from classic-era vendor data); the
-// profit engine merges them under the addon-dumped recipe vendorP.
+// Vendor floors picked up from the Auctionator VENDOR_PRICE_CACHE channel
+// (Item.vendorPrice, silver→copper converted at import); the profit engine
+// merges them under the recipe vendorP floor.
 export async function getItemVendorPrices(): Promise<Map<number, number>> {
   const rows = await prisma.item.findMany({
     where: { vendorPrice: { gt: 0 } },

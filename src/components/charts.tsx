@@ -21,7 +21,7 @@ const tooltipPanelStyle: CSSProperties = {
   fontSize: 11,
 };
 
-type IntradayPoint = { ts: number; price?: number; alt?: number; volume?: number };
+type IntradayPoint = { ts: number; price?: number; alt?: number; low?: number; high?: number; volume?: number };
 
 const formatClock = (ts: number) => {
   const date = new Date(ts);
@@ -30,12 +30,11 @@ const formatClock = (ts: number) => {
 
 // Time-proportional X axis: gaps in scanning render as real gaps, so
 // the trend shape is honest about when data actually exists. `series`
-// defines one price line per data channel ("price" = primary/latest source,
-// "alt" = the other channel), so the addon P10 and the website median can
-// sit on the same chart without blending.
+// defines one price line per data key ("price"/"alt" for intraday P10/P50,
+// "low"/"high" for daily 最低/最高双线 etc.).
 export function TimeSeriesChart({ data, series, height = 280 }: {
   data: IntradayPoint[];
-  series: Array<{ key: "price" | "alt"; color: string; name: string }>;
+  series: Array<{ key: string; color: string; name: string }>;
   height?: number;
 }) {
   return (

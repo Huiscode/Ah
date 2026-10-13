@@ -19,16 +19,15 @@ import { ItemIcon } from "@/components/item-icon";
 import { ProductBadge } from "@/components/product-badge";
 import { usePersistedState } from "@/lib/use-persisted-state";
 
-// 列结构与上方捡漏雷达一致（★/物品/最低价/市场价/7日参考/折扣%/环比%/在售量/挂单数），
+// 列结构与上方捡漏雷达一致（★/物品/最低价/最低买入/7日参考/折扣%/环比%/在售量），
 // 上下对齐；流通分徽章并入物品列，配色规则见 lib/turnover.ts。
 const sortableColumns: Array<{ key: SignalSortKey; heading: string }> = [
   { key: "minPrice", heading: "最低价" },
-  { key: "price", heading: "市场价" },
+  { key: "price", heading: "最低买入" },
   { key: "med7", heading: "7日参考" },
   { key: "discountPercent", heading: "折扣%" },
   { key: "changePercent", heading: "环比%" },
-  { key: "quantity", heading: "在售量" },
-  { key: "numAuctions", heading: "挂单数" }
+  { key: "quantity", heading: "在售量" }
 ];
 
 export function MarketTable({ rows, watchedItemIds, view, categories, totalCount, filteredCount, page, pageCount, productItemIds }: {
@@ -170,7 +169,6 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
             <col className="w-[140px]" />
             <col className="w-[96px]" />
             <col className="w-[96px]" />
-            <col className="w-[96px]" />
           </colgroup>
           <thead className="bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
             <tr>
@@ -207,7 +205,6 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                 <td className={signal.discountPercent >= 15 ? "px-3 py-2 text-right text-terminal-green" : "px-3 py-2 text-right text-slate-300"}>{signal.discountPercent.toFixed(0)}%</td>
                 <td className={"px-3 py-2 text-right " + trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</td>
                 <td className="px-3 py-2 text-right text-slate-300">{signal.quantity.toLocaleString("en-US")}</td>
-                <td className="px-3 py-2 text-right text-slate-300">{signal.numAuctions.toLocaleString("en-US")}</td>
               </tr>
             ))}
           </tbody>

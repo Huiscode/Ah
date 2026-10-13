@@ -1,20 +1,19 @@
-import { ArrowLeftRight, Bell, Hammer, RadioTower, Star } from "lucide-react";
+import { Bell, Hammer, RadioTower, Star } from "lucide-react";
 import { buildDealRadar } from "@/lib/analytics";
 import { evaluateAlertRules } from "@/lib/alerts";
 import { buildFloorPriceIndex, computeRecipeProfits } from "@/lib/recipe-profits";
 import { buildSecondaryMaterialRows } from "@/lib/secondary-materials";
-import { mergeRadarRules } from "@/lib/market-rules";
+import { dealRadarRules } from "@/lib/market-rules";
 import {
   getAlertRules,
   getItemVendorPrices,
-  getLatestAddonRoundItemIds,
+  getLatestRoundItemIds,
   getLatestSnapshotTime,
-  getRadarRules,
   getRecipes,
   getWatchedItemIds
 } from "@/lib/repositories";
 import { getMarketSignals } from "@/lib/market-signals";
-import { describeFreshness } from "@/lib/freshness";
+import { AUCTIONATOR_STALE_MAX_AGE_MS, describeFreshness } from "@/lib/freshness";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
 import { groupedCategoryOptions } from "@/lib/category-zh";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
@@ -27,7 +26,6 @@ import { WatchStar } from "@/components/watch-star";
 import { DealRadarTable } from "@/components/deal-radar-table";
 import { SecondaryMaterialsPanel } from "@/components/secondary-materials-panel";
 
-import { PriceLadderPanel } from "@/components/price-ladder-panel";
 import { FavoriteRecipesPanel } from "@/components/favorite-recipes-panel";
 import { InstructionsPanel } from "@/components/instructions-panel";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -37,42 +35,33 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // Chinese labels for the alert metrics surfaced on the dashboard; kept in
   // sync with components/trader-panels.tsx.
   const alertMetricLabels: Record<string, string> = {
-    price: "市场价",
+    price: "最低买入价",
     minPrice: "最低价",
     med7: "7日参考",
     discountPercent: "折扣%",
     quantity: "在售量"
   };
   const view = parseMarketView(await searchParams);
-  const [{ signals, latestSnapshotAt }, watchedIds, alertRules, storedRules, latestAddonRound, recipes, vendorPrices, neutralSnapshotAt] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, watchedIds, alertRules, latestRound, recipes, vendorPrices] = await Promise.all([
     getMarketSignals(),
     getWatchedItemIds(),
     getAlertRules(),
-    getRadarRules(),
-    getLatestAddonRoundItemIds(),
+    // 雷达 universe：最新一轮 Auctionator 扫描的在售物品集合。
+    getLatestRoundItemIds(),
     // 关注配方面板展示配方库中被收藏的配方（craft + merchant 全量，
     // 面板按收藏过滤；收藏在 /recipes 配方库页设置）。
     getRecipes(),
-    getItemVendorPrices(),
-    // 中立（三角路口营地）市场的新鲜度：独立于联盟主城市场展示，只读，
-    // 不参与任何联盟分析。
-    getLatestSnapshotTime("neutral")
+    getItemVendorPrices()
   ]);
-  const freshness = describeFreshness(latestSnapshotAt, new Date());
-  const neutralFreshness = describeFreshness(neutralSnapshotAt, new Date());
+  const freshness = describeFreshness(latestSnapshotAt, new Date(), AUCTIONATOR_STALE_MAX_AGE_MS);
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
   const triggeredAlerts = evaluateAlertRules(alertRules, signals);
-  // Route 2: the in-game options panel owns the radar thresholds; each scan
-  // import replays them here, so this page renders deals with exactly the
-  // rules the addon used. Without a stored override the compiled defaults
-  // apply.
-  const radarRules = mergeRadarRules(storedRules);
+  // 雷达阈值：网页侧常量（market-rules.ts）——插件下线后无游戏内权威面板。
+  const radarRules = dealRadarRules;
   const allDeals = buildDealRadar(signals, radarRules);
-  // The in-game scan round owns the radar's universe: the addon only ever
-  // iterates the items it just scanned, so the terminal must not offer deals
-  // for items the game is not currently listing — a stale row cannot be
-  // bought in game. With no addon scan at all the radar has no universe.
-  const deals = latestAddonRound === null ? allDeals : allDeals.filter((deal) => latestAddonRound.has(deal.itemId));
+  // 最新 Auctionator 扫描轮 owns the radar's universe: 只推荐游戏内当前在售
+  // 的物品——旧行无法在游戏里买到。无 Auctionator 数据时雷达保持空态。
+  const deals = latestRound === null ? allDeals : allDeals.filter((deal) => latestRound.has(deal.itemId));
   const radarCategories = groupedCategoryOptions(Array.from(new Set(deals.map((deal) => deal.category))));
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
   const turnoverByItemId = new Map(signals.map((signal) => [signal.itemId, signal.turnoverScore]));
@@ -106,13 +95,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
             <RadioTower size={14} /> 联盟·数据更新于 {freshness.label}
           </span>
-          <span className={neutralFreshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
-            <RadioTower size={14} /> 中立·{neutralSnapshotAt === null ? "无数据" : `更新于 ${neutralFreshness.label}`}
-          </span>
-          <Link href="/neutral" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><RadioTower size={14} /> 中立市场</Link>
-          <Link href="/arbitrage" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ArrowLeftRight size={14} /> 跨市场</Link>
           <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><Hammer size={14} /> 配方库</Link>
-          <Link href="/ledger" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ArrowLeftRight size={14} /> 成交账本</Link>
           <span className="flex items-center gap-1"><Bell size={14} /> 预警就绪</span>
         </div>
       </div>
@@ -120,11 +103,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · 必赚 + 最低价 vs 7日参考价（自扫P10）</span>} />
+            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · 必赚 + 最低买入价 vs 7日参考价</span>} />
             <div className="p-3 font-mono text-xs">
               {deals.length === 0 ? (
                 <div className="text-terminal-muted">
-                  {signals.length === 0 ? "暂无市场数据。进游戏 /wahscan 扫描。" : "当前没有满足流动性与利润门槛的捡漏挂单。"}
+                  {signals.length === 0 ? "暂无市场数据。请在游戏内用 Auctionator 全量扫描拍卖行（每次进入拍卖行时），然后重跑导入。" : "当前没有满足利润与参考价门槛的捡漏挂单。"}
                 </div>
               ) : (
                 <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} productItemIds={productItemIds} />
@@ -148,7 +131,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         </div>
         <div className="space-y-3">
           <SecondaryMaterialsPanel rows={secondaryRows} prices={priceByItemId} floorPrices={floorPriceIndex} turnoverByItemId={turnoverByItemId} />
-          <PriceLadderPanel />
           <FavoriteRecipesPanel rows={recipeRows} prices={priceByItemId} floorPrices={floorPriceIndex} />
           <Panel>
             <PanelHeader title="关注物品" action={<Star size={13} className="text-terminal-amber" />} />
@@ -173,7 +155,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       </div>
       <InstructionsPanel />
       <footer className="mt-3 border border-terminal-border bg-terminal-panel px-4 py-2 font-mono text-[10px] leading-relaxed text-terminal-muted">
-        数据来源：游戏内插件扫描（自扫 · 7日P10 口径；P50 为同源展示曲线，不参与参考价计算）。扫描数据即时回传，参考价统一按 P10 口径计算。
+        数据来源：Auctionator 插件（Forever 客户端适配版）SavedVariables 导入——价格口径 = 最低买入价（m）；7日参考 = 近 7 日每日收盘的中位数。旧 Beta 版自研插件数据（P10）保留在库中，供历史模式参考。
       </footer>
     </main>
   );

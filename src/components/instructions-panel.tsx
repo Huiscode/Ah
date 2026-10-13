@@ -21,12 +21,10 @@ export function InstructionsPanel() {
             <div>
               <div className="mb-1 text-terminal-amber">▍页面板块</div>
               <ul className="space-y-1 list-disc pl-4">
-                <li><b>捡漏雷达</b>：当前最低价低于 7 日参考价的物品，低买信号。按流通分排序，卖得快的排前面。</li>
+                <li><b>捡漏雷达</b>：最低买入价低于 7 日参考价的物品，低买信号。按流通分排序，卖得快的排前面。</li>
                 <li><b>市场监控</b>：所有扫描物品的实时行情，点 ☆ 加入关注。</li>
-                <li><b>价格档位</b>：鼠标悬停物品名时显示该物品各档报价和数量。</li>
-                <li><b>雷达参数</b>：捡漏筛选条件（折扣%、价格上下限、断层%），勾选"本地"后只对当前数据库生效。</li>
                 <li><b>制造利润</b>：矿石→锭、布→卷等加工品的利润，按材料成本 vs 成品售价算。</li>
-                <li><b>成交账本</b>：自动记录你通过插件买入/卖出的物品，FIFO 算盈亏。</li>
+                <li><b>配方库</b>：全部专业配方与商人兑换，按利润率排序；拍卖行无价/无记录的标"缺货"。</li>
               </ul>
             </div>
             <div>
@@ -38,10 +36,8 @@ export function InstructionsPanel() {
                 <li><span className="text-slate-400">灰色 &lt;15</span>：冷门，压货风险</li>
                 <li><span className="text-terminal-red">已自动过滤</span>：空瓶/染料/细线等 NPC 常驻出售品，AH 价不会超过 NPC 价，不适合捡漏。</li>
               </ul>
-              <div className="mt-2 mb-1 text-terminal-amber">▍刷新数据</div>
-              <p>游戏内输入 <code className="bg-terminal-panel2 px-1 text-terminal-green">/wahscan</code> 扫描拍卖行，网页端会自动接收。买入/卖出后成交账本自动更新。</p>
-              <div className="mt-2 mb-1 text-terminal-amber">▍买入</div>
-              <p>在捡漏雷达或市场监控中点物品旁的买入按钮，输入数量确认即可。装备类（非商品）会弹确认框，再点一次确认完成。</p>
+              <div className="mt-2 mb-1 text-terminal-amber">▍数据口径</div>
+              <p>价格 = Auctionator 插件记录的<b>最低买入价</b>（m）。进入游戏拍卖行时保持 Auctionator 全量扫描，然后运行导入脚本，网页即更新。7 日参考 = 近 7 日每日收盘中位数。</p>
             </div>
           </div>
         </div>

@@ -1,9 +1,9 @@
 import type { MarketSignal } from "@/lib/analytics";
 import { categoryMatches, MATERIALS_GROUP } from "@/lib/category-zh";
 
-export type SignalSortKey = "turnoverScore" | "price" | "minPrice" | "med7" | "discountPercent" | "changePercent" | "quantity" | "numAuctions";
+export type SignalSortKey = "turnoverScore" | "price" | "minPrice" | "med7" | "discountPercent" | "changePercent" | "quantity";
 
-const SORT_KEYS: readonly SignalSortKey[] = ["turnoverScore", "price", "minPrice", "med7", "discountPercent", "changePercent", "quantity", "numAuctions"];
+const SORT_KEYS: readonly SignalSortKey[] = ["turnoverScore", "price", "minPrice", "med7", "discountPercent", "changePercent", "quantity"];
 
 export type MarketView = { query: string; category: string; sortKey: SignalSortKey; sortAsc: boolean; page: number };
 

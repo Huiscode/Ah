@@ -1,10 +1,11 @@
 import type { AuctionSnapshot, DailySummary, Item } from "@prisma/client";
 
-// Data channel of a price row. "addon" = the in-game plugin's own scan
-// (P10 marketPrice + display-only P50 altPrice). The website channel
-// (AHledger) was removed; the union stays so legacy rows in the store
-// remain typeable until purged.
-export type SnapshotSource = "addon" | "ahledger";
+// Data channel of a price row. "auctionator" = the Auctionator addon's own
+// price database (m = 最低买入价, imported from its SavedVariables). "addon"
+// = the legacy in-house plugin's scan (P10 marketPrice + display-only P50
+// altPrice) — kept typeable so historical rows remain readable in 历史模式;
+// it is no longer produced.
+export type SnapshotSource = "addon" | "auctionator";
 
 export type ItemWithHistory = Item & {
   snapshots: AuctionSnapshot[];
@@ -23,9 +24,6 @@ export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt"> & {
   // present and fall back to snapshot-based math only for hand-built
   // fixtures.
   med7Info?: { med7: number; samples: number; distinct: number };
-  // 最新扫描轮的挂单档位价格（rawPayload.ladder 前 3 档，从低到高；
-  // 缺档时数组较短）。价格档位面板与雷达"价位1/2/3 价差%"筛选共用。
-  ladder?: number[];
   // source is a string (Prisma type) rather than the SnapshotSource union so
   // both DB rows (source: string) and hand-built test fixtures (no source)
   // assign cleanly; consumers narrow with snapshotSource() in analytics.

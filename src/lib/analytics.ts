@@ -1,7 +1,8 @@
-// Snapshot-based market signals. Every statistic here follows the same
-// philosophy as the in-game scanner: medians and percentiles over raw
-// snapshots, never means over daily aggregates — means inherit every
-// bait listing, and daily closes erase the hourly structure of the AH.
+// Snapshot-based market signals. Statistics follow the Auctionator data
+// model: the latest snapshot's m (最低买入价) is the current price; the 7-day
+// reference (med7) is the median of recent DailySummary closes on the same
+// source channel — never a blend of the legacy addon P10 and the new
+// auctionator lowest-buy channel.
 import type { MarketHistory, SnapshotSource } from "@/lib/market-data";
 import { dealRadarRules, AH_CUT, type DealRadarRules } from "@/lib/market-rules";
 import { isStale } from "@/lib/freshness";
@@ -12,21 +13,20 @@ export type MarketSignal = {
   category: string;
   quality: string;
   icon?: string | null; // in-game icon texture name, when known
-  source?: SnapshotSource; // channel of the latest snapshot; only "addon" is produced now
-  price: number; // latest snapshot's P10 unit price, copper
-  minPrice: number; // latest scan's minimum listed unit price
+  source?: SnapshotSource; // channel of the latest snapshot; "auctionator" is produced now
+  price: number; // latest snapshot's 最低买入价 (Auctionator m), copper
+  minPrice: number; // latest snapshot's minimum listed unit price (= m)
   quantity: number; // latest scan's listed quantity (supply, NOT sales)
-  numAuctions: number;
+  numAuctions: number; // Auctionator 无挂单数 → 恒 0，仅保留字段兼容旧数据
   vendorPrice: number; // NPC sell price, copper; 0 = unsellable
-  med7: number; // median snapshot close over the last 7 days, SAME source only
-  med7Samples: number; // same-source snapshots inside the 7d window backing med7
+  med7: number; // 7-day median of DailySummary closes, SAME source only
+  med7Samples: number; // same-source days inside the 7d window backing med7
   med7Distinct: number; // distinct closes in that window; 1 = flat series
-  discountPercent: number; // how far the current min sits below med7
-  changePercent: number; // latest close vs the previous same-source close
+  discountPercent: number; // how far the current price sits below med7
+  changePercent: number; // latest daily close vs the previous same-source close
   latestAt: Date; // timestamp of the latest observation backing this signal
   turnoverScore: number; // #recipes that use this item as a reagent (higher = faster turnover)
   isVendorItem: boolean; // true = NPC sells this container/consumable (bottles, dyes, thread)
-  ladder?: number[]; // latest scan's listed-price tiers (rawPayload.ladder 前 3 档, low→high)
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -38,7 +38,7 @@ function median(values: number[]): number {
 }
 
 function snapshotSource(snapshot: { source?: string }): SnapshotSource {
-  return snapshot.source === "ahledger" ? "ahledger" : "addon";
+  return snapshot.source === "addon" ? "addon" : "auctionator";
 }
 
 export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal {
@@ -48,18 +48,15 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
   }
   const latest = snapshots[snapshots.length - 1];
   const source = snapshotSource(latest);
-  // All statistics are scoped to the latest snapshot's channel: only the
-  // addon channel is produced now, but legacy ahledger rows may still sit
-  // in the window until purged, and mixing metrics inside one med7 window
-  // would fabricate a reference no single observation ever produced.
-  const sameSource = snapshots.filter((snapshot) => snapshotSource(snapshot) === source);
-  const previous = sameSource[sameSource.length - 2];
-  // med7Info is the repository-level SQL aggregate over ALL same-source
-  // snapshots in the 7d window. The snapshots array here is truncated for
-  // chart rendering (48 rows on the homepage universe, 96 on the item page),
-  // so recomputing med7 from it would vary with the truncation depth; use
-  // the aggregate when present, fall back to snapshot math only for
-  // hand-built fixtures that carry no med7Info.
+  // 走势与参考价来自 DailySummary（Auctionator 每日一轮收盘），与最新
+  // 快照同 source。legacy addon 行不混入：同一 med7 窗口绝不混合两种口径。
+  const daily = [...(item.dailySummaries ?? [])]
+    .filter((summary) => snapshotSource(summary) === source)
+    .sort((left, right) => left.date.getTime() - right.date.getTime());
+  const previousDaily = daily[daily.length - 2];
+  // med7Info 是仓储层 SQL 聚合（近 7 日 daily close 中位数）。快照数组在
+  // 首页被截断（48 行），从它重算会随截断深度漂移；优先用聚合，仅手搭
+  // fixture（无 med7Info）回退到本地的 daily 计算。
   let med7: number;
   let med7Samples: number;
   let med7Distinct: number;
@@ -69,9 +66,9 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
     med7Distinct = item.med7Info.distinct;
   } else {
     const windowStart = now.getTime() - MED_WINDOW_DAYS * DAY_MS;
-    const windowPrices = sameSource
-      .filter((snapshot) => snapshot.timestamp.getTime() >= windowStart)
-      .map((snapshot) => snapshot.marketPrice);
+    const windowPrices = daily
+      .filter((summary) => summary.date.getTime() >= windowStart)
+      .map((summary) => summary.closePrice);
     med7 = windowPrices.length > 0 ? median(windowPrices) : latest.marketPrice;
     med7Samples = windowPrices.length;
     med7Distinct = new Set(windowPrices).size;
@@ -91,12 +88,11 @@ export function buildMarketSignal(item: MarketHistory, now: Date): MarketSignal 
     med7,
     med7Samples,
     med7Distinct,
-    discountPercent: med7 > 0 ? (1 - latest.minPrice / med7) * 100 : 0,
-    changePercent: previous && previous.marketPrice > 0 ? ((latest.marketPrice - previous.marketPrice) / previous.marketPrice) * 100 : 0,
+    discountPercent: med7 > 0 ? (1 - latest.marketPrice / med7) * 100 : 0,
+    changePercent: previousDaily && previousDaily.closePrice > 0 ? ((latest.marketPrice - previousDaily.closePrice) / previousDaily.closePrice) * 100 : 0,
     latestAt: latest.timestamp,
     turnoverScore: item.turnoverScore ?? 0,
-    isVendorItem: item.isVendorItem ?? false,
-    ladder: item.ladder
+    isVendorItem: item.isVendorItem ?? false
   };
 }
 
@@ -106,37 +102,35 @@ export type DealRadarRow = {
   quality: string;
   category: string;
   icon?: string | null; // in-game icon texture name, when known
-  source?: SnapshotSource; // channel backing this deal's reference (P10 or median); absent = addon
+  source?: SnapshotSource; // channel backing this deal's reference; absent = auctionator
   minPrice: number;
   reference: number; // vendorPrice for vendor deals, med7 otherwise
-  profit: number; // copper spread between reference and current min
+  profit: number; // copper spread between reference and current price
   vendor: boolean;
   discountPercent: number;
   changePercent: number;
   quantity: number;
   numAuctions: number;
   turnoverScore: number; // #recipes that use this item as reagent; higher = faster sell-through
-  ladder?: number[]; // latest scan's listed-price tiers (rawPayload.ladder 前 3 档, low→high)
 };
 
-// Deal radar, mirroring addon/WoWderhoiAH/Trade.lua refreshDeals: the two
-// implementations must classify the same scan identically or the terminal
-// promises deals the in-game buy list can't deliver. Both read the same
-// thresholds; defaults come from the single source of truth
-// (src/lib/market-rules.ts) and route-2 overrides arrive with each scan
-// import (the in-game panel is the authority).
+// Deal radar. 口径 = Auctionator 最低买入价：
+//   必赚（NPC 倒卖）：v[ NPC 卖价] > m[当前最低买入价]——NPC 必收，零风险。
+//   捡漏：m ≤ 7日参考(med7) × discount，且满足绝对利润/利润率/历史深度/
+//         参考可信度门槛。Auctionator 无挂单数（numAuctions 恒 0），
+//         因此原"挂单数 ≥ N"流动性门删除（用户选择先观察，不加替代门槛）。
+// 门槛来源：网页侧常量（market-rules.ts）——插件下线后不再有游戏内权威
+// 面板同步。
 export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = dealRadarRules, now: Date = new Date()): DealRadarRow[] {
   const {
     minProfit: RADAR_MIN_PROFIT,
     minProfitRatio: RADAR_MIN_PROFIT_RATIO,
     discount: RADAR_DISCOUNT,
-    minAuctions: RADAR_MIN_AUCTIONS,
     minHistory: RADAR_MIN_HISTORY,
     minMed7Distinct: RADAR_MIN_MED7_DISTINCT,
     maxDiscount: RADAR_MAX_DISCOUNT,
     supplyCap: RADAR_SUPPLY_CAP
   } = rules;
-  const minAuctionsGate = RADAR_MIN_AUCTIONS;
   const deals: DealRadarRow[] = [];
   for (const signal of signals) {
     // Skip NPC-sold containers/consumables (empty vials, lead vials, dyes,
@@ -144,13 +138,13 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
     // never makes money; the radar should never surface them.
     if (signal.isVendorItem) continue;
     // Freshness gate: skip deals whose latest observation is older than the
-    // 2h stale window, so the radar never points at a price that already moved.
+    // stale window (Auctionator 扫描是手动全量，窗口放宽到 7 天），雷达
+    // 不指向已经移动的价格。
     if (isStale(signal.latestAt, now)) continue;
     // Class 1: vendor arbitrage. Listed below the NPC sell price is a
     // guaranteed profit with zero market risk — no history needed, and no
     // profit floor either: the NPC always buys, so even a 1c spread is
-    // free money the moment you're already at the AH. Only addon scans
-    // carry vendor prices, so vendor deals are inherently addon-sourced.
+    // free money the moment you're already at the AH.
     if (signal.vendorPrice > 0 && signal.minPrice > 0 && signal.minPrice < signal.vendorPrice) {
       deals.push({
         itemId: signal.itemId,
@@ -158,7 +152,7 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         quality: signal.quality,
         category: signal.category,
         icon: signal.icon,
-        source: "addon",
+        source: "auctionator",
         minPrice: signal.minPrice,
         reference: signal.vendorPrice,
         profit: signal.vendorPrice - signal.minPrice,
@@ -167,19 +161,14 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         changePercent: signal.changePercent,
         quantity: signal.quantity,
         numAuctions: signal.numAuctions,
-        turnoverScore: signal.turnoverScore,
-        ladder: signal.ladder
+        turnoverScore: signal.turnoverScore
       });
-    // Class 2: median discount. Requires history depth (3+ scans) AND a
-    // live market (3+ auctions) AND a worthwhile absolute spread —
-    // otherwise the list fills with illiquid junk nobody ever buys. The
-    // last two conditions distrust med7 itself: a flat series is one
+    // Class 2: median discount. Requires history depth (3+ days) AND a
+    // worthwhile absolute spread — otherwise the list fills with illiquid
+    // junk nobody ever buys. med7 credibility guards: a flat series is one
     // camper's ask, and a discount past the cap means the reference broke,
     // not that the listing is cheap. Neither applies to vendor deals above.
-    // Optional liquidity gates A (supply shrinking) and C (supply cap)
-    // tighten the pool when enabled; both only ever filter, never reorder.
     } else if (signal.med7Samples >= RADAR_MIN_HISTORY && signal.med7 > 0 && signal.minPrice > 0
-      && signal.numAuctions >= minAuctionsGate
       && signal.med7 * (1 - AH_CUT) - signal.minPrice >= RADAR_MIN_PROFIT
       && signal.med7 * (1 - AH_CUT) - signal.minPrice >= signal.med7 * (1 - AH_CUT) * RADAR_MIN_PROFIT_RATIO
       && signal.minPrice <= signal.med7 * RADAR_DISCOUNT
@@ -201,8 +190,7 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         changePercent: signal.changePercent,
         quantity: signal.quantity,
         numAuctions: signal.numAuctions,
-        turnoverScore: signal.turnoverScore,
-        ladder: signal.ladder
+        turnoverScore: signal.turnoverScore
       });
     }
   }

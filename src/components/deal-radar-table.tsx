@@ -15,11 +15,11 @@ import { categoryLabel, categoryMatches } from "@/lib/category-zh";
 import type { DealRadarRow } from "@/lib/analytics";
 import { usePersistedState } from "@/lib/use-persisted-state";
 
-type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" | "changePercent" | "quantity" | "numAuctions";
+type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" | "changePercent" | "quantity";
 
 // Deal radar as a table that mirrors the market monitor's column skeleton
-// (leading spacer, item, P10, min price, 7d-P10 median, discount) so the
-// discount column lines up with the market table's discount column below.
+// (leading spacer, item, min price, 7d reference, discount) so the discount
+// column lines up with the market table's discount column below.
 // Headers sort: first click high-to-low, second click low-to-high; without
 // any click the rows keep the radar's own ranking (NPC deals first, then
 // absolute profit).
@@ -35,8 +35,6 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
   const [category, setCategory] = usePersistedState<string>("wah:deal-radar:category", "");
   const [onlyLiquid, setOnlyLiquid] = usePersistedState<boolean>("wah:deal-radar:onlyLiquid", false);
   const [fMinPrice, setFMinPrice] = usePersistedState<number>("wah:filter:minPrice", 0);
-  const [fLadder12, setFLadder12] = usePersistedState<number>("wah:deal-radar:ladder12", 0);
-  const [fLadder23, setFLadder23] = usePersistedState<number>("wah:deal-radar:ladder23", 0);
   const watched = new Set(watchedItemIds);
 
   useEffect(() => {
@@ -49,25 +47,6 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
 
   // 客户端二级筛选：价格下限按最低价。
   if (fMinPrice > 0) rows = rows.filter((d) => d.minPrice >= fMinPrice);
-
-  // 价位阶梯筛选：价位1/2/3 = 最新扫描挂单档位价格（rawPayload.ladder，
-  // 从低到高）。"价位1比价位2低 X%" = 最低档至少比次低档低 X%；
-  // "价位2比价位3低 Y%" = 次低档至少比第三档低 Y%。启用时缺档的行视为不满足。
-  if (fLadder12 > 0) {
-    rows = rows.filter((d) => {
-      const tier = d.ladder;
-      if (!tier || tier.length < 2 || tier[1] <= 0) return false;
-      return tier[0] <= tier[1] * (1 - fLadder12 / 100);
-    });
-  }
-  if (fLadder23 > 0) {
-    rows = rows.filter((d) => {
-      const tier = d.ladder;
-      if (!tier || tier.length < 3 || tier[2] <= 0) return false;
-      return tier[1] <= tier[2] * (1 - fLadder23 / 100);
-    });
-  }
-
 
   // 仅限高流通：只保留有流通分的商品（turnoverScore > 0）。
   if (onlyLiquid) rows = rows.filter((deal) => deal.turnoverScore > 0);
@@ -127,16 +106,6 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
           <span className="text-terminal-muted">价格下限</span>
           <MoneyInput value={fMinPrice} onChange={setFMinPrice} fieldClass={moneyField} />
         </span>
-        <span className="flex items-center gap-1.5 border border-terminal-border/60 bg-terminal-panel2 px-2 py-1" title="0=关：不筛选。价位1/2/3 = 最新扫描挂单档位价（从低到高）；要求最低档(价位1)至少比次低档(价位2)低该百分比，缺档的行被过滤">
-          <span className="text-terminal-muted">价位1比价位2低</span>
-          <input type="number" min={0} max={100} value={fLadder12 || ""} onChange={(event) => setFLadder12(Number(event.target.value) || 0)} className={`${moneyField} w-12`} />
-          <span className="text-terminal-muted">%</span>
-        </span>
-        <span className="flex items-center gap-1.5 border border-terminal-border/60 bg-terminal-panel2 px-2 py-1" title="0=关：不筛选。要求次低档(价位2)至少比第三档(价位3)低该百分比，缺档的行被过滤">
-          <span className="text-terminal-muted">价位2比价位3低</span>
-          <input type="number" min={0} max={100} value={fLadder23 || ""} onChange={(event) => setFLadder23(Number(event.target.value) || 0)} className={`${moneyField} w-12`} />
-          <span className="text-terminal-muted">%</span>
-        </span>
         <span className="ml-auto text-terminal-muted">{rows.length} / {deals.length} 条</span>
       </div>
       <div className="max-h-[344px] overflow-y-auto [scrollbar-gutter:stable]">
@@ -150,19 +119,17 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
           <col className="w-[140px]" />
           <col className="w-[96px]" />
           <col className="w-[96px]" />
-          <col className="w-[96px]" />
         </colgroup>
         <thead className="sticky top-0 z-10 bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
           <tr>
             <th className="border-b border-terminal-border px-2 py-2 text-center">★</th>
             <th onClick={() => toggle("name")} className={`${thClass} text-left`}>物品{mark("name")}</th>
             <th onClick={() => toggle("minPrice")} className={`${thClass} text-right`}>最低价{mark("minPrice")}</th>
-            <th onClick={() => toggle("price")} className={`${thClass} text-right`}>市场价{mark("price")}</th>
+            <th onClick={() => toggle("price")} className={`${thClass} text-right`}>最低买入{mark("price")}</th>
             <th onClick={() => toggle("reference")} className={`${thClass} text-right`}>7日参考{mark("reference")}</th>
             <th onClick={() => toggle("discountPercent")} className={`${thClass} text-right`}>折扣%{mark("discountPercent")}</th>
             <th onClick={() => toggle("changePercent")} className={`${thClass} text-right`}>环比%{mark("changePercent")}</th>
             <th onClick={() => toggle("quantity")} className={`${thClass} text-right`}>在售量{mark("quantity")}</th>
-            <th onClick={() => toggle("numAuctions")} className={`${thClass} text-right`}>挂单数{mark("numAuctions")}</th>
           </tr>
         </thead>
         <tbody>
@@ -187,7 +154,6 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
                 : <td className={`whitespace-nowrap px-3 py-2 text-right ${deal.discountPercent > 0 ? "text-terminal-green" : deal.discountPercent < 0 ? "text-terminal-red" : "text-slate-100"}`}>{deal.discountPercent.toFixed(0)}%</td>}
               <td className={"px-3 py-2 text-right " + trendTextClass(deal.changePercent)}>{formatTrendPercent(deal.changePercent)}</td>
               <td className="px-3 py-2 text-right text-slate-300">{deal.quantity.toLocaleString("en-US")}</td>
-              <td className="px-3 py-2 text-right text-slate-300">{deal.numAuctions.toLocaleString("en-US")}</td>
             </tr>
           ))}
         </tbody>
