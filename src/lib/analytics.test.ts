@@ -1,5 +1,5 @@
 ﻿import { describe, expect, it } from "vitest";
-import { buildDealRadar, buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
+import { buildDealRadar, buildMarketSignal, buildWeekdaySeasonality, type MarketSignal } from "@/lib/analytics";
 import { generateDemoHistory } from "@/lib/demo-history";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -60,7 +60,7 @@ describe("buildMarketSignal", () => {
         { daysAgo: 0, marketPrice: 90, minPrice: 80, quantity: 240 }
       ]),
       now
-    );
+    )!;
     expect(signal.price).toBe(90); // latest 最低买入价
     expect(signal.minPrice).toBe(80);
     expect(signal.quantity).toBe(240);
@@ -80,13 +80,13 @@ describe("buildMarketSignal", () => {
         { daysAgo: 0, marketPrice: 95 }
       ]),
       now
-    );
+    )!;
     // window daily closes [100, 999999, 105, 95] -> sorted [95,100,105,999999] -> lower middle 100
     expect(signal.med7).toBe(100);
   });
 
   it("reports zeros honestly with a single scan instead of fabricating", () => {
-    const signal = buildMarketSignal(history([{ daysAgo: 0, marketPrice: 100 }]), now);
+    const signal = buildMarketSignal(history([{ daysAgo: 0, marketPrice: 100 }]), now)!;
     expect(signal.changePercent).toBe(0);
     expect(signal.med7).toBe(100);
   });
@@ -99,13 +99,13 @@ describe("buildMarketSignal", () => {
         { daysAgo: 0, marketPrice: 49240 }
       ]),
       now
-    );
+    )!;
     expect(flat.med7Samples).toBe(3);
     expect(flat.med7Distinct).toBe(1);
   });
 
   it("works over the demo fixture (test-only universe)", () => {
-    const signal = buildMarketSignal(generateDemoHistory(5)[0], new Date());
+    const signal = buildMarketSignal(generateDemoHistory(5)[0], new Date())!;
     expect(signal.price).toBeGreaterThan(0);
     expect(signal.med7).toBeGreaterThan(0);
   });
@@ -119,7 +119,7 @@ describe("buildDealRadar", () => {
   const liquid = { quantity: 100, numAuctions: 0 };
 
   function signals(items: Parameters<typeof buildMarketSignal>[0][]) {
-    return items.map((item) => buildMarketSignal(item, now));
+    return items.map((item) => buildMarketSignal(item, now)).filter((s): s is MarketSignal => s !== null);
   }
 
   it("flags vendor arbitrage without any history depth", () => {

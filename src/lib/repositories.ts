@@ -107,10 +107,11 @@ async function getMed7Aggregates(itemIds?: number[], mode: MarketMode = "current
     return out;
   }
   // 当前模式：近 7 日 DailySummary 收盘中位数（优先 transcript 每日——档位
-  // 过滤后的有效最低价；无 transcript 的物品回退 auctionator；同 source 不混
-  // 算）。med7 只反映正常流动性下的价格中枢：剔除所有极少挂单日（不论价格
-  // 高低，bait-filter.ts）——少量日价格不可靠，低价个例计入会拉低参考价制造
-  // 假捡漏，高价钓单会拉高。样本不足时不过滤。
+  // 过滤后的有效最低价；无 transcript 的物品回退 auctionator；**绝不含 addon
+  // 旧 Beta 数据**——"最新 daily 选源"曾把 addon 的更新日期误选为源，导致
+  // med7 混入删档旧价）。med7 只反映正常流动性下的价格中枢：剔除所有极少
+  // 挂单日（不论价格高低，bait-filter.ts）——少量日价格不可靠，低价个例计入
+  // 会拉低参考价制造假捡漏，高价钓单会拉高。样本不足时不过滤。
   const rows = await prisma.$queryRaw<Array<{ itemId: number | bigint; date: Date; closePrice: number | bigint; volume: number | bigint }>>(
     Prisma.sql`
     WITH latest AS (
@@ -120,7 +121,7 @@ async function getMed7Aggregates(itemIds?: number[], mode: MarketMode = "current
                ORDER BY CASE WHEN "source" = 'transcript' THEN 0 ELSE 1 END, "date" DESC
              ) AS rn
       FROM "DailySummary"
-      WHERE "date" >= ${cutoff} ${idCond}
+      WHERE "date" >= ${cutoff} AND "source" <> 'addon' ${idCond}
     ),
     lsrc AS (SELECT "item_id", "source" FROM latest WHERE rn = 1)
     SELECT d."item_id" AS "itemId", d."date" AS "date",
@@ -202,7 +203,9 @@ async function getTranscriptLatestSnapshots(itemIds?: number[]): Promise<Map<num
 }
 
 export async function getMarketUniverse(mode: MarketMode = "current"): Promise<MarketHistory[]> {
-  const srcCond = mode === "history" ? Prisma.sql`AND "source" = 'addon'` : Prisma.empty;
+  // current 模式排除 addon（旧 Beta 删档数据不得进入当前口径的任意查询层）；
+  // history 模式只看 addon。
+  const srcCond = mode === "history" ? Prisma.sql`AND "source" = 'addon'` : Prisma.sql`AND "source" <> 'addon'`;
   const [items, snaps, dailies, med7s, transcriptSnaps] = await Promise.all([
     prisma.$queryRaw<ItemRaw[]>`SELECT * FROM "Item" ORDER BY "name" ASC`,
     prisma.$queryRaw<SnapshotRaw[]>`
@@ -287,7 +290,7 @@ export async function getMarketUniverse(mode: MarketMode = "current"): Promise<M
 
 
 export async function getItemDetail(itemId: number, mode: MarketMode = "current"): Promise<MarketHistory | null> {
-  const srcCond = mode === "history" ? { source: "addon" } : undefined;
+  const srcCond = mode === "history" ? { source: "addon" } : { source: { not: "addon" } };
   const row = await prisma.item.findUnique({
     where: { itemId },
     include: {
@@ -365,10 +368,12 @@ export async function getItemMetaVersion(): Promise<number> {
 // 查询已归档（archive/lib/cross-market.ts、archive/pages/）。中立/账本数据
 // 不再新进；旧行保留在库中供历史模式展示。
 
-// 最新一轮扫描的物品宇宙（雷达 universe）。当前模式 = transcript 最新轮
-// （有档位数据时；否则回退 Auctionator 最新轮）；历史模式 = addon 最新轮。
-// 返回 null 表示该模式尚无快照——雷达保持空态。
+// 最新一轮扫描的物品宇宙（雷达 universe）。当前模式 = transcript 最新轮 ∪
+// Auctionator 最新轮（**并集**：转录是渐进覆盖，部分扫描时不能让雷达宇宙缩水
+// 到只含已转录物品；transcript 无数据时退化回纯 auctionator）；历史模式 =
+// addon 最新轮。返回 null 表示该模式尚无快照——雷达保持空态。
 export async function getLatestRoundItemIds(mode: MarketMode = "current"): Promise<Set<number> | null> {
+  const out = new Set<number>();
   if (mode === "current") {
     const latest = await prisma.auctionTier.findFirst({
       where: { source: "transcript", market: "faction" },
@@ -381,7 +386,7 @@ export async function getLatestRoundItemIds(mode: MarketMode = "current"): Promi
         distinct: ["itemId"],
         select: { itemId: true }
       });
-      return new Set(rows.map((row) => row.itemId));
+      for (const row of rows) out.add(row.itemId);
     }
   }
   const src = mode === "history" ? "addon" : "auctionator";
@@ -390,12 +395,15 @@ export async function getLatestRoundItemIds(mode: MarketMode = "current"): Promi
     orderBy: { timestamp: "desc" },
     select: { timestamp: true }
   });
-  if (!latest) return null;
+  if (!latest) {
+    return out.size > 0 ? out : null;
+  }
   const rows = await prisma.auctionSnapshot.findMany({
     where: { source: src, market: "faction", timestamp: latest.timestamp },
     select: { itemId: true }
   });
-  return new Set(rows.map((row) => row.itemId));
+  for (const row of rows) out.add(row.itemId);
+  return out;
 }
 
 // Route-2 authority mirror: the in-game options panel owns the deal-radar

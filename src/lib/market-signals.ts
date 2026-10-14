@@ -34,7 +34,8 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
         const now = new Date();
         cachedSignals = universe
           .filter((item) => item.snapshots.length > 0)
-          .map((item) => buildMarketSignal(item, now, mode));
+          .map((item) => buildMarketSignal(item, now, mode))
+          .filter((signal): signal is MarketSignal => signal !== null);
         cachedLatestAt = latestSnapshotAt;
         cachedKey = key;
       }

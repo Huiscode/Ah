@@ -18,7 +18,7 @@ import { effectiveLowestPrice } from "@/lib/tier-filter";
 process.loadEnvFile();
 
 const SV_PATH = process.env.AQ_TRANSCRIPT_SV_PATH
-  ?? "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_\\WTF\\Account\\1120133458#1\\SavedVariables\\WAHTranscribeDB.lua";
+  ?? "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_\\WTF\\Account\\1120133458#1\\SavedVariables\\WoWderhoiAH-Transcript.lua";
 const SERVER = process.env.AQ_SERVER ?? "Classic Beta PvP 2";
 const FACTION = process.env.AQ_FACTION ?? "Alliance";
 const MARKET = "faction";

@@ -3,7 +3,7 @@
 // 数据流：Auctionator.lua（登出落盘）→ 字节保真读取 + Lua 转义还原 → CBOR 解码价格数据库
 //   → ① AuctionSnapshot 重建"每物品最新价"（source='auctionator'，先删后插）
 //   → ② DailySummary 重建每日 l/h/a（source='auctionator'，先删后插）
-//   → ③ Item.vendorPrice 由 VENDOR_PRICE_CACHE 更新（不回填 0）
+//   → ③ Item.vendorPrice 由 foreverchanges.pro 实测价维护（Auctionator VENDOR_PRICE_CACHE 因 ×400 失真弃用）
 //   → ④ POSTING_HISTORY 结构待版本适配（当前为空，解析器就绪）
 //
 // 幂等性：快照与每日都是"当前全量"语义（Auctionator 保留 21 天窗口），先删后插天然幂等；
@@ -58,18 +58,17 @@ async function main() {
   const scannedAt = new Date((parsed.timeOfLastBrowseScan ?? Math.floor(Date.now() / 1000)) * 1000);
   console.log(`槽 ${REALM_SLOT}: ${entries.length} 物品 | TimeOfLastBrowseScan=${parsed.timeOfLastBrowseScan ?? "无"} (${scannedAt.toISOString()})`);
 
-  // ---- ① Item 表：占位创建缺失 + vendor 更新（不回填 0） ----
+  // ---- ① Item 表：占位创建缺失。vendor 价不再从 VENDOR_PRICE_CACHE 写入 ----
+  // 2026-10-14 实测：Auctionator VENDOR_PRICE_CACHE 对多数物品失真（真价 ×400，如墨水 5 银被记为 2000 银），
+  // 必赚/配方 floor 依赖 vendorPrice，已全面改用 foreverchanges.pro 游戏内实测价（scripts/_tmp-vendor-fix.ts 已修正 72 条）。
   const existingItems = await prisma.item.findMany({ select: { itemId: true, vendorPrice: true } });
   const existingIds = new Set(existingItems.map((row) => row.itemId));
   const itemCreates = entries
     .map(([dbKey]) => Number(dbKey))
     .filter((itemId) => Number.isInteger(itemId) && !existingIds.has(itemId))
     .map((itemId) => ({ itemId, name: `Item ${itemId}`, quality: "unknown", category: "unknown", subCategory: "unknown", vendorPrice: 0 }));
-  const vendorUpdates = Object.entries(parsed.vendorPriceCache)
-    // VENDOR_PRICE_CACHE 单位 = 银（经典 GetMerchantItemPrice 返回银，CraftingInfo 里 price/stack 得小数）；
-    // ×100 转铜与现有 Item.vendorPrice（铜）语义一致。
-    .filter(([itemId, price]) => price > 0 && existingIds.has(Number(itemId)))
-    .map(([itemId, price]) => ({ itemId: Number(itemId), price: Math.round(price * 100) }));
+  // vendorUpdates 有意置空：避免下次导入把失真的 VENDOR_PRICE_CACHE 值重新写回。
+  const vendorUpdates: Array<{ itemId: number; price: number }> = [];
 
   // ---- ② 快照（有 m 的物品）与 ③ 每日汇总（l/h/a by day） ----
   const snapshots: Array<{

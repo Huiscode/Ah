@@ -5,7 +5,7 @@
 // auctionator lowest-buy channel.
 import type { MarketHistory, SnapshotSource } from "@/lib/market-data";
 import { dealRadarRules, AH_CUT, type DealRadarRules } from "@/lib/market-rules";
-import { isStale } from "@/lib/freshness";
+import { isStale, AUCTIONATOR_STALE_MAX_AGE_MS } from "@/lib/freshness";
 
 export type MarketSignal = {
   itemId: number;
@@ -43,10 +43,15 @@ function snapshotSource(snapshot: { source?: string }): SnapshotSource {
 
 export type SignalMode = "current" | "history";
 
-export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMode = "current"): MarketSignal {
-  const snapshots = [...item.snapshots].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMode = "current"): MarketSignal | null {
+  // 数据源隔离：history 模式只看 addon（旧 Beta P10），current 模式只看
+  // auctionator + transcript（**绝不含 addon**——旧删档数据混入会把 10-06
+  // 的过时价格当"当前价"推进雷达/行情）。过滤后无该源快照 → null，调用方跳过。
+  const snapshots = [...item.snapshots]
+    .filter((snapshot) => (mode === "history" ? snapshotSource(snapshot) === "addon" : snapshotSource(snapshot) !== "addon"))
+    .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
   if (snapshots.length === 0) {
-    throw new Error(`buildMarketSignal: item ${item.itemId} has no snapshots — filter empty items before signalling`);
+    return null;
   }
   const latest = snapshots[snapshots.length - 1];
   const source = snapshotSource(latest);
@@ -183,9 +188,10 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
     // never makes money; the radar should never surface them.
     if (signal.isVendorItem) continue;
     // Freshness gate: skip deals whose latest observation is older than the
-    // stale window (Auctionator 扫描是手动全量，窗口放宽到 7 天），雷达
-    // 不指向已经移动的价格。
-    if (isStale(signal.latestAt, now)) continue;
+    // stale window. Auctionator/transcript 扫描是手动全量，窗口放宽到 7 天
+    // （AUCTIONATOR_STALE_MAX_AGE_MS；isStale 默认 2 小时是给实时数据的，
+    // 这里必须显式传 7 天窗口，否则雷达对低频扫描数据永远判过期而空）。
+    if (isStale(signal.latestAt, now, AUCTIONATOR_STALE_MAX_AGE_MS)) continue;
     // Class 1: vendor arbitrage. Listed below the NPC sell price is a
     // guaranteed profit with zero market risk — no history needed, and no
     // profit floor either: the NPC always buys, so even a 1c spread is
