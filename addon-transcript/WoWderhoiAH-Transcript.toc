@@ -1,9 +1,13 @@
 ## Interface: 16001, 120100, 120000, 50504, 38000, 20506, 11508, 11509
 ## Title: WoWderhoiAH-Transcript
-## Notes: 转录拍卖行完整价格档位（供 WoWderhoiAH 网页版使用）。打开拍卖行后 /wahscan start 开始逐物品扫描。
+## Notes: 转录拍卖行完整价格档位（供 WoWderhoiAH 网页版使用）。打开拍卖行后 /wahscan start 开始逐物品扫描；打开商人窗口自动记录 NPC 收购价+卖出单价；Auctionator 全量扫描完成后自动重载落盘。
 ## Author: WoWderhoiAH
-## Version: 0.1.0
+## Version: 0.2.1
 ## SavedVariables: WAHTranscribeDB
 ## SavedVariables: WAHTranscribeState
+## SavedVariables: WAHVendorDB
+## SavedVariables: WAHReloadOpts
 
 Transcript.lua
+VendorPrice.lua
+AutoReload.lua

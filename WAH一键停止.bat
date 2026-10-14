@@ -4,9 +4,9 @@ cd /d "%~dp0"
 
 echo Stopping WoWderhoiAH background services...
 
-REM Stop addon watcher
-for /f "tokens=2" %%a in ('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*watch-savedvars*' } | Select-Object -ExpandProperty ProcessId"') do (
-    echo Stopping addon watcher PID %%a
+REM Stop auto-import watcher
+for /f "tokens=2" %%a in ('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*watch-auto-import*' } | Select-Object -ExpandProperty ProcessId"') do (
+    echo Stopping auto-import watcher PID %%a
     taskkill /PID %%a /F >nul 2>&1
 )
 

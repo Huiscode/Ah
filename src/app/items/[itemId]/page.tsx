@@ -3,13 +3,14 @@ import Link from "next/link";
 import { buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
 import {
   getItemDetail,
+  getItemSellerPricesByIds,
   getItemVendorPricesByIds,
   getLatestPricesByItemIds,
   getRecipesProducing,
   getWatchedItemIds,
   type MarketMode
 } from "@/lib/repositories";
-import { buildFloorPriceIndex, computeRecipeProfits, professionLabel } from "@/lib/recipe-profits";
+import { buildRecipeFloors, computeRecipeProfits, professionLabel } from "@/lib/recipe-profits";
 import { FOOD_EFFECTS } from "@/data/food-effects";
 import { formatPercent } from "@/lib/utils";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
@@ -43,12 +44,13 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
     for (const material of recipe.reagents) involvedItemIds.add(material.itemId);
     for (const output of recipe.outputs) involvedItemIds.add(output.itemId);
   }
-  const [priceByItemId, vendorPrices] = await Promise.all([
+  const [priceByItemId, vendorPrices, sellerPrices] = await Promise.all([
     getLatestPricesByItemIds(Array.from(involvedItemIds), mode),
-    getItemVendorPricesByIds(Array.from(involvedItemIds))
+    getItemVendorPricesByIds(Array.from(involvedItemIds)),
+    getItemSellerPricesByIds(Array.from(involvedItemIds))
   ]);
-  const floorPriceIndex = buildFloorPriceIndex(producingRecipes, vendorPrices);
-  const recipeRows = computeRecipeProfits(producingRecipes, priceByItemId, floorPriceIndex);
+  const floors = buildRecipeFloors(producingRecipes, vendorPrices, sellerPrices);
+  const recipeRows = computeRecipeProfits(producingRecipes, priceByItemId, floors.costFloor, floors.revenueFloor);
   // 食物产出物：字典命中即食物（由 foreverchanges.pro 详情页 tooltip 生成）。
   const foodEffect = FOOD_EFFECTS[numericItemId];
   const now = new Date();

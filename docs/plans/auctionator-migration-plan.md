@@ -59,7 +59,7 @@ AUCTIONATOR_PRICE_DATABASE["PvP"] = {
 **其他影响**：
 - Auctionator 价格数据库**不含物品名/品质/分类/图标** → 物品名称由 **foreverchanges.pro 数据源**
   补充（§6.5，该站持续更新：当前数据版本 1.60.1.70338、物品列表 21 页）；经典未改动物品靠现有
-  `Item` 表 + wx-wow 种子兜底。
+  `Item` 表兜底。
 - 雷达规则（`RadarRule`）原由插件同步 → 该双向同步链路**整体下线**，雷达阈值改由网页侧管理。
 
 ## 3. 决策（用户 2026-10-13 拍板）
@@ -166,9 +166,9 @@ SQLite（Prisma）：AuctionSnapshot / DailySummary / Item
   - upsert `Item`（name/quality 按需归一；category/sub_category 用列表"类型"或详情补充，暂无则 unknown）；
   - **不删除、不覆盖**已有名称（网页/配方种子优先），只补缺失与新增；跑完打印"新增 X、更新 Y"。
   - 注意：列表仅覆盖"Forever 新增 + 与经典不同 + 暂无数据"的物品；**经典原版物品**（亚麻布等）
-    不在其中，靠现有 `Item` 表 + wx 种子兜底。
+    不在其中，靠现有 `Item` 表兜底。
 - **配方抓取**：复用 `scripts/scrape-forever-recipes.ts`（9 专业 upsert Recipe，category=craft）；
-  集市商人兑换（merchant）沿用 wx 种子数据，如需网站版再核对。
+  集市商人兑换（merchant）沿用种子数据，如需网站版再核对。
 - **触发方式**：用户说"扫一下"时运行（手动）；不做定时，避免频繁抓取对方站点。
   抓取节奏：全量分页间加 1–2 秒间隔；建议每周一次即可。
 - **缺货标注（网页配方页）**：
@@ -230,7 +230,7 @@ SQLite（Prisma）：AuctionSnapshot / DailySummary / Item
 - **口径变化**：市场价/7日参考/走势从 P10 加权分位 → 最低买入价。最低价易被低价钓单拉低，
   捡漏信号可能增多假阳性（用阈值+在售量缓解）。
 - **新物品名缺失**：Auctionator 落盘无名称/品质/分类 → 由 foreverchanges.pro 数据源补齐
-  （Forever 新增/改动物品全覆盖）；经典未改动物品靠现有 `Item` 表 + wx 种子兜底；
+  （Forever 新增/改动物品全覆盖）；经典未改动物品靠现有 `Item` 表兜底；
   两边都没有的极少数显示占位名。
 - **新鲜度依赖用户扫描频率**：需在游戏内手动触发 Auctionator 全量扫描，然后**登出或 /reload**
   才落盘；不扫描则网页不更新（机制与现在相同）。
@@ -243,7 +243,7 @@ SQLite（Prisma）：AuctionSnapshot / DailySummary / Item
 |---|---|---|
 | CBOR 解码与 Forever 客户端序列化不兼容 | ✅ 已关闭 | M0 已用真实 SV 样本验证：标准 CBOR，`cbor` 包可直接解码（3145 物品） |
 | 口径切换后雷达/价格展示语义漂移 | 中 | 断点标注 + 页内口径说明 + 阈值网页可调 |
-| 物品名缺失导致页面观感差 | 中 | foreverchanges 数据源补名（§6.5）+ 现有 Item 表/wx 种子兜底 + 占位名 |
+| 物品名缺失导致页面观感差 | 中 | foreverchanges 数据源补名（§6.5）+ 现有 Item 表兜底 + 占位名 |
 | 网站改版导致抓取失效 | 低 | 抓取脚本集中解析函数，改版时按存档样例（docs/archive/.tmp-*）修正则即可 |
 | 新导入与旧查询代码纠缠 | 中 | source 列严格区分，查询按 source 分支，逐步清理 |
 

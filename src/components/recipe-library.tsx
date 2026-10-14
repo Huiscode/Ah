@@ -43,7 +43,7 @@ type SortKey = "profit" | "skillAsc" | "skillDesc" | "name";
 type FavoriteKey = { category: string; profession: string; name: string };
 const FAVORITES_KEY = "wah:favorite-recipes";
 
-// 技能等级档（入门技能等级口径，与 wx-wow.com 一致）。
+// 技能等级档（入门技能等级口径，经典 60 级标准）。
 const SKILL_BANDS: Array<{ key: string; label: string; test: (level: number) => boolean }> = [
   { key: "all", label: "不限", test: () => true },
   { key: "1-75", label: "1-75", test: (l) => l >= 1 && l <= 75 },
@@ -55,7 +55,7 @@ const SKILL_BANDS: Array<{ key: string; label: string; test: (level: number) => 
 
 const PAGE_SIZE = 20;
 
-// 专业 tab 固定顺序，与 wx-wow.com（网上截图）一致：
+// 专业 tab 固定顺序（经典 60 级专业顺序）：
 // 炼金→锻造→附魔→工程→制皮→裁缝→采矿→草药→剥皮→烹饪→钓鱼→急救。
 // 未出现在列表中的专业（如"贸易通用"）自动排到最后，再按拼音兜底。
 const PROFESSION_ORDER = [
@@ -73,7 +73,7 @@ const PROFESSION_ORDER = [
   "First Aid"       // 急救
 ];
 
-// 配方库（独立页面）：模仿 wx-wow.com 专业配方页——来源/专业 tab 横条、
+// 配方库（独立页面）：专业配方页——来源/专业 tab 横条、
 // 左侧技能等级+分类筛选、搜索框、排序、两列卡片网格、分页。卡片保留本项目
 // 的核心增值：利润率与利润额（绿色/红色），缺价配方排最后并标"缺价"。
 export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
@@ -285,7 +285,7 @@ export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
         ))}
       </div>
 
-      {/* 专业 tab（横条，同 wx-wow.com；默认选中首个专业） */}
+      {/* 专业 tab（横条；默认选中首个专业） */}
       <div className="flex flex-wrap gap-1 border-b border-terminal-border px-3 py-2">
         <button
           key="全部"

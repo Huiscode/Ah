@@ -5,6 +5,11 @@
 > **v2/v3 说明**：2026-10-13 起数据源已从自研插件切换为 Auctionator + M4 转录插件；旧自研插件
 > 时代的一切历史记录（P10/P50、中立市场、账本、旧扫描链路等）**已全部失效**，本版不再保留。
 > v3 新增：雷达门槛最终口径（用户拍板）、网页设置面板（含价格下限）、vendor 价全量核对机制。
+> v3.1（2026-10-14 晚）：转录插件升 0.2.0——① 商人价实时转录（WAHVendorDB，NPC 收购价用
+> `C_Item.GetItemInfo` 第 11 返回 sellPrice，**不是** Auctionator 缓存那套买价÷组数）＋
+> ② Auctionator 全量扫描完成自动 /reload 落盘（`/wahvendor reload` 控制）＋ ③
+> `scripts/vendor-game-import.ts` 导入游戏内实时价（优先于网站核对）；audit 启动时跳过已有
+> 游戏内值的物品。
 > 语言：与用户用中文交流；代码/标识符保持英文。
 
 ## 1. 项目是什么
@@ -40,6 +45,12 @@ npm run auctionator:import        # 解码（ASCII 转义+CBOR）→ 快照 + Da
 npm run transcript:import         # fengari 执行存档 → AuctionTier（完整档位）+ tier-filter 聚合 DailySummary
                                   # 断点续扫存在 WAHTranscribeState（首轮实际不可续，见 §5-3）
 
+游戏内 WoWderhoiAH-Transcript（打开商人窗口自动记录 → WAHVendorDB，v0.2.0）
+   │  Auctionator 全量扫描完成自动 /reload 落盘（v0.2.0 AutoReload.lua）
+   ▼
+npm run vendor:import              # scripts/vendor-game-import.ts：游戏内实时商人价 → Item.vendorPrice
+                                  # （权威顺序：游戏内实时 > 网站核对 > 旧缓存；audit 跳过已有 game 值）
+
 SQLite（prisma\dev.db）→ 网页（首页 / 单品页 / 配方页；两模式互不混源）
 ```
 
@@ -53,12 +64,14 @@ SQLite（prisma\dev.db）→ 网页（首页 / 单品页 / 配方页；两模式
 | 项目根 / 数据库 | `C:\Users\Hz\Documents\Workspace\Ah` / **`prisma\dev.db`**（根目录 `dev.db` 是 0 字节陷阱） |
 | Auctionator 插件（游戏内） | `...\_classic_beta_\Interface\AddOns\Auctionator\` |
 | Auctionator SV（聚合价源） | `...\WTF\Account\1120133458#1\SavedVariables\Auctionator.lua`（槽 `PvP`） |
-| 转录插件（游戏内） | `...\Interface\AddOns\WoWderhoiAH-Transcript\`（仓库副本 `addon-transcript\`） |
-| 转录存档（档位源） | `...\SavedVariables\WoWderhoiAH-Transcript.lua`（按插件名落盘） |
+| 转录插件（游戏内） | `...\Interface\AddOns\WoWderhoiAH-Transcript\`（仓库副本 `addon-transcript\`，v0.2.0：Transcript.lua + VendorPrice.lua + AutoReload.lua） |
+| 转录存档（档位源） | `...\SavedVariables\WoWderhoiAH-Transcript.lua`（按插件名落盘；含 WAHTranscribeDB / State / **WAHVendorDB** / WAHReloadOpts） |
 | 旧插件归档（勿恢复） | `archive\addon\WoWderhoiAH\`、下线功能 `archive\` |
-| 导入脚本 | `scripts\auctionator-import.ts`（`npm run auctionator:import`）、`scripts\transcript-import.ts`（`npm run transcript:import`） |
-| **vendor 全量核对** | `scripts\vendor-price-audit.ts`（后台/手动跑；断点续跑；限速防 403） |
+| 导入脚本 | `scripts\auctionator-import.ts`（`npm run auctionator:import`）、`scripts\transcript-import.ts`（`npm run transcript:import`）、`scripts\vendor-game-import.ts`（`npm run vendor:import`，游戏内实时商人价）、**`scripts\watch-auto-import.ts`（`npm run watch`，常驻自动导入：扫描完成自动同步网页，唯一同步入口）** |
+| **vendor 全量核对** | `scripts\vendor-price-audit.ts`（后台/手动跑；断点续跑；限速防 403；**启动时跳过已有游戏内实时价的物品**） |
+| 游戏内商人价解析 | `src\lib\vendor-sv.ts`（loadVendorGamePrices / transcriptSvPath，fengari 解析 WAHVendorDB） |
 | 共享解码 | `src\lib\auctionator-sv.ts`（readAuctionatorSavedVars / CBOR / Lua 转义） |
+| 一键启停 | `WAH一键启动.bat` / `WAH一键停止.bat` → `scripts\launch-services.ps1`（网页 + 常驻自动导入；停止 bat 按 `watch-auto-import` 匹配） |
 | 档位过滤公式 | `src\lib\tier-filter.ts`（13 测试） |
 | 极少挂单剔除 | `src\lib\bait-filter.ts`（markBaitDays / markThinDays） |
 | 查询层 / 信号 / 雷达 | `src\lib\repositories.ts`（mode 分叉）、`analytics.ts`、`market-signals.ts`（快照代+mode 缓存）、`market-rules.ts`（雷达阈值） |
@@ -85,8 +98,20 @@ SQLite（prisma\dev.db）→ 网页（首页 / 单品页 / 配方页；两模式
     （supplyCap）、最低利润率（minProfitRatio）——**深折扣一律视为捡漏机会**，不按折扣深浅设限。
   - **价格下限** = 前端本地筛选（localStorage `wah:filter:minPrice`），已移入设置面板，与雷达门槛
     同屏保存；0 = 关。
-- **vendor（NPC 卖价）权威 = foreverchanges.pro 物品页"卖价"实测**（游戏内确认；页面无"卖价"字段 =
-  NPC 不收 → 置 0）。Auctionator 缓存已弃用（§5-7），**旧缓存写入 DB 的失真值正在全量核对覆盖**（§5-9）。
+- **vendor（NPC 卖价）权威顺序（2026-10-14 拍板，v3.1）**：**游戏内实时商人价（WAHVendorDB，
+  `C_Item.GetItemInfo` 第 11 返回 sellPrice，服务器下发最准）> foreverchanges.pro 物品页"卖价"
+  实测 > Auctionator 缓存（已弃用）**。页面无"卖价"字段 = NPC 不收 → 置 0。游戏内值由
+  `npm run vendor:import` 导入并覆盖 Item.vendorPrice；audit 启动时跳过已有游戏内值的物品。
+- **配方利润兜底双 floor（2026-10-14 拍板，v3.2 / M4.2）**：`buildRecipeFloors` 返回
+  `{ costFloor, revenueFloor }`（替代旧 `buildFloorPriceIndex` 单 map）：
+  - **costFloor（材料成本兜底）= Item.sellPrice（NPC 卖价，游戏内商人卖出单价，`GetMerchantItemInfo`
+    的 price÷quantity）> 收购价（Item.vendorPrice/字典）> 配方 dump**。材料无 AH 价时按 NPC 卖价算
+    成本——用收购价兜底会低估成本、虚高利润。
+  - **revenueFloor（成品收入兜底）= 收购价（卖 NPC 的保底收入）**。
+  - 数据来源：VendorPrice.lua v0.2.1 同格记录 `sp = price÷quantity`（与 `p` 分开，勿混），
+    WAHVendorDB.scans[id] = { p, sp, t }；vendor-game-import 导入 `sp → Item.sellPrice`（新列，
+    db push 于 2026-10-14 晚）；`getItemSellerPrices(ByIds)` 供三个页面。数据未到位时 sp=0，
+    自动退化为收购价兜底（行为同旧版，不阻塞）。
 - **历史模式**：`?history=1` 看旧 Beta P10（addon），用于开服后参考老曲线；两模式查询/页面互不混源。
 - **口径断点 = 2026-10-13**（页头标注）。
 
@@ -129,26 +154,70 @@ SQLite（prisma\dev.db）→ 网页（首页 / 单品页 / 配方页；两模式
     storage 事件（雷达表 `usePersistedState` 同 key 即时应用）。
 11. **【v3】折扣%口径**：`buildMarketSignal.discountPercent` 原用 `latest.marketPrice`，语义应基于
     **可买的最低价** `latest.minPrice`（生产上二者恰相等未暴露）→ 已修正并测试钉死。
+12. **【v3.1】游戏内商人价实时转录 + 全量扫描自动落盘**：用户要求保留游戏内商人价核对（实时读到的
+    最准）。根因确认：Auctionator 的 AUCTIONATOR_VENDOR_PRICE_CACHE 用 `GetMerchantItemInfo` 的
+    **买价**（第 3 返回 price）÷ 组数当卖价——语义就错（旧插件注释与 CraftingInfo\Main.lua 14-23
+    行一致）；正解 = `C_Item.GetItemInfo(itemId)` 第 11 返回 sellPrice（旧插件 Trade.lua 已用此法）。
+    实现：VendorPrice.lua 监听 MERCHANT_SHOW/UPDATE 自动转录 WAHVendorDB；AutoReload.lua 挂
+    Auctionator.EventBus 的 FullScan.ScanComplete（`RegisterForDBUpdate` 的 PricesProcessed 会误触发，
+    故直接挂 ScanComplete），扫描完成延迟 **2 秒**（默认，`/wahvendor reload delay N` 可调）自动
+    /reload 落盘（`/wahvendor reload on|off|now|status`，战斗保护）；`npm run vendor:import`
+    导入覆盖 Item.vendorPrice；audit 跳过已有 game 值的物品。
+13. **【v3.1】AutoReload 双保险**：用户实测"扫描完没有自动 reload"（游戏内还跑旧版文件导致）。
+    加固：① 保留 EventBus:Register；② 新增兜底 hook `Auctionator.EventBus:Fire`（事件名匹配
+    `get_all_scan_complete`，不依赖自身 listener 注册）；③ schedule 10 秒防重；④ 加载成功打印
+    "自动重载已就绪"。**插件文件更新后必须 /reload 或完全退出游戏才生效**（toc 变更尤其）。
+14. **【v3.1】audit 双实例事故 + watch 常驻自动导入**：发现两个 vendor-price-audit 实例并发跑
+    （进度文件互相覆盖、重复抓取、403 风险、且跑的是旧代码）→ 全部停掉，用新代码重启**单实例**
+    后台续跑（断点续跑，进度文件 scripts/.vendor-audit-progress.json，当时 2488/3454）。
+    新增 `scripts/watch-auto-import.ts`（`npm run watch`）：**常驻自动导入**（等价老插件
+    addon:watch 体验：每 2 秒 stat 存档 mtime，扫描完成自动导入、不退出）。用户后续拍板：
+    **单次/短命 sync 模式已删除，只保留全自动**（`npm run watch` 为唯一同步入口；旧的悬空
+    `addon:watch` 脚本一并清理）。导入顺序 = auctionator:import + transcript:import +
+    vendor:import（vendor 无游戏内数据自动跳过；导入失败不崩、继续监视）。
+15. **【v3.2 / M4.2】配方材料成本兜底口径修正**：配方利润引擎把材料成本兜底从"收购价"升级为
+    "NPC 卖价优先"（详见 §4）。**foreverchanges 物品页实测无"售价"字段**（只有"卖价"收购价），
+    NPC 卖价唯一可靠来源 = 游戏内商人窗口 `GetMerchantItemInfo(i)` 的 price÷quantity（单价）。
+    实现：VendorPrice.lua v0.2.1 同格记录 sp；Item 表新增 sell_price 列（db push 已应用）；
+    vendor-game-import 导入 sp；recipe-profits 拆 costFloor/revenueFloor；secondary-materials 与
+    三个页面（recipes/首页/物品详情）同步适配；测试新增"成本兜底优先 NPC 卖价"用例（154 全过）。
+16. **【v3.2 / M1b】配方+物品全量抓取启动**：audit 已全部完成（3454 条：有效 878、置 0 83、
+    失败 28 条 404 页不存在）。M1b 脚本 `scripts/m1b-forever-library.ts` 后台运行：阶段 1 抓
+    9 个专业页核对配方（246 配方，附魔=效果配方无物品产出不收录、钓鱼=纯指南页无数据，均正确）；
+    阶段 2 抓 Recipe 全部材料+产出物品页（2696 个，限速 2.5s/条 ≈ 1.9h，断点续跑
+    scripts/.m1b-progress.json）补 name/quality/category/subCategory/vendorPrice（含 196 个
+    "Item N"占位名）。完成后跑 compute-turnover 刷新流通分。
+17. **【v3.2】新鲜度锚点误报"1 天前"**：用户扫描 reload 后网页仍显示"数据更新于 1 天前"。
+    根因：M4 时新鲜度锚点只取 transcript 档位（AuctionTier.ts，当时是唯一最新数据源）；用户改用
+    Auctionator 扫描后 transcript 停更（档位最新 = 10-13），锚点被钉在旧档位 → 误报。
+    修复：`getLatestSnapshotTime` current 模式改取 **transcript 档位 与 Auctionator 快照的较新者**
+    （history 模式仍只看 addon）。连带发现环境问题：① 网页跑在生产模式旧 build（`next start`
+    PID 3700，19:49 构建，不含新代码）→ 停掉改由一键启动（`next dev --webpack` 热更新）接管；
+    ② watch 常驻导入没在跑（21:55 曾导入一次后进程消失）→ 一键启动重新拉起，并立即检测到
+    用户新扫描存档自动导入（3703 快照，TimeOfLastBrowseScan=2026-10-14T20:37:26Z）。
+    验证：首页标签恢复"6 分钟前"。
 
 ## 6. 数据现状（2026-10-14）
 
 - AuctionSnapshot：addon 473,663 / auctionator 3,519~3,520
 - DailySummary：addon 47,606 / auctionator 6,771 / transcript 48（10-14 首轮 1 天）
 - AuctionTier：transcript 254 档 / 48 物品（首轮，未覆盖全量）
-- Item：5,445 + 65 占位；当前信号 3,521（无 addon）
-- vendor_price>0：修正前 3,481（几乎全失真）→ **必赚区已修正 13 条真实值**；全量核对进行中
-  （截至 2026-10-14 晚已核 400+，全部有效 0 失败）
+- Item：5,510 + 196 占位；当前信号 3,521（无 addon）
+- vendor_price>0：**全量核对已完成**（3454 条：有效 878、置 0 83、404 失败 28）
+- **配方库**：Recipe 2,265 行（来源=foreverchanges.pro 核对 + 种子配方）；M1b 网站核对 246 配方
+  （其余为网站无收录的种子配方，保留）；物品页补全进行中（2696 个）
 - 雷达（当前设置：最低盈利 50 铜 / 历史 2 天 / 可信度 2 / 新鲜度 1 天，用户自调）：**36 条 =
   必赚 13 + 捡漏 23**；捡漏随新鲜度窗口与数据积累波动
 
 ## 7. 待办 / 未完成（按优先级）
 
-1. **vendor 全量核对收尾**：`npx tsx scripts/vendor-price-audit.ts`（后台续跑，可中断续跑）。
-   完成后重验：必赚区应只剩 vendor 真实 < minPrice 的物品；配方利润兜底不再被假 vendor 虚高。
-2. **转录全量重扫**（M4 落地关键）：用户游戏内开拍卖行 → `/wahscan start`（3577 物品约 36 分钟）→
-   登出 → `npm run transcript:import`（先删后插，会覆盖现有 48 物品数据）。
-3. **M1b foreverchanges.pro 数据源**：物品/配方/vendor 全量抓取（限速）；配方缺货标注已做；用户会
-   定期让扫新增可赚金币内容。vendor 已先行全量核对（本轮），剩物品名/配方抓取。
+1. **M1b 物品页抓取收尾**（后台已启动，断点续跑）：完成后跑 `npx tsx scripts/compute-turnover.ts`
+   刷新流通分；再核对一遍配方库页"缺货/缺名"减少情况。
+2. **转录全量重扫**（M4 落地关键）：用户游戏内开拍卖行 → `/wahscan start` → 登出 →
+   `npm run transcript:import`（先删后插）。用户现已改走 Auctionator 全量扫描 + 自动重载 +
+   watch 常驻导入，转录可选。
+3. **游戏内商人价 sp 数据积累**：插件 v0.2.1 需用户 /reload 加载；打开商人窗口自动记录
+   （收购价+卖出单价）；watch 导入 sp 后配方材料成本兜底自动生效。
 4. **POSTING_HISTORY**：当前为空（`{__dbversion=1}`），`PostingRecord` 表已建、解析口子就绪。
 5. **开服清空运行时数据**（SQLite + SavedVariables + 导入进度；代码/git 保留），由用户通知触发。
 
@@ -175,8 +244,9 @@ SQLite（prisma\dev.db）→ 网页（首页 / 单品页 / 配方页；两模式
 - **Next 增量构建偶发旧 chunk 残留**（症状：单页 500 而源码/直调正常）→ `Remove-Item .next -Recurse
   -Force` 后 `npm run build` 全量重建再重启。
 - **真实 DB 是 `prisma\dev.db`**；根目录 `dev.db`（0 字节）是陷阱。
-- 服务：网页 next 监听 3000，用 `C:\Program Files\nodejs\node.exe` 启动（勿用沙箱版 node）；
-  导入是手动脚本，无常驻 watcher。
+- 服务：一键启停 `WAH一键启动.bat` / `WAH一键停止.bat`（逻辑在 `scripts\launch-services.ps1`）：
+  网页 next（3000 端口，用 `C:\Program Files\nodejs\node.exe` 启动，勿用沙箱版 node）+
+  **常驻自动导入 `scripts\watch-auto-import.ts`**（扫描完成自动同步网页，日志 `logs\auto-import.*.log`）。
 
 ## 10. 常用命令 / 场景速查
 
@@ -186,7 +256,9 @@ npx tsc --noEmit && npx vitest run   # 类型检查 + 全量测试（153 用例�
 npm run build                        # 生产构建（先停后台 audit 防 Prisma DLL 锁）
 npm run auctionator:import           # 聚合价导入（幂等；不再写 vendor）
 npm run transcript:import            # 档位导入（幂等，先删后插，覆盖现有 transcript）
-npx tsx scripts/vendor-price-audit.ts  # vendor 价全量核对（可中断续跑；进度在 scripts/.vendor-audit-progress.json）
+npm run vendor:import                # 游戏内实时商人价导入（幂等；覆盖 Item.vendorPrice，最优先）
+npm run watch                        # 常驻自动导入（唯一同步入口）：扫描完成自动同步网页，无需任何操作
+npx tsx scripts/vendor-price-audit.ts  # vendor 价全量核对（可中断续跑；进度在 scripts/.vendor-audit-progress.json；跳过已有游戏内值）
 node -e "const{DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('prisma/dev.db');console.log(JSON.stringify(db.prepare('SELECT source,COUNT(*) n,MAX(timestamp) latest FROM AuctionSnapshot GROUP BY source').all()))"
 ```
 
@@ -209,4 +281,5 @@ node -e "const{DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('p
 - **公测清空（偏好）**：用户通知"公测开始"时清空全部运行时数据（网页 SQLite + 插件 SavedVariables +
   导入进度），代码与 git 保留；清空后历史模式仍可参考旧 P10 曲线，之后可删。
 - 网页等长期服务在本机跑着，改动后别重启/杀错进程；导入数据是手动脚本，无常驻 watcher。
-- **vendor 价权威 = foreverchanges.pro**：用户不接受拍卖行插件缓存价；修正 vendor 一律以网站"卖价"为准。
+- **vendor 价权威顺序 = 游戏内实时商人价（WAHVendorDB）> foreverchanges.pro**：用户不接受拍卖行
+  Auctionator 缓存价（买价÷组数，系统性失真）；修正 vendor 一律以游戏内实时价或网站"卖价"为准。

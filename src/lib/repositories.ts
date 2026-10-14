@@ -17,6 +17,7 @@ type ItemRaw = {
   sub_category: string;
   icon: string | null;
   vendor_price: number;
+  sell_price: number;
   turnover_score: number;
   is_vendor_item: number;
   created_at: number | string | Date;
@@ -255,6 +256,7 @@ export async function getMarketUniverse(mode: MarketMode = "current"): Promise<M
     subCategory: i.sub_category,
     icon: i.icon,
     vendorPrice: toNumber(i.vendor_price),
+    sellPrice: toNumber(i.sell_price),
     turnoverScore: toNumber(i.turnover_score),
     isVendorItem: Boolean(i.is_vendor_item),
     createdAt: toDate(i.created_at),
@@ -339,21 +341,34 @@ export async function getAlertRules() {
 
 
 export async function getLatestSnapshotTime(market: string = "faction", mode: MarketMode = "current") {
-  if (mode === "current") {
-    // M4：当前模式新鲜度锚点优先 transcript 最新轮（档位扫描时间）。
-    const tr = await prisma.auctionTier.findFirst({
+  if (mode === "history") {
+    const row = await prisma.auctionSnapshot.findFirst({
+      where: { market, source: "addon" },
+      orderBy: { timestamp: "desc" },
+      select: { timestamp: true }
+    });
+    return row?.timestamp ?? null;
+  }
+  // M4.2：新鲜度锚点取 transcript 档位与 Auctionator 快照的**较新者**。
+  // M4 时 transcript 是唯一最新数据源，锚点只取档位；用户改用 Auctionator
+  // 扫描后 transcript 停更，若仍只取档位会把新鲜度钉在旧扫描上（误报
+  // "1 天前"）。两个通道的扫描时间取较新者：只用 Auctionator 时锚点 =
+  // 快照最新；若以后 transcript 也扫，锚点 = 档位最新（更精确）。
+  const [tier, snapshot] = await Promise.all([
+    prisma.auctionTier.findFirst({
       where: { source: "transcript", market },
       orderBy: { ts: "desc" },
       select: { ts: true }
-    });
-    if (tr) return tr.ts;
-  }
-  const row = await prisma.auctionSnapshot.findFirst({
-    where: { market, ...(mode === "history" ? { source: "addon" } : {}) },
-    orderBy: { timestamp: "desc" },
-    select: { timestamp: true }
-  });
-  return row?.timestamp ?? null;
+    }),
+    prisma.auctionSnapshot.findFirst({
+      where: { market },
+      orderBy: { timestamp: "desc" },
+      select: { timestamp: true }
+    })
+  ]);
+  const candidates = [tier?.ts, snapshot?.timestamp].filter((t): t is Date => t !== null);
+  if (candidates.length === 0) return null;
+  return candidates.reduce((max, t) => (t.getTime() > max.getTime() ? t : max));
 }
 
 // Metadata version of the item universe (MAX updated_at). The market-signal
@@ -442,7 +457,7 @@ export async function getLatestPricesByItemIds(itemIds: number[], mode: MarketMo
 }
 
 // P0-B: the recipe library. category filters "craft" (professional crafts,
-// from /wahrecipes dumps and the wx-wow seed) or "merchant" (merchant-favor
+// from /wahrecipes dumps and the recipe library seed) or "merchant" (merchant-favor
 // exchanges); omit for everything. reagents/outputs are JSON columns that
 // mirror the addon's field names (itemId/name/quantity/vendorPrice), so the
 // profit engine consumes them without reshaping.
@@ -526,4 +541,24 @@ export async function getItemVendorPrices(): Promise<Map<number, number>> {
     select: { itemId: true, vendorPrice: true }
   });
   return new Map(rows.map((row) => [row.itemId, row.vendorPrice]));
+}
+
+// NPC 卖给玩家的单价（Item.sellPrice > 0，来源：游戏内商人窗口转录 M4.2）。
+// 配方利润引擎用它做**材料成本兜底**：材料无 AH 价时按 NPC 卖价算成本，
+// 比用收购价兜底更接近真实（收购价会低估成本、虚高利润）。
+export async function getItemSellerPrices(): Promise<Map<number, number>> {
+  const rows = await prisma.item.findMany({
+    where: { sellPrice: { gt: 0 } },
+    select: { itemId: true, sellPrice: true }
+  });
+  return new Map(rows.map((row) => [row.itemId, row.sellPrice]));
+}
+
+export async function getItemSellerPricesByIds(itemIds: number[]): Promise<Map<number, number>> {
+  if (itemIds.length === 0) return new Map();
+  const rows = await prisma.item.findMany({
+    where: { itemId: { in: itemIds }, sellPrice: { gt: 0 } },
+    select: { itemId: true, sellPrice: true }
+  });
+  return new Map(rows.map((row) => [row.itemId, Number(row.sellPrice)]));
 }

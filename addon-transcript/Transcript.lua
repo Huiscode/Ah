@@ -158,6 +158,8 @@ local function advance()
     state.queue = {}
     state.pos = 1
     chat(string.format("扫描完成，共 %d 个物品。请正常登出/重载以保存存档。", state.done))
+    -- 自动落盘：若有 AutoReload 模块（v0.2.0），延迟重载保存全部存档。
+    if WAHReload and WAHReload.schedule then WAHReload.schedule() end
     return
   end
   local id = state.queue[state.pos]

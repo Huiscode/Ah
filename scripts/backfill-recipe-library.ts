@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(fileURLToPath(new URL("..", import.meta.url)));
 
-// wx-wow 种子 quality 0-7 → 表内英文小写（与现有 Item 行一致）。
+// 种子 quality 0-7 → 表内英文小写（与现有 Item 行一致）。
 function qualityFromNum(q: number | undefined | null): string {
   const map = ["poor", "common", "uncommon", "rare", "epic", "legendary", "artifact", "heirloom"];
   if (q === undefined || q === null || q < 0 || q > 7) return "unknown";

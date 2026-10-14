@@ -28,7 +28,8 @@ export type SecondaryMaterialRow = {
 export function buildSecondaryMaterialRows(
   recipes: DbRecipe[],
   priceByItemId: Map<number, number>,
-  floorPriceById: Map<number, number>
+  costFloor: Map<number, number>,
+  revenueFloor: Map<number, number>
 ): SecondaryMaterialRow[] {
   const craftRecipes = recipes.filter((recipe) => recipe.category !== "merchant");
 
@@ -74,7 +75,7 @@ export function buildSecondaryMaterialRows(
       let cost = 0;
       let complete = true;
       for (const material of recipe.reagents) {
-        const unit = priceByItemId.get(material.itemId) ?? floorPriceById.get(material.itemId);
+        const unit = priceByItemId.get(material.itemId) ?? costFloor.get(material.itemId);
         if (unit === undefined) {
           complete = false;
           break;
@@ -88,7 +89,7 @@ export function buildSecondaryMaterialRows(
     }
     if (!best) continue; // 没有任何可计价制作方式
 
-    const unitPrice = priceByItemId.get(itemId) ?? floorPriceById.get(itemId);
+    const unitPrice = priceByItemId.get(itemId) ?? revenueFloor.get(itemId);
     if (unitPrice === undefined) continue; // 材料本身无价 → 无法算收入
 
     const unitRevenue = Math.round(unitPrice * (1 - AH_CUT));

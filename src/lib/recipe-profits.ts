@@ -3,13 +3,15 @@
 // kept for its tests), recipes here carry zero- or multi-product outputs and
 // ride the vendor floor (vendorP) the addon dumped for every touched item.
 //
-// Price priority for a craft, per the P0-B plan:
+// Price priority for a craft (M4.2 口径，用户 2026-10-14 拍板)：
 //   1. live AH price — the market signal already resolves 自扫 P10 → 网站
 //      P50 by the newest source, so the caller passes that map as-is;
-//   2. vendor floor — buildFloorPriceIndex merges three sources with the
-//      addon dump on top (it is the freshest client read, and the only
-//      source that carries Forever-only items before their public IDs land):
-//      curated dictionary (vendor-prices.ts) < DB Item.vendorPrice < dump.
+//   2. cost floor（材料成本兜底）— NPC 卖价（Item.sellPrice，游戏内商人
+//      卖出单价）优先 > 收购价（Item.vendorPrice / 字典，机会成本）：
+//      材料无 AH 价时，制造成本应按"NPC 卖给你的价"算，用收购价兜底会
+//      低估成本、虚高利润；
+//   3. revenue floor（成品收入兜底）— 收购价（卖 NPC 的保底收入）。
+//      dump（/wahrecipes vendorP，收购价）覆盖两层兜底的同名物品。
 import { vendorPriceById } from "@/data/vendor-prices";
 import { AH_CUT } from "@/lib/market-rules";
 
@@ -18,7 +20,7 @@ export type RecipeMaterial = {
   name: string;
   quantity: number;
   vendorPrice?: number; // NPC SellPrice in copper, dumped by /wahrecipes
-  // wx-wow 种子附加的物品属性（扫描配方无）：品质 0-7 / 物品等级 / 需要等级。
+  // 种子附加的物品属性（扫描配方无）：品质 0-7 / 物品等级 / 需要等级。
   quality?: number;
   ilvl?: number;
   req?: number;
@@ -30,12 +32,12 @@ export type DbRecipe = {
   skillLevel: number;
   reagents: RecipeMaterial[];
   outputs: RecipeMaterial[];
-  // "craft" = professional craft (seeded from the wx-wow 无限服 library or
+  // "craft" = professional craft (seeded from the recipe library or
   // /wahrecipes dumps); "merchant" = merchant-favor exchange (集市商人).
   category?: "craft" | "merchant";
   // 商人兑换的青睐货币成本（currency 3402，无铜币汇率）；craft 为 0。
   favorCost?: number;
-  // wx-wow 种子附加信息：技能四档难度 [学,黄,绿,灰]（0=未记录）、
+  // 附加信息：技能四档难度 [学,黄,绿,灰]（0=未记录）、
   // 分类名（如"药水""药剂"）、配方/兑换法术 ID。
   difficulty?: number[];
   categoryName?: string;
@@ -86,7 +88,7 @@ export const PROFESSION_EN_TO_ZH: Record<string, string> = {
 export const professionLabel = (profession: string): string =>
   PROFESSION_EN_TO_ZH[profession] ?? profession;
 
-// wx-wow 种子里个别分类名漏了中译，在这里补显示层映射。
+// 个别分类名漏了中译，在这里补显示层映射。
 const CATEGORY_EN_TO_ZH: Record<string, string> = {
   "Thrown": "投掷武器",
   "Armor Food": "护甲食物"
@@ -95,35 +97,54 @@ const CATEGORY_EN_TO_ZH: Record<string, string> = {
 export const categoryLabel = (category: string): string =>
   CATEGORY_EN_TO_ZH[category] ?? category;
 
-// Floor-price index for a recipe library: curated dictionary first, then any
-// Item.vendorPrice the DB carries, then the addon-dumped vendorP (freshest,
-// and the only coverage for Forever-only item IDs). Later sources overwrite
-// earlier ones.
-export function buildFloorPriceIndex(
+export type RecipeFloors = {
+  /** 材料成本兜底：NPC 卖价（Item.sellPrice，游戏内商人卖出单价）> 收购价 > 字典。 */
+  costFloor: Map<number, number>;
+  /** 成品收入兜底：收购价（Item.vendorPrice / 字典，卖 NPC 保底）> dump。 */
+  revenueFloor: Map<number, number>;
+};
+
+// Floor-price index for a recipe library.
+//   costFloor：材料成本兜底——NPC 卖价（sellerPrice）优先，其次收购价（机会成本）；
+//   revenueFloor：成品收入兜底——收购价（卖 NPC 的保底收入）。
+//   来源合并顺序：经典字典（收购价基座）< DB Item.vendorPrice（收购价，audit 核对）
+//   < DB Item.sellPrice（NPC 卖价，只进 costFloor）< dump vendorP（freshest，两层都覆盖）。
+export function buildRecipeFloors(
   recipes: DbRecipe[],
-  itemVendorPrices: ReadonlyMap<number, number> = new Map()
-): Map<number, number> {
-  const floor = new Map<number, number>();
+  itemVendorPrices: ReadonlyMap<number, number> = new Map(),
+  itemSellerPrices: ReadonlyMap<number, number> = new Map()
+): RecipeFloors {
+  const costFloor = new Map<number, number>();
+  const revenueFloor = new Map<number, number>();
   for (const [itemId, entry] of vendorPriceById) {
-    floor.set(itemId, entry.sellPriceCopper);
+    costFloor.set(itemId, entry.sellPriceCopper);
+    revenueFloor.set(itemId, entry.sellPriceCopper);
   }
   for (const [itemId, price] of itemVendorPrices) {
-    if (price > 0) floor.set(itemId, price);
+    if (price > 0) {
+      costFloor.set(itemId, price);
+      revenueFloor.set(itemId, price);
+    }
+  }
+  for (const [itemId, price] of itemSellerPrices) {
+    if (price > 0) costFloor.set(itemId, price);
   }
   for (const recipe of recipes) {
     for (const material of [...recipe.reagents, ...recipe.outputs]) {
       if (material.vendorPrice !== undefined && material.vendorPrice > 0) {
-        floor.set(material.itemId, material.vendorPrice);
+        costFloor.set(material.itemId, material.vendorPrice);
+        revenueFloor.set(material.itemId, material.vendorPrice);
       }
     }
   }
-  return floor;
+  return { costFloor, revenueFloor };
 }
 
 export function computeRecipeProfits(
   recipes: DbRecipe[],
   priceByItemId: Map<number, number>,
-  floorPriceById: Map<number, number>
+  costFloor: Map<number, number>,
+  revenueFloor: Map<number, number> = costFloor
 ): RecipeProfitRow[] {
   const rows = recipes.map<RecipeProfitRow>((recipe) => {
     const missing: string[] = [];
@@ -131,7 +152,7 @@ export function computeRecipeProfits(
     let cost = 0;
     for (const material of recipe.reagents) {
       const ah = priceByItemId.get(material.itemId);
-      const floor = floorPriceById.get(material.itemId);
+      const floor = costFloor.get(material.itemId);
       const price = ah ?? floor;
       if (price === undefined) {
         missing.push(material.name);
@@ -142,7 +163,7 @@ export function computeRecipeProfits(
     }
     let revenue = 0;
     for (const output of recipe.outputs) {
-      const price = priceByItemId.get(output.itemId) ?? floorPriceById.get(output.itemId);
+      const price = priceByItemId.get(output.itemId) ?? revenueFloor.get(output.itemId);
       if (price === undefined) {
         missing.push(output.name);
       } else {

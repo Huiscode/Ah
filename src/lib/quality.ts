@@ -14,7 +14,7 @@ export function qualityColorClass(quality: string): string {
   return classByQuality[quality] ?? "text-wow-common";
 }
 
-// WoW 数字品质（0-7，wx-wow 种子附带）→ 颜色 class；缺失/未知按 common 白兜底。
+// WoW 数字品质（0-5）→ 颜色 class；缺失/未知按 common 白兜底。
 const QUALITY_KEY_BY_ID: Record<number, string> = {
   0: "poor",
   1: "common",

@@ -69,8 +69,8 @@ function chunk<T>(rows: T[], size: number): T[][] {
 }
 const BULK_CHUNK = 3000;
 
-// P0-B seed migration: the seeded library (now the wx-wow.com 无限服 library)
-// and in-game /wahrecipes dumps can carry different names for the same craft
+// P0-B seed migration: the seeded library (the recipe library) and in-game
+// /wahrecipes dumps can carry different names for the same craft
 // (different locales or a recipe the seed missed). Identity here is the craft
 // itself: same profession and the same sorted (itemId, quantity) signature for
 // outputs and reagents. When an incoming dump matches an existing craft row

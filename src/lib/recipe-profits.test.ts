@@ -1,8 +1,8 @@
-// P0-B profit engine: live AH price first, vendor floor second, and the
-// addon-dumped vendorP on top of the curated dictionary. Pins the price
-// priority, multi-product revenue, AH cut and the margin-first ordering.
+// P0-B profit engine: live AH price first, cost floor second (NPC sell price
+// over buy price), revenue floor (buy price) for the revenue side. Pins the
+// price priority, multi-product revenue, AH cut and the margin-first ordering.
 import { describe, expect, it } from "vitest";
-import { buildFloorPriceIndex, computeRecipeProfits, type DbRecipe } from "@/lib/recipe-profits";
+import { buildRecipeFloors, computeRecipeProfits, type DbRecipe } from "@/lib/recipe-profits";
 import { vendorPriceById } from "@/data/vendor-prices";
 
 const LINEN_BOLT = 2840; // 铜锭, classic floor 10c
@@ -24,7 +24,7 @@ describe("computeRecipeProfits", () => {
   };
 
   it("charges the AH cut on the revenue side and reports margin on cost", () => {
-    const rows = computeRecipeProfits([copper], priceMap([[LINEN_CLOTH, 5], [LINEN_BOLT, 20]]), new Map());
+    const rows = computeRecipeProfits([copper], priceMap([[LINEN_CLOTH, 5], [LINEN_BOLT, 20]]), new Map(), new Map());
     expect(rows[0].status).toBe("ok");
     expect(rows[0].cost).toBe(5);
     expect(rows[0].revenue).toBe(19); // 20 * (1 - 0.05)
@@ -33,7 +33,8 @@ describe("computeRecipeProfits", () => {
   });
 
   it("falls back to the vendor floor when a side has no live AH price", () => {
-    const rows = computeRecipeProfits([copper], priceMap([]), buildFloorPriceIndex([], new Map()));
+    const floors = buildRecipeFloors([], new Map());
+    const rows = computeRecipeProfits([copper], priceMap([]), floors.costFloor, floors.revenueFloor);
     // 铜矿石 floor 5c, 铜锭 floor 10c -> revenue 9.5 -> 10, profit 5.
     expect(rows[0].status).toBe("ok");
     expect(rows[0].cost).toBe(5);
@@ -42,7 +43,7 @@ describe("computeRecipeProfits", () => {
   });
 
   it("marks a craft missing when a material has neither market price nor floor", () => {
-    const rows = computeRecipeProfits([copper], priceMap([[LINEN_BOLT, 20]]), new Map());
+    const rows = computeRecipeProfits([copper], priceMap([[LINEN_BOLT, 20]]), new Map(), new Map());
     expect(rows[0].status).toBe("missing");
     expect(rows[0].missing).toEqual(["铜矿石"]);
   });
@@ -61,6 +62,7 @@ describe("computeRecipeProfits", () => {
     const rows = computeRecipeProfits(
       [multi],
       priceMap([[COAL, 100], [1, 10], [2, 20]]),
+      new Map(),
       new Map()
     );
     expect(rows[0].status).toBe("ok");
@@ -84,12 +86,12 @@ describe("computeRecipeProfits", () => {
       outputs: [{ itemId: LINEN_BOLT, name: "铜锭", quantity: 1 }]
     };
     const prices = priceMap([[LINEN_CLOTH, 5], [LINEN_BOLT, 20], [IRON_ORE, 200], [99, 210]]);
-    const rows = computeRecipeProfits([noData, lowMargin, highMargin], prices, new Map());
+    const rows = computeRecipeProfits([noData, lowMargin, highMargin], prices, new Map(), new Map());
     expect(rows.map((row) => row.recipe.name)).toEqual(["高利", "低利", "缺价"]);
   });
 });
 
-describe("buildFloorPriceIndex", () => {
+describe("buildRecipeFloors", () => {
   it("merges the curated dictionary, DB vendor prices and the addon dump, dump on top", () => {
     const dumpRecipe: DbRecipe = {
       name: "重瑟银锭",
@@ -99,17 +101,27 @@ describe("buildFloorPriceIndex", () => {
       outputs: [{ itemId: 900002, name: "重瑟银锭", quantity: 1, vendorPrice: 2500 }]
     };
     const dbPrices = new Map<number, number>([[900001, 300]]);
-    const floor = buildFloorPriceIndex([dumpRecipe], dbPrices);
-    // Classic dictionary values survive.
-    expect(floor.get(LINEN_CLOTH)).toBe(vendorPriceById.get(LINEN_CLOTH)?.sellPriceCopper);
+    const floors = buildRecipeFloors([dumpRecipe], dbPrices);
+    // Classic dictionary values survive in both floors.
+    expect(floors.costFloor.get(LINEN_CLOTH)).toBe(vendorPriceById.get(LINEN_CLOTH)?.sellPriceCopper);
+    expect(floors.revenueFloor.get(LINEN_CLOTH)).toBe(vendorPriceById.get(LINEN_CLOTH)?.sellPriceCopper);
     // The addon dump overwrites the DB value for the same item (freshest
-    // client read) and adds the product floor.
-    expect(floor.get(900001)).toBe(375);
-    expect(floor.get(900002)).toBe(2500);
+    // client read) and adds the product floor to both floors.
+    expect(floors.costFloor.get(900001)).toBe(375);
+    expect(floors.revenueFloor.get(900001)).toBe(375);
+    expect(floors.costFloor.get(900002)).toBe(2500);
+    expect(floors.revenueFloor.get(900002)).toBe(2500);
+  });
+
+  it("lets the NPC sell price override the buy price on the cost floor only", () => {
+    const floors = buildRecipeFloors([], new Map([[1, 100]]), new Map([[1, 300]]));
+    expect(floors.costFloor.get(1)).toBe(300); // 材料成本按 NPC 卖价
+    expect(floors.revenueFloor.get(1)).toBe(100); // 收入兜底仍按收购价
   });
 
   it("ignores zero vendor prices from any source", () => {
-    const floor = buildFloorPriceIndex([], new Map([[LINEN_CLOTH, 0]]));
-    expect(floor.get(LINEN_CLOTH)).toBe(5); // dictionary value, not 0
+    const floors = buildRecipeFloors([], new Map([[LINEN_CLOTH, 0]]), new Map([[LINEN_CLOTH, 0]]));
+    expect(floors.costFloor.get(LINEN_CLOTH)).toBe(5); // dictionary value, not 0
+    expect(floors.revenueFloor.get(LINEN_CLOTH)).toBe(5);
   });
 });

@@ -16,6 +16,11 @@ model Item {
   subCategory      String            @map("sub_category")
   icon             String?           // in-game icon texture name (e.g. "inv_staff_13"); set from addon scans
   vendorPrice      Int               @default(0) @map("vendor_price") // NPC sell price in copper; 0 = unsellable
+  // NPC 卖给玩家的单价（商人卖出价，copper；0 = NPC 不卖）。来源：游戏内
+  // 商人窗口 GetMerchantItemInfo(i) 的 price/quantity（M4.2 VendorPrice.lua）。
+  // 配方材料成本兜底用：无 AH 价时，材料成本 = NPC 卖价（最坏可买成本），
+  // 优于用收购价兜底（收购价会低估成本、虚高利润）。
+  sellPrice        Int               @default(0) @map("sell_price")
   // 流通分：该物品作为材料被多少个配方使用。越高表示需求越广、周转越快。
   turnoverScore    Int               @default(0) @map("turnover_score")
   // 是否为 NPC 商人常驻出售的容器/耗材（空瓶/铅瓶/水晶瓶/染料/细线等）。
@@ -160,12 +165,12 @@ model Recipe {
   name       String
   profession String
   skillLevel Int      @default(0) @map("skill_level")
-  // 来源分类："craft" = 专业配方（/wahrecipes 扫描 + wx-wow 种子），
+  // 来源分类："craft" = 专业配方（/wahrecipes 扫描 + foreverchanges 核对），
   // "merchant" = 商人青睐兑换（集市商人，材料+青睐货币 → 成品）。
   category   String   @default("craft")
   // 商人兑换的青睐货币成本（currency id 3402）；专业配方为 0。
   favorCost  Int      @default(0) @map("favor_cost")
-  // wx-wow 种子附加信息（扫描配方无）：技能四档难度 [学,黄,绿,灰]、
+  // 附加信息（扫描配方无）：技能四档难度 [学,黄,绿,灰]、
   // 分类名（如"药水""药剂"）、配方/兑换法术 ID。
   difficulty Json?
   categoryName String? @map("category_name")

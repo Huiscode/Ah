@@ -1,11 +1,12 @@
 import { Bell, Hammer, RadioTower, Star } from "lucide-react";
 import { buildDealRadar } from "@/lib/analytics";
 import { evaluateAlertRules } from "@/lib/alerts";
-import { buildFloorPriceIndex, computeRecipeProfits } from "@/lib/recipe-profits";
+import { buildRecipeFloors, computeRecipeProfits } from "@/lib/recipe-profits";
 import { buildSecondaryMaterialRows } from "@/lib/secondary-materials";
 import { mergeRadarRules } from "@/lib/market-rules";
 import {
   getAlertRules,
+  getItemSellerPrices,
   getItemVendorPrices,
   getLatestRoundItemIds,
   getLatestSnapshotTime,
@@ -34,7 +35,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import Link from "next/link";
 
 // 数据口径断点：2026-10-13 起为 Auctionator 最低价；此前为自研插件 Beta P10。
-export const DATA_SWITCH_DAY = "2026-10-13";
+const DATA_SWITCH_DAY = "2026-10-13";
 
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   // Chinese labels for the alert metrics surfaced on the dashboard; kept in
@@ -49,7 +50,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const raw = await searchParams;
   const mode: MarketMode = raw.history === "1" ? "history" : "current";
   const view = parseMarketView(raw);
-  const [{ signals, latestSnapshotAt }, watchedIds, alertRules, latestRound, recipes, vendorPrices] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, watchedIds, alertRules, latestRound, recipes, vendorPrices, sellerPrices] = await Promise.all([
     getMarketSignals(mode),
     getWatchedItemIds(),
     getAlertRules(),
@@ -58,7 +59,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     // 关注配方面板展示配方库中被收藏的配方（craft + merchant 全量，
     // 面板按收藏过滤；收藏在 /recipes 配方库页设置）。
     getRecipes(),
-    getItemVendorPrices()
+    getItemVendorPrices(),
+    getItemSellerPrices()
   ]);
   const freshness = describeFreshness(latestSnapshotAt, new Date(), AUCTIONATOR_STALE_MAX_AGE_MS);
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
@@ -74,13 +76,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const turnoverByItemId = new Map(signals.map((signal) => [signal.itemId, signal.turnoverScore]));
   // P0-B: full-recipe profit library. Revenue side = live AH price (自扫P10
   // → 网站P50 per signal) or the vendor floor when the market has no listing;
-  // the floor index merges the curated dictionary, DB Item.vendorPrice and
-  // the vendorP the addon dumped with each recipe (freshest, and the only
-  // source for Forever-only items).
-  const floorPriceIndex = buildFloorPriceIndex(recipes, vendorPrices);
-  const recipeRows = computeRecipeProfits(recipes, priceByItemId, floorPriceIndex);
+  // cost floor prefers the NPC sell price (Item.sellPrice, in-game merchant
+  // transcription) over the buy price (Item.vendorPrice / dictionary), then
+  // the vendorP the addon dumped with each recipe (freshest).
+  const floors = buildRecipeFloors(recipes, vendorPrices, sellerPrices);
+  const recipeRows = computeRecipeProfits(recipes, priceByItemId, floors.costFloor, floors.revenueFloor);
   // 中间材料（次级材料）：配方产物且被其它配方用作材料，按单位利润排序。
-  const secondaryRows = buildSecondaryMaterialRows(recipes, priceByItemId, floorPriceIndex);
+  const secondaryRows = buildSecondaryMaterialRows(recipes, priceByItemId, floors.costFloor, floors.revenueFloor);
   // 配方产出物集合：扫描物品若被某配方产出（成品），在列表中标记"产品"徽章。
   const productItemIds = new Set<number>();
   for (const recipe of recipes) for (const output of recipe.outputs) productItemIds.add(output.itemId);
@@ -155,8 +157,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           </Panel>
         </div>
         <div className="space-y-3">
-          <SecondaryMaterialsPanel rows={secondaryRows} prices={priceByItemId} floorPrices={floorPriceIndex} turnoverByItemId={turnoverByItemId} />
-          <FavoriteRecipesPanel rows={recipeRows} prices={priceByItemId} floorPrices={floorPriceIndex} />
+          <SecondaryMaterialsPanel rows={secondaryRows} prices={priceByItemId} floorPrices={floors.costFloor} turnoverByItemId={turnoverByItemId} />
+          <FavoriteRecipesPanel rows={recipeRows} prices={priceByItemId} floorPrices={floors.costFloor} />
           <Panel>
             <PanelHeader title="关注物品" action={<Star size={13} className="text-terminal-amber" />} />
             <div className="space-y-2 p-3 font-mono text-xs">

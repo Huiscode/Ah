@@ -5,7 +5,7 @@
 # Starts (if not already running), each fully detached with NO console and
 # output redirected to a log file:
 #   web           Next.js dev server  (http://localhost:3000)
-#   addon-watch   SavedVariables watcher (game scan -> web)
+#   auto-import   常驻自动导入（watch-auto-import.ts：扫描完成自动同步网页）
 #
 # The companion .bat just invokes this script. Logs are in <root>\logs so a
 # failed start is diagnosable instead of a silent hidden window.
@@ -59,15 +59,15 @@ if (Test-WebPort) {
   ) 'next'
 }
 
-# --- Addon watcher ---
-if (Test-NodeRunning 'watch-savedvars') {
-  Write-Host '[ok] Addon watcher already running - skip.'
+# --- 常驻自动导入（扫描完成 → 自动同步网页） ---
+if (Test-NodeRunning 'watch-auto-import') {
+  Write-Host '[ok] Auto-import watcher already running - skip.'
 } else {
-  Write-Host '[..] Starting addon watcher (hidden)...'
-  Start-ServiceNode 'addon-watch' @(
+  Write-Host '[..] Starting auto-import watcher (hidden)...'
+  Start-ServiceNode 'auto-import' @(
     (Join-Path (Join-Path (Join-Path 'node_modules' 'tsx') 'dist') 'cli.mjs'),
-    (Join-Path 'scripts' 'watch-savedvars.ts')
-  ) 'watch-savedvars'
+    (Join-Path 'scripts' 'watch-auto-import.ts')
+  ) 'watch-auto-import'
 }
 
 # --- Wait for the web server (port + HTTP) ---

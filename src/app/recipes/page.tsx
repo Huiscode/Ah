@@ -1,6 +1,6 @@
 import { RadioTower } from "lucide-react";
-import { buildFloorPriceIndex, computeRecipeProfits } from "@/lib/recipe-profits";
-import { getItemVendorPrices, getRecipes } from "@/lib/repositories";
+import { buildRecipeFloors, computeRecipeProfits } from "@/lib/recipe-profits";
+import { getItemSellerPrices, getItemVendorPrices, getRecipes } from "@/lib/repositories";
 import { getMarketSignals } from "@/lib/market-signals";
 import { AUCTIONATOR_STALE_MAX_AGE_MS, describeFreshness } from "@/lib/freshness";
 import { RecipeLibrary } from "@/components/recipe-library";
@@ -11,18 +11,20 @@ export const dynamic = "force-dynamic";
 
 // 配方库（独立页面）：无限服（WoW Forever）全量制造配方与商人青睐兑换。
 // 专业配方 12 专业 + 商人青睐兑换。价格口径与首页制造利润一致：实时 AH 价
-// （Auctionator 最低买入价）优先，NPC 保底价兜底；产出价扣 5% 拍卖税后按
-// 利润率排序。拍卖行无价/无记录的配方标注"缺货"，扫到后自动补齐。
+// （Auctionator 最低买入价）优先，NPC 保底价兜底；材料成本兜底优先用 NPC
+// 卖价（Item.sellPrice），其次收购价；产出价扣 5% 拍卖税后按利润率排序。
+// 拍卖行无价/无记录的配方标注"缺货"，扫到后自动补齐。
 export default async function RecipesPage() {
-  const [{ signals, latestSnapshotAt }, recipes, vendorPrices] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, recipes, vendorPrices, sellerPrices] = await Promise.all([
     getMarketSignals(),
     getRecipes(),
-    getItemVendorPrices()
+    getItemVendorPrices(),
+    getItemSellerPrices()
   ]);
   const freshness = describeFreshness(latestSnapshotAt, new Date(), AUCTIONATOR_STALE_MAX_AGE_MS);
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
-  const floorPriceIndex = buildFloorPriceIndex(recipes, vendorPrices);
-  const recipeRows = computeRecipeProfits(recipes, priceByItemId, floorPriceIndex);
+  const floors = buildRecipeFloors(recipes, vendorPrices, sellerPrices);
+  const recipeRows = computeRecipeProfits(recipes, priceByItemId, floors.costFloor, floors.revenueFloor);
   const okCount = recipeRows.filter((row) => row.status === "ok").length;
   const craftCount = recipeRows.filter((row) => row.recipe.category !== "merchant").length;
   const merchantCount = recipeRows.length - craftCount;
@@ -52,7 +54,7 @@ export default async function RecipesPage() {
         <Panel>
           <PanelHeader title="来源" />
           <div className="p-3">
-            配方库来自 wx-wow.com 无限服数据库挖掘 + 游戏内 /wahrecipes 扫描（客户端 1.60.1，以游戏内实装为准）：专业配方 {craftCount} 条 + 商人青睐兑换 {merchantCount} 条。物品名/配方补全由 foreverchanges.pro 数据源（规划 M1b）持续补充。
+            配方库来源 = foreverchanges.pro 专业页核对 + 游戏内 /wahrecipes 扫描（客户端 1.60.1，以游戏内实装为准）：专业配方 {craftCount} 条 + 商人青睐兑换 {merchantCount} 条。物品名/配方由 foreverchanges.pro 数据源持续补全。
           </div>
         </Panel>
         <Panel>
@@ -65,7 +67,7 @@ export default async function RecipesPage() {
 
       <RecipeLibrary rows={recipeRows} />
       <footer className="mt-3 border border-terminal-border bg-terminal-panel px-4 py-2 font-mono text-[10px] leading-relaxed text-terminal-muted">
-        配方数据来自 wx-wow.com 无限服数据库与游戏内 /wahrecipes 扫描（客户端 1.60.1，非官方公布，以游戏内实装为准）。商人兑换的"青睐"货币成本按业绩奖励累积，未折算铜币。价格口径 = Auctionator 最低买入价：无 AH 挂单时以 NPC 收购价兜底计算，仅作参考下限；缺货配方待扫描/数据源补全后自动恢复计算。
+        配方数据来自 foreverchanges.pro 专业页核对与游戏内 /wahrecipes 扫描（客户端 1.60.1，非官方公布，以游戏内实装为准）。商人兑换的"青睐"货币成本按业绩奖励累积，未折算铜币。价格口径 = Auctionator 最低买入价：无 AH 挂单时以 NPC 收购价兜底计算，仅作参考下限；缺货配方待扫描/数据源补全后自动恢复计算。
       </footer>
     </main>
   );

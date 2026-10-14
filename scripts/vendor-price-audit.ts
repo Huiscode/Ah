@@ -3,8 +3,11 @@
 // - 断点续跑：scripts/.vendor-audit-progress.json 记录已成功的 itemId
 // - 限速：间隔 2.5s；403 退避 15s 重试 3 次
 // - 页面无"卖价" → vendor_price=0（NPC 不收）
+// - 游戏内实时商人价优先：启动时解析 WAHVendorDB，已有游戏内值的物品跳过
+//   （游戏内值由服务器下发，比网站核对更实时更准）
 // 用法：npx tsx scripts/vendor-price-audit.ts
 import { prisma } from "../src/lib/prisma";
+import { loadVendorGamePrices } from "../src/lib/vendor-sv";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -41,8 +44,11 @@ async function main() {
   log(`待核对 ${total} 条`);
 
   const done = new Set<number>(existsSync(PROGRESS_FILE) ? JSON.parse(readFileSync(PROGRESS_FILE, "utf8")) : []);
-  const remaining = rows.filter((r) => !done.has(r.itemId));
-  log(`已核对 ${done.size}，本次续跑 ${remaining.length}`);
+  // 游戏内实时商人价优先：启动时解析 WAHVendorDB，有游戏内值的物品不进核对队列。
+  const gamePrices = loadVendorGamePrices();
+  const gameIds = gamePrices ? new Set(gamePrices.keys()) : new Set<number>();
+  const remaining = rows.filter((r) => !done.has(r.itemId) && !gameIds.has(r.itemId));
+  log(`已核对 ${done.size}，游戏内实时价跳过 ${gameIds.size}，本次续跑 ${remaining.length}`);
 
   let ok = 0, zero = 0, fail = 0;
   for (let i = 0; i < remaining.length; i++) {
