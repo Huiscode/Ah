@@ -66,7 +66,7 @@ describe("buildMarketSignal", () => {
     expect(signal.quantity).toBe(240);
     expect(signal.numAuctions).toBe(0); // Auctionator 无挂单数
     expect(signal.med7).toBe(100); // daily closes [100, 120, 90] 中位数
-    expect(signal.discountPercent).toBeCloseTo((1 - 90 / 100) * 100, 5);
+    expect(signal.discountPercent).toBeCloseTo((1 - 80 / 100) * 100, 5); // 折扣看可买的最低买入价
     expect(signal.changePercent).toBeCloseTo(((90 - 120) / 120) * 100, 5);
   });
 
@@ -113,9 +113,10 @@ describe("buildMarketSignal", () => {
 
 describe("buildDealRadar", () => {
   // Auctionator 口径：必赚（NPC 倒卖）= 最低买入价低于 NPC 卖价，无历史
-  // 要求、无利润下限；捡漏 = 最低买入价 ≤ 7日参考 × discount，门控
-  // 30c 绝对利润 + 25% 相对利润 + 3 天历史 + 参考可信度。挂单数门已删除
-  // （Auctionator 无挂单数；用户选择不加替代门槛）。
+  // 要求、无利润下限；捡漏 = 最低买入价显著低于 7日参考，门控
+  // 50c 绝对利润 + 2 天历史 + 参考可信度。挂单数门已删除（Auctionator 无
+  // 挂单数）；折扣线/折扣下限/供应上限/最低利润率 2026-10-14 用户拍板
+  // 移除——深折扣一律视为捡漏机会。
   const liquid = { quantity: 100, numAuctions: 0 };
 
   function signals(items: Parameters<typeof buildMarketSignal>[0][]) {
@@ -144,13 +145,15 @@ describe("buildDealRadar", () => {
     expect(deals[0].profit).toBe(1);
   });
 
-  it("requires the 25% relative discount, 3-day depth, and 30c floor together", () => {
+  it("requires the 2-day depth and 50c floor together", () => {
     const base = [
       { daysAgo: 2, marketPrice: 9800, ...liquid },
       { daysAgo: 1, marketPrice: 10000, ...liquid }
     ];
     const qualifying = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 7000, ...liquid }]);
-    const thinDiscount = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 9000, ...liquid }], { itemId: 2 });
+    // 利润率门槛 2026-10-14 移除：只要绝对净利 ≥50c、历史够深、med7 可信，
+    // 低价即视为捡漏（利润率不再是门槛）。
+    const thinProfit = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 9000, ...liquid }], { itemId: 2 });
     const shallowHistory = history([{ daysAgo: 0, marketPrice: 10200, minPrice: 7000, ...liquid }], { itemId: 3 });
     const subFloor = history(
       [
@@ -160,10 +163,11 @@ describe("buildDealRadar", () => {
       ],
       { itemId: 5 }
     );
-    const deals = buildDealRadar(signals([qualifying, thinDiscount, shallowHistory, subFloor]), undefined, now);
-    expect(deals.map((deal) => deal.itemId)).toEqual([2770]);
+    const deals = buildDealRadar(signals([qualifying, thinProfit, shallowHistory, subFloor]), undefined, now);
+    expect(deals.map((deal) => deal.itemId)).toEqual([2770, 2]);
     expect(deals[0].vendor).toBe(false);
     expect(deals[0].profit).toBe(2500);
+    expect(deals[1].profit).toBe(500);
   });
 
   it("no auction-count gate: a thin listing can still qualify if the reference holds", () => {
@@ -208,27 +212,17 @@ describe("buildDealRadar", () => {
     expect(buildDealRadar(signals([camper]), undefined, now)).toHaveLength(0);
   });
 
-  it("rejects implausible discounts — past the cap the reference is broken", () => {
-    // 6240 against a med7 of 49240 is 87% off: always bad reference data.
+  it("keeps deep discounts — the discount floor was removed (2026-10-14)", () => {
+    // 用户拍板移除 maxDiscount（折扣下限）：87% off 不再视为"参考崩坏"，
+    // 而是捡漏机会（极低价绝不剔）。其余门槛仍须满足（3 天历史/利润/可信度）。
     const absurd = history([
       { daysAgo: 2, marketPrice: 49000, ...liquid },
       { daysAgo: 1, marketPrice: 49240, ...liquid },
       { daysAgo: 0, marketPrice: 49500, minPrice: 6240, ...liquid }
     ]);
-    expect(buildDealRadar(signals([absurd]), undefined, now)).toHaveLength(0);
-  });
-
-  it("keeps a discount sitting exactly on the plausibility cap", () => {
-    // daily closes [10000, 10000, 2500] -> med7 10000；今日最低买入 2500
-    // = 恰 75% off（maxDiscount 边界，允许）。
-    const atCap = history([
-      { daysAgo: 2, marketPrice: 10000, ...liquid },
-      { daysAgo: 1, marketPrice: 10000, ...liquid },
-      { daysAgo: 0, marketPrice: 2500, ...liquid }
-    ]);
-    const deals = buildDealRadar(signals([atCap]), undefined, now);
+    const deals = buildDealRadar(signals([absurd]), undefined, now);
     expect(deals).toHaveLength(1);
-    expect(deals[0].discountPercent).toBeCloseTo(75, 5);
+    expect(deals[0].discountPercent).toBeCloseTo((1 - 6240 / 49240) * 100, 3);
   });
 
   it("exempts vendor arbitrage from the med7 guards — the NPC price is a fact", () => {

@@ -3,12 +3,13 @@ import { buildDealRadar } from "@/lib/analytics";
 import { evaluateAlertRules } from "@/lib/alerts";
 import { buildFloorPriceIndex, computeRecipeProfits } from "@/lib/recipe-profits";
 import { buildSecondaryMaterialRows } from "@/lib/secondary-materials";
-import { dealRadarRules } from "@/lib/market-rules";
+import { mergeRadarRules } from "@/lib/market-rules";
 import {
   getAlertRules,
   getItemVendorPrices,
   getLatestRoundItemIds,
   getLatestSnapshotTime,
+  getRadarRules,
   getRecipes,
   getWatchedItemIds,
   type MarketMode
@@ -62,8 +63,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const freshness = describeFreshness(latestSnapshotAt, new Date(), AUCTIONATOR_STALE_MAX_AGE_MS);
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
   const triggeredAlerts = evaluateAlertRules(alertRules, signals);
-  // 雷达阈值：网页侧常量（market-rules.ts）——插件下线后无游戏内权威面板。
-  const radarRules = dealRadarRules;
+  // 雷达阈值：默认常量（market-rules.ts）+ 网页"雷达设置"面板的覆盖
+  // （RadarRule 单行，经 /api/radar-rules 读写；mergeRadarRules 合并）。
+  const radarRules = mergeRadarRules(await getRadarRules());
   const allDeals = buildDealRadar(signals, radarRules);
   // 该模式最新扫描轮 owns the radar's universe：只推荐该模式数据源在售的物品。
   const deals = latestRound === null ? allDeals : allDeals.filter((deal) => latestRound.has(deal.itemId));

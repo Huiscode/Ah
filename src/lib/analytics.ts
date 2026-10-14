@@ -5,7 +5,7 @@
 // auctionator lowest-buy channel.
 import type { MarketHistory, SnapshotSource } from "@/lib/market-data";
 import { dealRadarRules, AH_CUT, type DealRadarRules } from "@/lib/market-rules";
-import { isStale, AUCTIONATOR_STALE_MAX_AGE_MS } from "@/lib/freshness";
+import { isStale } from "@/lib/freshness";
 
 export type MarketSignal = {
   itemId: number;
@@ -138,7 +138,7 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
     med7,
     med7Samples,
     med7Distinct,
-    discountPercent: med7 > 0 ? (1 - latest.marketPrice / med7) * 100 : 0,
+    discountPercent: med7 > 0 ? (1 - latest.minPrice / med7) * 100 : 0,
     changePercent: previousDaily && previousDaily.closePrice > 0 ? ((latest.marketPrice - previousDaily.closePrice) / previousDaily.closePrice) * 100 : 0,
     latestAt: latest.timestamp,
     turnoverScore: item.turnoverScore ?? 0,
@@ -174,12 +174,9 @@ export type DealRadarRow = {
 export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = dealRadarRules, now: Date = new Date()): DealRadarRow[] {
   const {
     minProfit: RADAR_MIN_PROFIT,
-    minProfitRatio: RADAR_MIN_PROFIT_RATIO,
-    discount: RADAR_DISCOUNT,
     minHistory: RADAR_MIN_HISTORY,
     minMed7Distinct: RADAR_MIN_MED7_DISTINCT,
-    maxDiscount: RADAR_MAX_DISCOUNT,
-    supplyCap: RADAR_SUPPLY_CAP
+    staleWindowMs: RADAR_STALE_WINDOW_MS
   } = rules;
   const deals: DealRadarRow[] = [];
   for (const signal of signals) {
@@ -188,10 +185,10 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
     // never makes money; the radar should never surface them.
     if (signal.isVendorItem) continue;
     // Freshness gate: skip deals whose latest observation is older than the
-    // stale window. Auctionator/transcript 扫描是手动全量，窗口放宽到 7 天
-    // （AUCTIONATOR_STALE_MAX_AGE_MS；isStale 默认 2 小时是给实时数据的，
-    // 这里必须显式传 7 天窗口，否则雷达对低频扫描数据永远判过期而空）。
-    if (isStale(signal.latestAt, now, AUCTIONATOR_STALE_MAX_AGE_MS)) continue;
+    // stale window. Auctionator/transcript 扫描是手动全量，窗口默认 7 天
+    // （dealRadarRules.staleWindowMs，可经网页设置面板调整；isStale 默认
+    // 2 小时是给实时数据的，这里必须显式传雷达窗口）。
+    if (isStale(signal.latestAt, now, RADAR_STALE_WINDOW_MS)) continue;
     // Class 1: vendor arbitrage. Listed below the NPC sell price is a
     // guaranteed profit with zero market risk — no history needed, and no
     // profit floor either: the NPC always buys, so even a 1c spread is
@@ -214,18 +211,15 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
         numAuctions: signal.numAuctions,
         turnoverScore: signal.turnoverScore
       });
-    // Class 2: median discount. Requires history depth (3+ days) AND a
+    // Class 2: median discount. Requires history depth (2+ days) AND a
     // worthwhile absolute spread — otherwise the list fills with illiquid
-    // junk nobody ever buys. med7 credibility guards: a flat series is one
-    // camper's ask, and a discount past the cap means the reference broke,
-    // not that the listing is cheap. Neither applies to vendor deals above.
+    // junk nobody ever buys. med7 credibility guard: a flat series is one
+    // camper's ask. 2026-10-14 用户拍板移除：折扣线（discount）、折扣下限
+    // （maxDiscount）、供应上限（supplyCap）与最低利润率（minProfitRatio）
+    // ——门槛只留绝对利润、历史天数与可信度，深折扣一律视为捡漏机会。
     } else if (signal.med7Samples >= RADAR_MIN_HISTORY && signal.med7 > 0 && signal.minPrice > 0
       && signal.med7 * (1 - AH_CUT) - signal.minPrice >= RADAR_MIN_PROFIT
-      && signal.med7 * (1 - AH_CUT) - signal.minPrice >= signal.med7 * (1 - AH_CUT) * RADAR_MIN_PROFIT_RATIO
-      && signal.minPrice <= signal.med7 * RADAR_DISCOUNT
-      && signal.med7Distinct >= RADAR_MIN_MED7_DISTINCT
-      && signal.minPrice >= signal.med7 * (1 - RADAR_MAX_DISCOUNT)
-      && (RADAR_SUPPLY_CAP <= 0 || signal.quantity <= RADAR_SUPPLY_CAP)) {
+      && signal.med7Distinct >= RADAR_MIN_MED7_DISTINCT) {
       deals.push({
         itemId: signal.itemId,
         name: signal.name,

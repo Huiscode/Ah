@@ -36,3 +36,7 @@ scripts/.ahledger-state.json
 
 # local addon snapshots
 _addon_game_backup_*/
+
+# vendor 价全量核对（foreverchanges.pro）运行时进度，勿入库
+scripts/.vendor-audit-progress.json
+scripts/vendor-audit.log

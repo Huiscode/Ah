@@ -5,7 +5,6 @@ import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import Link from "next/link";
 import { ItemIcon } from "@/components/item-icon";
 import { Coins } from "@/components/coins";
-import { MoneyInput } from "@/components/money-input";
 import { WatchStar } from "@/components/watch-star";
 import { ProductBadge } from "@/components/product-badge";
 import { qualityColorClass } from "@/lib/quality";
@@ -14,6 +13,7 @@ import { formatPercent } from "@/lib/utils";
 import { categoryLabel, categoryMatches } from "@/lib/category-zh";
 import type { DealRadarRow } from "@/lib/analytics";
 import { usePersistedState } from "@/lib/use-persisted-state";
+import { RadarSettingsButton } from "@/components/radar-settings-button";
 
 type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" | "changePercent" | "quantity";
 
@@ -82,7 +82,6 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
   const mark = (key: SortKey) => (sortKey === key ? (sortAsc ? " ▲" : " ▼") : "");
   const thClass = "cursor-pointer select-none border-b border-terminal-border px-3 py-2 hover:text-slate-200";
   const inputClass = "border border-terminal-border bg-terminal-panel2 px-2 py-1 text-slate-100 focus:outline-none";
-  const moneyField = "bg-transparent text-right text-slate-100 focus:outline-none";
 
   return (
     <div>
@@ -102,11 +101,10 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
           />
           仅限高流通商品
         </label>
-        <span className="flex items-center gap-1.5 border border-terminal-border/60 bg-terminal-panel2 px-2 py-1" title="0=关：不筛选。只保留最低价 ≥ 该值的行">
-          <span className="text-terminal-muted">价格下限</span>
-          <MoneyInput value={fMinPrice} onChange={setFMinPrice} fieldClass={moneyField} />
+        <span className="ml-auto flex items-center gap-2">
+          <RadarSettingsButton />
+          <span className="text-terminal-muted">{rows.length} / {deals.length} 条</span>
         </span>
-        <span className="ml-auto text-terminal-muted">{rows.length} / {deals.length} 条</span>
       </div>
       <div className="max-h-[344px] overflow-y-auto [scrollbar-gutter:stable]">
       <table className="w-full min-w-[1000px] table-fixed border-collapse font-mono text-xs">

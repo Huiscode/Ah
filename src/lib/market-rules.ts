@@ -1,6 +1,8 @@
 ﻿// Single source of truth for the deal-radar rules. The in-game addon is
 // retired (2026-10-13): rules no longer compile into Lua and there is no
-// game-side authority panel — the web constants below are the only source.
+// game-side authority panel. The web constants below are the defaults; a
+// 网页"雷达设置"面板（src/app/api/radar-rules）可覆盖并存进 RadarRule 单行，
+// page.tsx 用 mergeRadarRules 合并后传给 buildDealRadar。
 
 // Pricing pipeline version, stamped into every scan. Consumers (tooltip,
 // deal radar, desktop importer) reject any other value: a bump means the
@@ -16,28 +18,21 @@ export const AH_CUT = 0.05;
 // DealRadarRules are web-side thresholds (no plugin authority anymore).
 export type DealRadarRules = {
   minProfit: number;
-  minProfitRatio: number;
-  discount: number;
   minHistory: number;
   minMed7Distinct: number;
-  maxDiscount: number;
-  supplyCap: number;
+  staleWindowMs: number;
 };
 
+// 2026-10-14 用户拍板：移除 maxDiscount（折扣下限）、supplyCap（供应上限）、
+// discount（折扣线）、minProfitRatio（最低利润率）——门槛只留绝对利润、
+// 历史天数与可信度，深折扣一律视为捡漏机会。
 export const dealRadarRules: DealRadarRules = {
-  minProfit: 30, // 30c absolute dust floor: below this the spread is noise, not a deal
-  minProfitRatio: 0.25, // profit must also be >= 25% of med7: scales with the (early-server) economy
-  discount: 0.85, // 最低买入价 at 85% of med7 or lower
-  minHistory: 3, // med7 needs 3+ days of daily closes before it means anything
-  // Credibility guards on med7 itself. minHistory counts days but says
-  // nothing about whether they mean anything: on a thin realm the bottom of
-  // the book is often one camper, so every scan records that player's ask
-  // and med7 becomes a price no listing ever traded against.
+  minProfit: 50, // 50c absolute dust floor: below this the spread is noise, not a deal
+  minHistory: 2, // med7 needs 2+ days of daily closes before it means anything
+  // Credibility guard on med7 itself: a flat series is one seller, not a market.
   minMed7Distinct: 2, // a flat 7d series is one seller, not a market
-  maxDiscount: 0.75, // past 75% off, the reference is broken, not the listing cheap
-  // Supply cap: 0 = off; >0 excludes items whose latest listed quantity
-  // exceeds this (oversupplied goods are a hoarding risk).
-  supplyCap: 0
+  // 新鲜度窗口：手动全量扫描（Auctionator/transcript）低频，默认 7 天。
+  staleWindowMs: 7 * 24 * 60 * 60 * 1000
 };
 
 // LocalFilterRules are web-only secondary filters over the current database.
