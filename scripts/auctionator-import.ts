@@ -47,6 +47,29 @@ function latestQuantity(block: AuctionatorItemBlock): number {
   return best;
 }
 
+/** 指定 day 的在售量（a[day]）；无记录 = 0。 */
+function quantityOnDay(block: AuctionatorItemBlock, day: number): number {
+  return block.a?.[day] ?? 0;
+}
+
+/** 本次扫描日：价格库中所有 day 桶（l/h/a）的最大值。Auctionator 只给
+ *  "本次扫到在售"的物品写当天 a——某物品 a 无此 day = 本次扫描无在售，
+ *  其残留 m（最后见到的买入价）不可当作当前行情，否则会把上周的旧价
+ *  显示成今天的价（如墨水 10-08 后无在售，却被显示成 1 金）。 */
+function latestSeenDayOf(entries: Array<[string, AuctionatorItemBlock]>): number {
+  let maxDay = -Infinity;
+  for (const [, block] of entries) {
+    for (const bucket of [block.l, block.h, block.a]) {
+      if (!bucket) continue;
+      for (const k of Object.keys(bucket)) {
+        const d = Number(k);
+        if (d > maxDay) maxDay = d;
+      }
+    }
+  }
+  return maxDay;
+}
+
 async function main() {
   const parsed = readAuctionatorSavedVars(SV_PATH, REALM_SLOT);
   const entries = Object.entries(parsed.priceDatabase);
@@ -57,6 +80,9 @@ async function main() {
 
   const scannedAt = new Date((parsed.timeOfLastBrowseScan ?? Math.floor(Date.now() / 1000)) * 1000);
   console.log(`槽 ${REALM_SLOT}: ${entries.length} 物品 | TimeOfLastBrowseScan=${parsed.timeOfLastBrowseScan ?? "无"} (${scannedAt.toISOString()})`);
+
+  // 本次扫描日（见 latestSeenDayOf 注释）：本次无在售的物品不写残留价。
+  const latestSeenDay = latestSeenDayOf(entries);
 
   // ---- ① Item 表：占位创建缺失。vendor 价不再从 VENDOR_PRICE_CACHE 写入 ----
   // 2026-10-14 实测：Auctionator VENDOR_PRICE_CACHE 对多数物品失真（真价 ×400，如墨水 5 银被记为 2000 银），
@@ -85,10 +111,13 @@ async function main() {
     if (!Number.isInteger(itemId)) continue; // 跳过装备 g:/gr:/p: 等复合键（本方案只做普通物品）
     if (block.m !== undefined) {
       const m = BigInt(block.m);
+      const seenToday = quantityOnDay(block, latestSeenDay) > 0; // 本次扫描有在售
+      const qty = seenToday ? quantityOnDay(block, latestSeenDay) : 0;
       snapshots.push({
         itemId, timestamp: scannedAt, server: SERVER, faction: FACTION, market: MARKET, source: SOURCE,
-        minPrice: m, marketPrice: m, altPrice: null,
-        quantity: latestQuantity(block), numAuctions: 0,
+        // 无在售物品 price=0（本次未扫到），前端按"缺货"处理，绝不复用残留 m。
+        minPrice: seenToday ? m : 0n, marketPrice: seenToday ? m : 0n, altPrice: null,
+        quantity: qty, numAuctions: qty,
         rawPayload: { m: block.m, l: block.l ?? {}, h: block.h ?? {}, a: block.a ?? {} }
       });
     }

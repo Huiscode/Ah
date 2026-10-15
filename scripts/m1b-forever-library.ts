@@ -25,7 +25,9 @@ import { dirname, join } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROGRESS_FILE = join(__dirname, ".m1b-progress.json");
 const LOG_FILE = join(__dirname, "m1b.log");
-const INTERVAL_MS = 2500;
+// 请求间隔（ms）。默认 2.5s 保守限速防封；可用 M1B_INTERVAL_MS=0 提速
+// （用户拍板：不限间隔快速跑，老插件当年也是几分钟跑完；触发 403 会自动退避）。
+const INTERVAL_MS = Number(process.env.M1B_INTERVAL_MS ?? 2500);
 const RETRY_DELAY_MS = 15000;
 
 const p = new PrismaClient();
@@ -168,8 +170,13 @@ function parseItem(html: string): ParsedItem | null {
     }
   }
   // 卖价：13铜 / 卖价: 1银20铜
+  // 重要：页面区分"经典旧世(CLASSIC ERA)"与"无限服(FOREVER BETA)"两版属性，
+  // 差异行分别标 it-del（经典独有）/ it-add（无限服新增/修改）。无限服收购价
+  // 以 it-add 行"卖价"为准（用户拍板 2026-10-15：网站已标注修改后价格）；
+  // 无差异的物品只有一条普通卖价，按普通匹配兜底。
   let vendorPrice: number | null = null;
-  const sellM = html.match(/卖价[：:]\s*([^<\n]+)/);
+  const sellAddM = html.match(/class="it-line[^"]*it-add[^"]*"[^>]*>卖价[：:]\s*([^<\n]+)/);
+  const sellM = sellAddM ?? html.match(/卖价[：:]\s*([^<\n]+)/);
   if (sellM) {
     const s = sellM[1];
     const total = (s.match(/(\d+)(金|银|铜)/g) ?? []).reduce((sum, part) => {

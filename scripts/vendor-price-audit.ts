@@ -21,7 +21,10 @@ const RETRY_DELAY_MS = 15000;
 const G: Record<string, number> = { 金: 10000, 银: 100, 铜: 1 };
 
 function parseSellPrice(html: string): number | null {
-  const m = html.match(/卖价[：:]\s*([^<\n]+)/);
+  // 页面区分经典旧世(CLASSIC ERA)与无限服(FOREVER BETA)两版属性；无限服
+  // 收购价以 it-add 行"卖价"为准（2026-10-15 用户指正），无差异走普通卖价。
+  const addM = html.match(/class="it-line[^"]*it-add[^"]*"[^>]*>卖价[：:]\s*([^<\n]+)/);
+  const m = addM ?? html.match(/卖价[：:]\s*([^<\n]+)/);
   if (!m) return null;
   const s = m[1];
   const total = (s.match(/(\d+)(金|银|铜)/g) ?? []).reduce((sum, part) => {

@@ -35,7 +35,10 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
         cachedSignals = universe
           .filter((item) => item.snapshots.length > 0)
           .map((item) => buildMarketSignal(item, now, mode))
-          .filter((signal): signal is MarketSignal => signal !== null);
+          .filter((signal): signal is MarketSignal => signal !== null)
+          // price=0 = 本次扫描无在售（auctionator-import 对残留价已归 0）；
+          // 不作为行情展示，也不进雷达/配方（避免"墨水 1 金"式旧价残留）。
+          .filter((signal) => signal.price > 0);
         cachedLatestAt = latestSnapshotAt;
         cachedKey = key;
       }

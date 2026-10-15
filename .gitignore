@@ -41,6 +41,9 @@ _addon_game_backup_*/
 scripts/.vendor-audit-progress.json
 scripts/vendor-audit.log
 
+# vendor 价无限服版全量重核（FOREVER BETA it-add）断点进度，运行时状态
+scripts/.vendor-forever-fix-progress.json
+
 # M1b 物品抓取断点进度 + watch 导入标记（运行时状态，勿入库）
 scripts/.m1b-progress.json
 scripts/.sync-last.json
