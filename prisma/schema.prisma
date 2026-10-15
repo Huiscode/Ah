@@ -100,6 +100,30 @@ model Watchlist {
   item      Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
 }
 
+// 购物清单（2026-10-15 用户需求）：一组物品搜索词的集合，生成 Auctionator
+// 可导入文本（"清单名^物品1^物品2"，Import 粘贴即建清单）。清单以名称
+// （搜索词，优先基础名）为唯一键，itemId 尽量匹配 Item 表（未知/占位可空）。
+model ShoppingList {
+  id        String            @id @default(cuid())
+  name      String            @unique // 清单名（同时是 Auctionator 导入后的清单名）
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+  items     ShoppingListItem[]
+}
+
+model ShoppingListItem {
+  id        String       @id @default(cuid())
+  listId    String       @map("list_id")
+  list      ShoppingList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  name      String // 搜索词（显示名/基础名快照）
+  itemId    Int?         @map("item_id") // 尽量匹配的 Item.item_id；未知名称/占位为 null
+  quantity  Int          @default(1)
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  @@unique([listId, name])
+  @@index([itemId])
+}
+
 model AlertRule {
   id         String    @id @default(cuid())
   itemId     Int       @map("item_id")

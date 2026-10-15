@@ -1,7 +1,11 @@
-# AH 项目跟进文件（HANDOFF · v3）
+# AH 项目跟进文件（HANDOFF · v3.5）
 
 > **进入本项目的唯一必读入口**：先读本文件，再按需精读具体代码，不要通读整个仓库。
-> 最后更新：2026-10-14（本地 UTC+2）。对应 git HEAD：本版随"雷达门槛精简 + vendor 全量核对"提交推送。
+> 最后更新：2026-10-15（本地 UTC+2）。对应 git HEAD：v3.3 修复批次（AH 残留旧价归零 +
+> vendor 无限服版全量重核）。
+> **v3.4 新增（2026-10-15 晚）**：数据库版购物清单落地——`/lists` 管理页 + 三处一键入口
+> （雷达筛选 / 关注物品 / 配方原料）+ Auctionator 导入文本复制与粘贴解析（详见 §7-5）。
+> schema 变更（新增 ShoppingList / ShoppingListItem 表），web 服务已重启加载新 Prisma client。
 > **v2/v3 说明**：2026-10-13 起数据源已从自研插件切换为 Auctionator + M4 转录插件；旧自研插件
 > 时代的一切历史记录（P10/P50、中立市场、账本、旧扫描链路等）**已全部失效**，本版不再保留。
 > v3 新增：雷达门槛最终口径（用户拍板）、网页设置面板（含价格下限）、vendor 价全量核对机制。
@@ -76,6 +80,7 @@ SQLite（prisma\dev.db）→ 网页（首页 / 单品页 / 配方页；两模式
 | 极少挂单剔除 | `src\lib\bait-filter.ts`（markBaitDays / markThinDays） |
 | 查询层 / 信号 / 雷达 | `src\lib\repositories.ts`（mode 分叉）、`analytics.ts`、`market-signals.ts`（快照代+mode 缓存）、`market-rules.ts`（雷达阈值） |
 | **雷达设置（网页）** | `src\app\api\radar-rules\route.ts`（GET/POST 读写 RadarRule 单行 id=1）、`src\components\radar-settings-button.tsx`（设置面板）、`deal-radar-table.tsx`（雷达表，表头已去价格下限） |
+| **购物清单（v3.4 新增）** | `src\app\lists\page.tsx`（清单管理页）、`src\components\shopping-lists-manager.tsx`、`src\components\add-to-list-button.tsx`（雷达/关注/配方一键加入）、`src\lib\shopping-list.ts`（baseNameOf 基础名 / buildListImportText / parseImportText，11 测试）、`src\app\actions.ts`（清单 CRUD server actions）、`ShoppingList`/`ShoppingListItem` 表（name 唯一，itemId 可空） |
 | 迁移计划（唯一权威） | `docs\plans\auctionator-migration-plan.md` |
 | 环境变量（导入用） | `AQ_AUCTIONATOR_SV_PATH`、`AQ_AUCTIONATOR_REALM_SLOT="PvP"`、`AQ_SERVER="Classic Beta PvP 2"`、`AQ_FACTION="Alliance"`；`.env` 里 `DATABASE_URL=file:./dev.db` |
 
@@ -252,16 +257,42 @@ SQLite（prisma\dev.db）→ 网页（首页 / 单品页 / 配方页；两模式
 3. **游戏内商人价 sp 数据积累**：插件 v0.2.1 需用户 /reload 加载；打开商人窗口自动记录
    （收购价+卖出单价）；watch 导入 sp 后配方材料成本兜底自动生效。
 4. **POSTING_HISTORY**：当前为空（`{__dbversion=1}`），`PostingRecord` 表已建、解析口子就绪。
-5. **网页必赚列表加"Auctionator 搜索词"列 + 一键复制购物清单**（用户 2026-10-15 需求：
-   "快速找到并拍下"）：显示每件物品的基础名（去随机前缀）+ 物品 ID；搜索词统一用基础名
-   （如"轻身法杖"而非"孤狼之轻身法杖"，一次命中全部前缀变体）；复制按钮生成可贴进
-   Auctionator 购物清单的文本。**未实现**。
+5. **【✅ 已完成 2026-10-15】网页购物清单**（用户需求"快速找到并拍下"）：数据库版清单
+   （`ShoppingList`/`ShoppingListItem` 表，清单名唯一、物品以 listId+name 唯一、itemId 可空）。
+   新增 `/lists` 管理页（新建/重命名/删除、按名称或 ID 添加物品、复制导入文本、粘贴导入回存），
+   三处一键入口：首页雷达表"当前筛选加入清单"、关注物品"全部加入清单"、配方库与关注配方
+   "原料入清单"。导入文本 = **新版格式**（`清单名^物品1^物品2`，对齐游戏内 Auctionator
+   ImportFrame.lua / GetBatchExportString）；**用户拍板只保留新版，旧版（*）与 TSM（逗号）解析
+   已移除**（v3.4 修订，`parseImportText` 只认 ^）；搜索词统一基础名（`baseNameOf` 取"之"后，
+   如"轻身法杖"，一次命中全部前缀变体；导入回存按原名/基础名双匹配 itemId）。
+   **已知取舍**：固定名如"河爪之斧"退化为基础词"斧"（多匹配，可在清单内删除）。
+   **v3.4 修订（同晚）**：①"加入清单"浮层按钮文字竖排 bug 修复（select min-w + 按钮
+   whitespace-nowrap/shrink-0）；②下拉展开时经 `getShoppingListOptions()` 实时拉取最新清单，
+   /lists 新建后回到主页无需刷新（Next RSC 缓存页同样生效，浏览器实测三清单即时可见）；
+   ③关注物品面板按用户要求删除"全部加入清单"按钮，改为标题下方一行内联选择器
+   "清单 [下拉] [加入] 共 N 项"（AddToListButton 新增 inline 模式，无清单时显示"清单（先去建清单）"标注）。
+   ④删除清单改自定义中文确认弹窗（替换浏览器原生 confirm 的英文标题"localhost:3000 says"与
+   OK/Cancel 按钮；提示清单名与物品数、不可恢复，取消/确认删除全中文）；⑤inline 选择器在
+   mount + 窗口 focus/页面可见时实时刷新清单列表，/lists 删除清单后切回主页自动消失；
+   ⑥/lists 页 mount + focus/可见时 router.refresh() 强制拉最新 RSC——主页"加入"后客户端
+   导航回 /lists 无需手动刷新即显示新物品（Next 客户端路由缓存不自动失效，靠此绕过）。
+   **schema 变更后需重启 web 服务**（Prisma client 启动时加载；web 重启不影响 watch-auto-import）。
+   **v3.5 修订（10-15 验收轮）**：⑦搜索单个物品框体从右栏移到**左栏新建清单下方**（结果点"加入"
+   进当前选中清单；未选清单时提示"先选择要加入的清单"，实测亚麻布/#2589·加入 正常）；⑧粘贴导入
+   （importShoppingListText）加**批内去重**——同一文本内重复物品只保留一条（防撞 unique(list_id,name)
+   约束；addItemsToList 早已有 existing+seen 双重去重）。**结论：网页端永不产生重复**（粘贴导入=
+   同名清单整体覆盖重建；一键入口=自动去重），即使游戏端清单里有重复行，导出文本回网页也自动收敛；
+   ⑨游戏端调研结论：Auctionator「添加到清单」/最近搜索「复制到当前购物清单」**必须先展开（激活）
+   一个购物清单**，否则添加按钮 Lua 报错（原版 Main.lua 无 nil 保护）、复制按钮提示"无法复制物品，
+   未选中购物清单"（zhCN COPY_NO_LIST_SELECTED）；⑩曾尝试改插件端去重（List.lua HasItem + Main.lua
+   两回调 + ImportExport 三处导入 + zhCN/enUS 文案），**用户决定复原**（插件频繁更新会覆盖/兼容风险）——
+   已全部恢复官方原版（SHA256 逐一验证）并删备份目录。**决策：不改插件，靠网页端覆盖+去重管理清单**。
 6. **开服清空运行时数据**（SQLite + SavedVariables + 导入进度；代码/git 保留），由用户通知触发。
 
 ## 8. git 状态
 
-- HEAD = origin/main = **M4h**（b05b66e）：AH 残留旧价归零 + vendor 无限服版全量重核 + 404 脏价
-  清理 + 前缀物品澄清（v3.3 修复批次）。
+- HEAD = **购物清单 v3.5 批次**（2026-10-15 提交；上版 M4h b05b66e：AH 残留旧价归零 + vendor 无限服版
+  全量重核 + 404 脏价清理 + 前缀物品澄清 v3.3 修复批次）。
 - 纪律：**只有用户明确说"推/推一版"才 push；说"提交git"才 commit**；只提交点名范围。
 
 ## 9. 已知坑 / 机制限制

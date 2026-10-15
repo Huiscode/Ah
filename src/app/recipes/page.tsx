@@ -1,6 +1,6 @@
 import { RadioTower } from "lucide-react";
 import { buildRecipeFloors, computeRecipeProfits } from "@/lib/recipe-profits";
-import { getItemSellerPrices, getItemVendorPrices, getRecipes } from "@/lib/repositories";
+import { getItemSellerPrices, getItemVendorPrices, getRecipes, getShoppingLists } from "@/lib/repositories";
 import { getMarketSignals } from "@/lib/market-signals";
 import { AUCTIONATOR_STALE_MAX_AGE_MS, describeFreshness } from "@/lib/freshness";
 import { RecipeLibrary } from "@/components/recipe-library";
@@ -15,12 +15,14 @@ export const dynamic = "force-dynamic";
 // 卖价（Item.sellPrice），其次收购价；产出价扣 5% 拍卖税后按利润率排序。
 // 拍卖行无价/无记录的配方标注"缺货"，扫到后自动补齐。
 export default async function RecipesPage() {
-  const [{ signals, latestSnapshotAt }, recipes, vendorPrices, sellerPrices] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, recipes, vendorPrices, sellerPrices, shoppingLists] = await Promise.all([
     getMarketSignals(),
     getRecipes(),
     getItemVendorPrices(),
-    getItemSellerPrices()
+    getItemSellerPrices(),
+    getShoppingLists()
   ]);
+  const listOptions = shoppingLists.map((list) => ({ id: list.id, name: list.name }));
   const freshness = describeFreshness(latestSnapshotAt, new Date(), AUCTIONATOR_STALE_MAX_AGE_MS);
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
   const floors = buildRecipeFloors(recipes, vendorPrices, sellerPrices);
@@ -65,7 +67,7 @@ export default async function RecipesPage() {
         </Panel>
       </div>
 
-      <RecipeLibrary rows={recipeRows} />
+      <RecipeLibrary rows={recipeRows} lists={listOptions} />
       <footer className="mt-3 border border-terminal-border bg-terminal-panel px-4 py-2 font-mono text-[10px] leading-relaxed text-terminal-muted">
         配方数据来自 foreverchanges.pro 专业页核对与游戏内 /wahrecipes 扫描（客户端 1.60.1，非官方公布，以游戏内实装为准）。商人兑换的"青睐"货币成本按业绩奖励累积，未折算铜币。价格口径 = Auctionator 最低买入价：无 AH 挂单时以 NPC 收购价兜底计算，仅作参考下限；缺货配方待扫描/数据源补全后自动恢复计算。
       </footer>

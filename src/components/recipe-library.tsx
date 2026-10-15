@@ -8,6 +8,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { formatPercent } from "@/lib/utils";
 import { CopperAmount } from "@/components/copper-amount";
 import { ProductBadge } from "@/components/product-badge";
+import { AddToListButton } from "@/components/add-to-list-button";
 import { usePersistedState } from "@/lib/use-persisted-state";
 
 // Unambiguous compact copper: 193 -> "1g93c", -113 -> "-1s13c".
@@ -76,7 +77,7 @@ const PROFESSION_ORDER = [
 // 配方库（独立页面）：专业配方页——来源/专业 tab 横条、
 // 左侧技能等级+分类筛选、搜索框、排序、两列卡片网格、分页。卡片保留本项目
 // 的核心增值：利润率与利润额（绿色/红色），缺价配方排最后并标"缺价"。
-export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
+export function RecipeLibrary({ rows, lists }: { rows: RecipeProfitRow[]; lists: Array<{ id: string; name: string }> }) {
   const [source, setSource] = usePersistedState<SourceFilter>("wah:recipes:source", "全部");
   // 筛选状态持久化：刷新后保留用户上次选的专业/技能档/分类/搜索/排序。
   const [profession, setProfession] = usePersistedState<string>("wah:recipes:profession", "全部");
@@ -470,6 +471,7 @@ export function RecipeLibrary({ rows }: { rows: RecipeProfitRow[] }) {
                     )}
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
+                    <AddToListButton items={row.recipe.reagents.map((m) => ({ itemId: m.itemId, name: m.name, quantity: m.quantity }))} lists={lists} label="原料入清单" />
                     <button
                       type="button"
                       onClick={() => toggleFavorite(row)}

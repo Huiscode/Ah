@@ -14,6 +14,7 @@ import { categoryLabel, categoryMatches } from "@/lib/category-zh";
 import type { DealRadarRow } from "@/lib/analytics";
 import { usePersistedState } from "@/lib/use-persisted-state";
 import { RadarSettingsButton } from "@/components/radar-settings-button";
+import { AddToListButton } from "@/components/add-to-list-button";
 
 type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" | "changePercent" | "quantity";
 
@@ -23,12 +24,13 @@ type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" |
 // Headers sort: first click high-to-low, second click low-to-high; without
 // any click the rows keep the radar's own ranking (NPC deals first, then
 // absolute profit).
-export function DealRadarTable({ deals, prices, categories, watchedItemIds, productItemIds }: {
+export function DealRadarTable({ deals, prices, categories, watchedItemIds, productItemIds, lists }: {
   deals: DealRadarRow[];
   prices: Map<number, number>;
   categories: string[];
   watchedItemIds: number[];
   productItemIds: Set<number>;
+  lists: Array<{ id: string; name: string }>;
 }) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
@@ -102,6 +104,7 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
           仅限高流通商品
         </label>
         <span className="ml-auto flex items-center gap-2">
+          <AddToListButton items={rows.map((deal) => ({ itemId: deal.itemId, name: deal.name }))} lists={lists} label="当前筛选加入清单" />
           <RadarSettingsButton />
           <span className="text-terminal-muted">{rows.length} / {deals.length} 条</span>
         </span>

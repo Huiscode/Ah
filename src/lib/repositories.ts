@@ -562,3 +562,46 @@ export async function getItemSellerPricesByIds(itemIds: number[]): Promise<Map<n
   });
   return new Map(rows.map((row) => [row.itemId, Number(row.sellPrice)]));
 }
+
+// 购物清单全量读取（/lists 页与各"加入清单"入口共用）：
+// 清单 + 物品（按创建顺序）；物品的 itemId 有值时附带 Item 的 icon/quality 供展示。
+export type ShoppingListWithItems = {
+  id: string;
+  name: string;
+  items: Array<{
+    id: string;
+    name: string;
+    itemId: number | null;
+    quantity: number;
+    icon: string | null;
+    quality: string | null;
+  }>;
+};
+
+export async function getShoppingLists(): Promise<ShoppingListWithItems[]> {
+  const lists = await prisma.shoppingList.findMany({
+    orderBy: { createdAt: "asc" },
+    include: { items: { orderBy: { createdAt: "asc" } } }
+  });
+  const itemIds = Array.from(new Set(lists.flatMap((list) => list.items.map((i) => i.itemId).filter((v): v is number => v !== null))));
+  const meta = itemIds.length
+    ? await prisma.item.findMany({ where: { itemId: { in: itemIds } }, select: { itemId: true, icon: true, quality: true } })
+    : [];
+  const metaById = new Map(meta.map((m) => [m.itemId, m]));
+  return lists.map((list) => ({
+    id: list.id,
+    name: list.name,
+    items: list.items.map((item) => {
+      const m = item.itemId === null ? undefined : metaById.get(item.itemId);
+      return {
+        id: item.id,
+        name: item.name,
+        itemId: item.itemId,
+        quantity: item.quantity,
+        icon: m?.icon ?? null,
+        quality: m?.quality ?? null
+      };
+    })
+  }));
+}
+

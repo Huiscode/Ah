@@ -1,4 +1,4 @@
-import { Bell, Hammer, RadioTower, Star } from "lucide-react";
+import { Bell, Hammer, RadioTower, ShoppingCart, Star } from "lucide-react";
 import { buildDealRadar } from "@/lib/analytics";
 import { evaluateAlertRules } from "@/lib/alerts";
 import { buildRecipeFloors, computeRecipeProfits } from "@/lib/recipe-profits";
@@ -12,6 +12,7 @@ import {
   getLatestSnapshotTime,
   getRadarRules,
   getRecipes,
+  getShoppingLists,
   getWatchedItemIds,
   type MarketMode
 } from "@/lib/repositories";
@@ -28,6 +29,7 @@ import { MarketTable } from "@/components/market-table";
 import { WatchStar } from "@/components/watch-star";
 import { DealRadarTable } from "@/components/deal-radar-table";
 import { SecondaryMaterialsPanel } from "@/components/secondary-materials-panel";
+import { AddToListButton } from "@/components/add-to-list-button";
 
 import { FavoriteRecipesPanel } from "@/components/favorite-recipes-panel";
 import { InstructionsPanel } from "@/components/instructions-panel";
@@ -50,7 +52,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const raw = await searchParams;
   const mode: MarketMode = raw.history === "1" ? "history" : "current";
   const view = parseMarketView(raw);
-  const [{ signals, latestSnapshotAt }, watchedIds, alertRules, latestRound, recipes, vendorPrices, sellerPrices] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, watchedIds, alertRules, latestRound, recipes, vendorPrices, sellerPrices, shoppingLists] = await Promise.all([
     getMarketSignals(mode),
     getWatchedItemIds(),
     getAlertRules(),
@@ -60,8 +62,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     // 面板按收藏过滤；收藏在 /recipes 配方库页设置）。
     getRecipes(),
     getItemVendorPrices(),
-    getItemSellerPrices()
+    getItemSellerPrices(),
+    getShoppingLists()
   ]);
+  const listOptions = shoppingLists.map((list) => ({ id: list.id, name: list.name }));
   const freshness = describeFreshness(latestSnapshotAt, new Date(), AUCTIONATOR_STALE_MAX_AGE_MS);
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
   const triggeredAlerts = evaluateAlertRules(alertRules, signals);
@@ -105,6 +109,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             <RadioTower size={14} /> 联盟·数据更新于 {freshness.label}
           </span>
           <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><Hammer size={14} /> 配方库</Link>
+          <Link href="/lists" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ShoppingCart size={14} /> 购物清单</Link>
           <span className="flex items-center gap-1"><Bell size={14} /> 预警就绪</span>
         </div>
       </div>
@@ -137,7 +142,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                     : "当前没有满足利润与参考价门槛的捡漏挂单。"}
                 </div>
               ) : (
-                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} productItemIds={productItemIds} />
+                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} productItemIds={productItemIds} lists={listOptions} />
               )}
             </div>
           </Panel>
@@ -158,9 +163,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         </div>
         <div className="space-y-3">
           <SecondaryMaterialsPanel rows={secondaryRows} prices={priceByItemId} floorPrices={floors.costFloor} turnoverByItemId={turnoverByItemId} />
-          <FavoriteRecipesPanel rows={recipeRows} prices={priceByItemId} floorPrices={floors.costFloor} />
+          <FavoriteRecipesPanel rows={recipeRows} prices={priceByItemId} floorPrices={floors.costFloor} lists={listOptions} />
           <Panel>
-            <PanelHeader title="关注物品" action={<Star size={13} className="text-terminal-amber" />} />
+            <PanelHeader title="关注物品" />
+            <div className="flex items-center gap-2 border-b border-terminal-border px-3 py-1.5">
+              <AddToListButton items={watchedSignals.map((s) => ({ itemId: s.itemId, name: s.name }))} lists={listOptions} inline />
+              {watchedSignals.length > 0 && <span className="text-[10px] text-terminal-muted">共 {watchedSignals.length} 项</span>}
+            </div>
             <div className="space-y-2 p-3 font-mono text-xs">
               {watchedSignals.length === 0 && <div className="text-terminal-muted">市场表中点 ☆ 添加关注</div>}
               {watchedSignals.map((signal) => (

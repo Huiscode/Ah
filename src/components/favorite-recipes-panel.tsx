@@ -10,6 +10,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Coins } from "@/components/coins";
 import { CopperAmount } from "@/components/copper-amount";
 import { ProductBadge } from "@/components/product-badge";
+import { AddToListButton } from "@/components/add-to-list-button";
 import { usePersistedState } from "@/lib/use-persisted-state";
 
 // 关注配方：配方库页收藏的配方（localStorage 共享同一 key），这里只读过滤。
@@ -31,10 +32,11 @@ function isFavorite(row: RecipeProfitRow, favorites: FavoriteKey[]): boolean {
 
 // 关注配方面板：只显示被收藏的配方，每行 = 产出物×数量 + 利润 + 盈利百分比；
 // 悬停显示完整制作链路（材料名/数量/单价、产出物×数量）与利润明细。
-export function FavoriteRecipesPanel({ rows, prices, floorPrices }: {
+export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists }: {
   rows: RecipeProfitRow[];
   prices: Map<number, number>;
   floorPrices: Map<number, number>;
+  lists: Array<{ id: string; name: string }>;
 }) {
   const [favorites, setFavorites] = usePersistedState<FavoriteKey[]>(FAVORITES_KEY, []);
   const [open, setOpen] = useState(true);
@@ -82,6 +84,7 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices }: {
         {favRows.map((row) => (
           <div key={`${row.recipe.category}|${row.recipe.profession}|${row.recipe.name}`} className="group relative flex items-center justify-between gap-2">
             <span className="flex min-w-0 items-center gap-2">
+              <AddToListButton items={row.recipe.reagents.map((m) => ({ itemId: m.itemId, name: m.name, quantity: m.quantity }))} lists={lists} label="原料入清单" />
               <button
                 onClick={() => toggleFavorite(row)}
                 title="取消收藏"
