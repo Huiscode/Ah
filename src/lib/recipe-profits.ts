@@ -56,14 +56,38 @@ export type MaterialPrice = {
 
 export type RecipeProfitRow = {
   recipe: DbRecipe;
-  status: "ok" | "missing";
+  // "ok" = 有物品产出且材料价齐，可算利润；
+  // "cost-only" = 无物品产出（如附魔效果），材料价齐仅可算成本；
+  // "missing" = 材料/产出缺价。
+  status: "ok" | "cost-only" | "missing";
   cost: number;
   revenue: number;
   profit: number;
   marginPercent: number;
   missing: string[];
   materials: MaterialPrice[]; // 每种材料当前单价与来源（缺价材料不在此列）
+  // 成品收入是否用了 NPC 收购价兜底（拍卖行无该成品挂单）：true 时百分比须标注"NPC"。
+  revenueFromFloor?: boolean;
+  // 图纸/公式卷轴（掉落可拍卖的配方物品）：scrollItemId = 卷轴物品 id
+  // （训练师/NPC 直接学会的配方无卷轴物品 → null）；scrollPrice = 卷轴 AH 最低买入价
+  // （AH 无挂单时不设，仅标注"暂无挂单"）。
+  scrollItemId?: number | null;
+  scrollPrice?: number;
+  // 商人兑换图纸的"制造物"（同名制造配方）：图纸价值（青睐）与制造成本/成品利润
+  // 是两个概念——merchant 行附上其能制造的成品的利润信息，无同名制造配方为 null。
+  linkedCraft?: {
+    outputName: string;
+    outputItemId: number;
+    marginPercent: number;
+    profit: number;
+    cost: number;
+    revenueFromFloor: boolean;
+  } | null;
 };
+
+// 商人图纸名前缀（兑换所得 = 设计图/公式/图纸/图样/食谱/结构图卷轴）。
+const PATTERN_PREFIX = /^(设计图|公式|图纸|图样|食谱|结构图)：/;
+export const stripRecipePrefix = (name: string): string => name.replace(PATTERN_PREFIX, "").trim();
 
 
 // Canonical English profession names (stored value) → client-locale display
@@ -144,7 +168,8 @@ export function computeRecipeProfits(
   recipes: DbRecipe[],
   priceByItemId: Map<number, number>,
   costFloor: Map<number, number>,
-  revenueFloor: Map<number, number> = costFloor
+  revenueFloor: Map<number, number> = costFloor,
+  scrollItemIdByBase: ReadonlyMap<string, number> = new Map()
 ): RecipeProfitRow[] {
   const rows = recipes.map<RecipeProfitRow>((recipe) => {
     const missing: string[] = [];
@@ -162,16 +187,28 @@ export function computeRecipeProfits(
       }
     }
     let revenue = 0;
+    let usedFloor = false;
     for (const output of recipe.outputs) {
       const price = priceByItemId.get(output.itemId) ?? revenueFloor.get(output.itemId);
       if (price === undefined) {
         missing.push(output.name);
       } else {
+        if (!priceByItemId.has(output.itemId)) usedFloor = true;
         revenue += output.quantity * price;
       }
     }
-    if (missing.length > 0 || recipe.outputs.length === 0) {
-      return { recipe, status: "missing", cost: 0, revenue: 0, profit: 0, marginPercent: 0, missing, materials };
+    // 图纸/公式卷轴：去前缀后按基础名匹配卷轴物品（掉落可拍卖才有）；AH 有价才标价值。
+    const scrollId = recipe.category === "craft" ? (scrollItemIdByBase.get(stripRecipePrefix(recipe.name)) ?? null) : null;
+    const scrollPrice = scrollId !== null && scrollId !== undefined ? priceByItemId.get(scrollId) : undefined;
+    // 无物品产出（附魔效果等）：材料价齐 → cost-only（仅可算成本），缺价 → missing
+    if (recipe.outputs.length === 0) {
+      if (missing.length > 0) {
+        return { recipe, status: "missing", cost: 0, revenue: 0, profit: 0, marginPercent: 0, missing, materials, scrollItemId: scrollId, scrollPrice };
+      }
+      return { recipe, status: "cost-only", cost, revenue: 0, profit: 0, marginPercent: 0, missing: [], materials, scrollItemId: scrollId, scrollPrice };
+    }
+    if (missing.length > 0) {
+      return { recipe, status: "missing", cost: 0, revenue: 0, profit: 0, marginPercent: 0, missing, materials, scrollItemId: scrollId, scrollPrice };
     }
     revenue = Math.round(revenue * (1 - AH_CUT));
     const profit = revenue - cost;
@@ -183,14 +220,40 @@ export function computeRecipeProfits(
       profit,
       marginPercent: cost === 0 ? 0 : (profit / cost) * 100,
       missing: [],
-      materials
+      materials,
+      revenueFromFloor: usedFloor,
+      scrollItemId: scrollId,
+      scrollPrice
     };
   });
-  // 默认按利润率排序（计划口径）：可算的在最前、利润率从高到低；缺价
-  // 的排最后（不参与利润排序）。
-  return rows.sort((left, right) => {
-    if (left.status !== right.status) return left.status === "ok" ? -1 : 1;
+  // 商人兑换图纸关联制造物：同专业同名（去前缀）的制造配方行。
+  // 图纸价值（青睐币）与制造成本/成品利润是两个概念，merchant 行附上制造物信息。
+  const byCraftKey = new Map<string, RecipeProfitRow>();
+  for (const row of rows) {
+    if (row.recipe.category === "craft") byCraftKey.set(`${row.recipe.profession}|${stripRecipePrefix(row.recipe.name)}`, row);
+  }
+  const withLinked = rows.map((row) => {
+    if (row.recipe.category !== "merchant") return row;
+    const craft = byCraftKey.get(`${row.recipe.profession}|${stripRecipePrefix(row.recipe.name)}`);
+    if (!craft || craft.status !== "ok" || craft.recipe.outputs.length === 0) return { ...row, linkedCraft: null };
+    return {
+      ...row,
+      linkedCraft: {
+        outputName: craft.recipe.outputs[0]?.name ?? "",
+        outputItemId: craft.recipe.outputs[0]?.itemId ?? 0,
+        marginPercent: craft.marginPercent,
+        profit: craft.profit,
+        cost: craft.cost,
+        revenueFromFloor: craft.revenueFromFloor ?? false
+      }
+    };
+  });
+  // 默认排序：可算利润的在前（利润率高→低），无产出的次之（成本低→高），缺价的最后。
+  const rank: Record<RecipeProfitRow["status"], number> = { ok: 0, "cost-only": 1, missing: 2 };
+  return withLinked.sort((left, right) => {
+    if (left.status !== right.status) return rank[left.status] - rank[right.status];
     if (left.status === "ok") return right.marginPercent - left.marginPercent;
+    if (left.status === "cost-only") return left.cost - right.cost || left.recipe.name.localeCompare(right.recipe.name, "zh-CN");
     return left.recipe.name.localeCompare(right.recipe.name, "zh-CN");
   });
 }

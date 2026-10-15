@@ -190,7 +190,8 @@ export function RecipeLibrary({ rows, lists }: { rows: RecipeProfitRow[]; lists:
   }, [searched, category]);
 
   // 价格/利润筛选：材料总价 ≤ g/s/c 上限 且 盈利百分比 ≥ 最小值。
-  // 任一条件激活时只保留 status="ok"（缺价行材料成本不完整，无法判定）。
+  // 任一条件激活时排除缺价行（材料成本不完整）；cost-only（附魔）有成本，
+  // 参与材料总价筛选，但不参与利润率筛选。
   const costLimitCopper = useMemo(() => {
     const g = Number.parseInt(costMax.g || "0", 10) || 0;
     const s = Number.parseInt(costMax.s || "0", 10) || 0;
@@ -202,20 +203,22 @@ export function RecipeLibrary({ rows, lists }: { rows: RecipeProfitRow[]; lists:
   const priced = useMemo(() => {
     if (!costFilterActive && marginLimit === null) return filtered;
     return filtered.filter((row) => {
-      if (row.status !== "ok") return false;
+      if (row.status === "missing") return false;
       if (costFilterActive && row.cost > costLimitCopper) return false;
-      if (marginLimit !== null && row.marginPercent < marginLimit) return false;
+      if (marginLimit !== null && row.status === "ok" && row.marginPercent < marginLimit) return false;
       return true;
     });
   }, [filtered, costFilterActive, costLimitCopper, marginLimit]);
 
   const sorted = useMemo(() => {
     const arr = [...priced];
+    const rank: Record<string, number> = { ok: 0, "cost-only": 1, missing: 2 };
     switch (sort) {
       case "profit":
         return arr.sort((a, b) => {
-          if (a.status !== b.status) return a.status === "ok" ? -1 : 1;
+          if (a.status !== b.status) return rank[a.status] - rank[b.status];
           if (a.status === "ok") return b.marginPercent - a.marginPercent;
+          if (a.status === "cost-only") return a.cost - b.cost;
           return a.recipe.name.localeCompare(b.recipe.name, "zh-CN");
         });
       case "skillAsc":
@@ -263,7 +266,7 @@ export function RecipeLibrary({ rows, lists }: { rows: RecipeProfitRow[]; lists:
         action={
           <span className="flex items-center gap-2 font-mono text-[10px] text-terminal-muted">
             <Hammer size={13} className="text-terminal-muted" />
-            共 {rows.length} 条 · 可算利润 {rows.filter((row) => row.status === "ok").length} 条 · 已收藏 {favorites.length} 条
+            共 {rows.length} 条 · 可算利润 {rows.filter((row) => row.status === "ok").length} 条 · 附魔成本 {rows.filter((row) => row.status === "cost-only").length} 条 · 已收藏 {favorites.length} 条
           </span>
         }
       />
@@ -467,7 +470,7 @@ export function RecipeLibrary({ rows, lists }: { rows: RecipeProfitRow[]; lists:
                   >
                     {row.recipe.name}
                     {row.recipe.category === "merchant" && (
-                      <span className="ml-1 text-[9px] text-terminal-amber/80">兑换{(row.recipe.favorCost ?? 0) > 0 ? `·青睐${row.recipe.favorCost}` : ""}</span>
+                      <span className="ml-1 text-[9px] text-terminal-amber/80">兑换</span>
                     )}
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
@@ -488,21 +491,52 @@ export function RecipeLibrary({ rows, lists }: { rows: RecipeProfitRow[]; lists:
                   </span>
                 </div>
                 <div className="mt-1 flex h-4 items-baseline justify-between gap-2">
-                  {row.status === "ok" ? (
+                  {row.recipe.category === "merchant" ? (
+                    <>
+                      <span className="truncate text-[10px] text-terminal-amber">
+                        {(row.recipe.favorCost ?? 0) > 0 ? <>图纸：青睐 ×{row.recipe.favorCost}</> : "图纸：青睐暂无数据"}
+                        {row.linkedCraft ? (
+                          <>
+                            {" · "}制造：{row.linkedCraft.outputName}
+                            <span className={row.linkedCraft.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}> {formatPercent(row.linkedCraft.marginPercent)}{row.linkedCraft.revenueFromFloor ? <span className="text-[9px]"> NPC</span> : ""}</span>
+                          </>
+                        ) : (
+                          <span className="text-terminal-muted"> · 制造：无成品记录</span>
+                        )}
+                      </span>
+                    </>
+                  ) : row.status === "ok" ? (
                     <>
                       <span className={`text-sm ${row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
-                        {formatPercent(row.marginPercent)}
+                        {formatPercent(row.marginPercent)}{row.revenueFromFloor ? <span className="text-[9px]"> NPC</span> : ""}
                       </span>
                       <span className={`text-[10px] ${row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
                         {row.profit >= 0 ? "利润 " : "亏损 "}<CopperAmount copper={row.profit} hideSign={row.profit < 0} />
                       </span>
                     </>
+                  ) : row.status === "cost-only" ? (
+                    <>
+                      <span className="text-[10px] text-terminal-muted">附魔</span>
+                      <span className="text-[10px] text-slate-200">成本 <CopperAmount copper={row.cost} /></span>
+                    </>
                   ) : (
                     <span className="truncate text-[10px] text-terminal-muted">缺货 · 缺 {row.missing.join("、")}</span>
                   )}
                 </div>
-                <div className="mt-0.5 h-4 truncate text-[9px] text-terminal-muted/90" title={row.recipe.reagents.map((m) => `${m.name}×${m.quantity}`).join(" + ") || "—"}>
-                  材料：
+                {row.recipe.category !== "merchant" && row.scrollItemId !== undefined && row.scrollItemId !== null && (
+                  <div className="mt-0.5 h-4 truncate text-[9px]">
+                    <span className="text-terminal-amber">图纸 </span>
+                    {row.scrollPrice !== undefined ? (
+                      <>
+                        <CopperAmount copper={row.scrollPrice} />
+                        <span className="text-terminal-muted"> AH</span>
+                      </>
+                    ) : (
+                      <span className="text-terminal-muted">暂无挂单</span>
+                    )}
+                  </div>
+                )}
+                <div className="mt-0.5 h-4 truncate text-[9px] text-terminal-muted/90" title={row.recipe.reagents.map((m) => `${m.name}×${m.quantity}`).join(" + ") || (row.recipe.category === "merchant" ? "商人青睐兑换：无制造材料，需青睐币" : "—")}>                  材料：
                   {row.recipe.reagents.map((m, i) => {
                     const mp = row.materials.find((p) => p.name === m.name && p.quantity === m.quantity);
                     return (
@@ -522,17 +556,27 @@ export function RecipeLibrary({ rows, lists }: { rows: RecipeProfitRow[]; lists:
                         )}
                       </span>
                     );
-                  }) || "—"}
+                  }) || (row.recipe.category === "merchant" ? "无（青睐兑换）" : "—")}
                 </div>
-                <div className="h-4 truncate text-[9px] text-slate-300/80" title={row.recipe.outputs.map((m) => `${m.name}×${m.quantity}`).join(" + ")}>
+                <div className="h-4 truncate text-[9px] text-slate-300/80" title={row.recipe.outputs.map((m) => `${m.name}×${m.quantity}`).join(" + ") || "附魔的效果"}>
+                  {row.recipe.category === "merchant" && (
+                    <span className="text-terminal-amber">总制造成本 <CopperAmount copper={row.cost} /> · </span>
+                  )}
+                  {row.recipe.category !== "merchant" && row.status === "ok" && (
+                    <span className="text-terminal-amber">总成本 <CopperAmount copper={row.cost} /> · </span>
+                  )}
                   产出：
-                  {row.recipe.outputs.map((m, i) => (
-                    <span key={i}>
-                      {i > 0 ? " + " : ""}
-                      <span className={QUALITY_COLORS[m.quality ?? 0] ?? ""}>{m.name}×{m.quantity}</span>
-                      <ProductBadge itemId={m.itemId} />
-                    </span>
-                  )) || "—"}
+                  {row.recipe.outputs.length === 0 ? (
+                    <span className="text-terminal-muted">附魔的效果</span>
+                  ) : (
+                    row.recipe.outputs.map((m, i) => (
+                      <span key={i}>
+                        {i > 0 ? " + " : ""}
+                        <span className={QUALITY_COLORS[m.quality ?? 0] ?? ""}>{m.name}×{m.quantity}</span>
+                        <ProductBadge itemId={m.itemId} />
+                      </span>
+                    ))
+                  )}
                   {row.recipe.outputs[0]?.ilvl ? ` · 物品等级${row.recipe.outputs[0].ilvl}` : ""}
                   {row.recipe.outputs[0]?.req ? ` · 需要等级${row.recipe.outputs[0].req}` : ""}
                 </div>

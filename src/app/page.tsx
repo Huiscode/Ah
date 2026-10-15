@@ -12,6 +12,7 @@ import {
   getLatestSnapshotTime,
   getRadarRules,
   getRecipes,
+  getScrollItemIds,
   getShoppingLists,
   getWatchedItemIds,
   type MarketMode
@@ -84,7 +85,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // transcription) over the buy price (Item.vendorPrice / dictionary), then
   // the vendorP the addon dumped with each recipe (freshest).
   const floors = buildRecipeFloors(recipes, vendorPrices, sellerPrices);
-  const recipeRows = computeRecipeProfits(recipes, priceByItemId, floors.costFloor, floors.revenueFloor);
+  const scrollItemIds = await getScrollItemIds();
+  const recipeRows = computeRecipeProfits(recipes, priceByItemId, floors.costFloor, floors.revenueFloor, scrollItemIds);
   // 中间材料（次级材料）：配方产物且被其它配方用作材料，按单位利润排序。
   const secondaryRows = buildSecondaryMaterialRows(recipes, priceByItemId, floors.costFloor, floors.revenueFloor);
   // 配方产出物集合：扫描物品若被某配方产出（成品），在列表中标记"产品"徽章。

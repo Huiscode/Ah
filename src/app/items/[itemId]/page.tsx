@@ -217,12 +217,14 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
                         <span className="text-terminal-muted">{row.profit >= 0 ? " 盈利 " : " 亏损 "}</span>
                         <Coins copper={Math.abs(row.profit)} />
                       </span>
+                    ) : row.status === "cost-only" ? (
+                      <span className="shrink-0 text-terminal-muted">附魔 · 成本 <Coins copper={row.cost} /></span>
                     ) : (
                       <span className="shrink-0 text-terminal-red">缺货</span>
                     )}
                   </div>
                   <div className="mt-1 flex flex-wrap gap-x-1.5 gap-y-0.5 leading-relaxed text-terminal-muted">
-                    {row.status === "ok" ? (
+                    {row.status !== "missing" ? (
                       row.materials.map((material) => (
                         <span key={material.name}>材料 {material.name}×{material.quantity}（<span className="text-slate-200"><Coins copper={material.price} /></span>）</span>
                       ))

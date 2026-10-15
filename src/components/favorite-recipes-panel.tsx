@@ -93,7 +93,10 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists }: {
                 ★
               </button>
               <span className="flex min-w-0 flex-wrap items-center gap-x-1.5">
-              {row.recipe.outputs.map((output, i) => (
+              {row.recipe.outputs.length === 0 ? (
+                <span className="truncate text-slate-100">{row.recipe.name}<span className="ml-1 text-[9px] text-terminal-muted">附魔</span></span>
+              ) : (
+                row.recipe.outputs.map((output, i) => (
                 <span key={i} className="inline-flex items-center gap-1">
                   {i > 0 && <span className="text-terminal-muted">+</span>}
                   <Link
@@ -106,15 +109,20 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists }: {
                   </Link>
                   <ProductBadge itemId={output.itemId} />
                 </span>
-              ))}
+                ))
+              )}
               </span>
             </span>
             <span className="flex shrink-0 items-center gap-3">
-              {row.status === "ok" ? (
+              {row.recipe.category === "merchant" ? (
+                <span className="text-terminal-amber">{(row.recipe.favorCost ?? 0) > 0 ? <>青睐 ×{row.recipe.favorCost}</> : "青睐：暂无数据"}</span>
+              ) : row.status === "ok" ? (
                 <>
                   <span className={row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}><Coins copper={row.profit} /></span>
-                  <span className={row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}>{formatPercent(row.marginPercent)}</span>
+                  <span className={row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}>{formatPercent(row.marginPercent)}{row.revenueFromFloor ? <span className="text-[9px]"> NPC</span> : ""}</span>
                 </>
+              ) : row.status === "cost-only" ? (
+                <span className="text-slate-200">成本 <CopperAmount copper={row.cost} /></span>
               ) : (
                 <span className="truncate text-[10px] text-terminal-muted">缺货 · 缺 {row.missing.join("、")}</span>
               )}
@@ -122,6 +130,14 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists }: {
             {/* Hover: full craft chain — per-material cost (AH or floor),
                 product revenue after the AH cut, profit and margin */}
             <div className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-80 whitespace-normal border border-terminal-border bg-terminal-panel p-2 font-mono text-[10px] leading-relaxed text-slate-200 shadow-lg group-hover:block">
+              {row.recipe.category !== "merchant" && row.scrollItemId !== undefined && row.scrollItemId !== null && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-100">图纸</span>
+                  <span className="text-terminal-amber">
+                    {row.scrollPrice !== undefined ? <><CopperAmount copper={row.scrollPrice} /> <span className="text-terminal-muted">AH</span></> : "暂无挂单"}
+                  </span>
+                </div>
+              )}
               {row.recipe.reagents.map((material) => {
                 const unit = prices.get(material.itemId) ?? floorPrices.get(material.itemId);
                 const subtotal = unit === undefined ? undefined : unit * material.quantity;
@@ -157,8 +173,26 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists }: {
                 );
               })}
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">利润</span>
-                <span className={row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}><CopperAmount copper={row.profit} /> {formatPercent(row.marginPercent)}</span>
+                {row.recipe.category === "merchant" ? (
+                  <>
+                    <span className="text-slate-100">图纸</span>
+                    <span className="text-terminal-amber">
+                      青睐 ×{(row.recipe.favorCost ?? 0) > 0 ? row.recipe.favorCost : "暂无"}
+                      {" · "}制造成本 <CopperAmount copper={row.cost} />
+                      {row.linkedCraft ? <> · 成品利润 <CopperAmount copper={row.linkedCraft.profit} /> ({formatPercent(row.linkedCraft.marginPercent)}{row.linkedCraft.revenueFromFloor ? " NPC" : ""})</> : ""}
+                    </span>
+                  </>
+                ) : row.status === "cost-only" ? (
+                  <>
+                    <span className="text-slate-100">成本</span>
+                    <span className="text-slate-200"><CopperAmount copper={row.cost} /></span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-slate-100">利润</span>
+                    <span className={row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}><CopperAmount copper={row.profit} /> {formatPercent(row.marginPercent)}{row.revenueFromFloor ? <span className="text-[9px]"> NPC</span> : ""}</span>
+                  </>
+                )}
               </div>
               <div className="mt-1 text-[9px] text-terminal-muted">产出价已含 5% 拍卖税；标"保底"的价格为 NPC 收购价兜底（无实时 AH 价）。</div>
             </div>

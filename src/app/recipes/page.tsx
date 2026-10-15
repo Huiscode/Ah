@@ -1,6 +1,6 @@
 import { RadioTower } from "lucide-react";
 import { buildRecipeFloors, computeRecipeProfits } from "@/lib/recipe-profits";
-import { getItemSellerPrices, getItemVendorPrices, getRecipes, getShoppingLists } from "@/lib/repositories";
+import { getItemSellerPrices, getItemVendorPrices, getRecipes, getScrollItemIds, getShoppingLists } from "@/lib/repositories";
 import { getMarketSignals } from "@/lib/market-signals";
 import { AUCTIONATOR_STALE_MAX_AGE_MS, describeFreshness } from "@/lib/freshness";
 import { RecipeLibrary } from "@/components/recipe-library";
@@ -15,18 +15,19 @@ export const dynamic = "force-dynamic";
 // 卖价（Item.sellPrice），其次收购价；产出价扣 5% 拍卖税后按利润率排序。
 // 拍卖行无价/无记录的配方标注"缺货"，扫到后自动补齐。
 export default async function RecipesPage() {
-  const [{ signals, latestSnapshotAt }, recipes, vendorPrices, sellerPrices, shoppingLists] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, recipes, vendorPrices, sellerPrices, scrollItemIds, shoppingLists] = await Promise.all([
     getMarketSignals(),
     getRecipes(),
     getItemVendorPrices(),
     getItemSellerPrices(),
+    getScrollItemIds(),
     getShoppingLists()
   ]);
   const listOptions = shoppingLists.map((list) => ({ id: list.id, name: list.name }));
   const freshness = describeFreshness(latestSnapshotAt, new Date(), AUCTIONATOR_STALE_MAX_AGE_MS);
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
   const floors = buildRecipeFloors(recipes, vendorPrices, sellerPrices);
-  const recipeRows = computeRecipeProfits(recipes, priceByItemId, floors.costFloor, floors.revenueFloor);
+  const recipeRows = computeRecipeProfits(recipes, priceByItemId, floors.costFloor, floors.revenueFloor, scrollItemIds);
   const okCount = recipeRows.filter((row) => row.status === "ok").length;
   const craftCount = recipeRows.filter((row) => row.recipe.category !== "merchant").length;
   const merchantCount = recipeRows.length - craftCount;
@@ -62,7 +63,7 @@ export default async function RecipesPage() {
         <Panel>
           <PanelHeader title="统计" />
           <div className="p-3">
-            共 {recipes.length} 条 · 当前可算利润 {okCount} 条 · 缺货 {recipes.length - okCount} 条。附魔等无物品产出的配方不在此列。
+            共 {recipes.length} 条 · 当前可算利润 {okCount} 条 · 附魔等无物品产出配方另计 {recipeRows.filter((row) => row.status === "cost-only").length} 条（仅看材料成本）· 缺货 {recipeRows.filter((row) => row.status === "missing").length} 条。
           </div>
         </Panel>
       </div>

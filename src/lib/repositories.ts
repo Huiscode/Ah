@@ -554,6 +554,27 @@ export async function getItemSellerPrices(): Promise<Map<number, number>> {
   return new Map(rows.map((row) => [row.itemId, row.sellPrice]));
 }
 
+// 图纸/公式卷轴物品（"设计图：/公式：/图纸：/图样：/食谱：/结构图：/配方：/手册：/指南：/地图：" 前缀
+// 的物品）→ 去前缀后的基础名 → itemId。配方库用它判断该制造配方是否有可拍卖的图纸卷轴
+// （掉落图纸），并显示图纸拍卖行价值；训练师/NPC 直接学会的配方没有卷轴物品，不标图纸价。
+const SCROLL_PREFIX_RE = /^(设计图|公式|图纸|图样|食谱|结构图|配方|手册|指南|地图)：/;
+export async function getScrollItemIds(): Promise<Map<string, number>> {
+  const rows = await prisma.$queryRaw<Array<{ name: string; item_id: number }>>`
+    SELECT "name", "item_id"
+    FROM "Item"
+    WHERE "name" LIKE '设计图：%' OR "name" LIKE '公式：%' OR "name" LIKE '图纸：%'
+       OR "name" LIKE '图样：%' OR "name" LIKE '食谱：%' OR "name" LIKE '结构图：%'
+       OR "name" LIKE '配方：%' OR "name" LIKE '手册：%' OR "name" LIKE '指南：%'
+       OR "name" LIKE '地图：%'
+  `;
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    const base = row.name.replace(SCROLL_PREFIX_RE, "").trim();
+    if (base && !map.has(base)) map.set(base, row.item_id);
+  }
+  return map;
+}
+
 export async function getItemSellerPricesByIds(itemIds: number[]): Promise<Map<number, number>> {
   if (itemIds.length === 0) return new Map();
   const rows = await prisma.item.findMany({

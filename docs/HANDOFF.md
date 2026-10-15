@@ -1,4 +1,4 @@
-# AH 项目跟进文件（HANDOFF · v3.5）
+# AH 项目跟进文件（HANDOFF · v3.6）
 
 > **进入本项目的唯一必读入口**：先读本文件，再按需精读具体代码，不要通读整个仓库。
 > 最后更新：2026-10-15（本地 UTC+2）。对应 git HEAD：v3.3 修复批次（AH 残留旧价归零 +
@@ -288,11 +288,92 @@ SQLite（prisma\dev.db）→ 网页（首页 / 单品页 / 配方页；两模式
    两回调 + ImportExport 三处导入 + zhCN/enUS 文案），**用户决定复原**（插件频繁更新会覆盖/兼容风险）——
    已全部恢复官方原版（SHA256 逐一验证）并删备份目录。**决策：不改插件，靠网页端覆盖+去重管理清单**。
 6. **开服清空运行时数据**（SQLite + SavedVariables + 导入进度；代码/git 保留），由用户通知触发。
+7. **【✅ 已完成 2026-10-15 晚】附魔公式全量核对 + 材料成本价（v3.6）**：用户指出"附魔公式数量不对
+   （网站 165 vs 网页配方库 94）"。根因：旧 `scrape-forever-recipes.ts` 的 cr-made 正则要求
+   `<a href="/item/...">`（物品产出），而附魔效果的产出名是 **span（无物品链接）**——165 条真附魔
+   全部被跳过，DB 里 Enchanting 只剩"公式：xxx"卷轴等**物品配方**（94）。修复：
+   - 新增 **`scripts/scrape-enchanting.ts`**：解析 foreverchanges.pro 附魔页**内嵌 JSON**
+     （Next.js RSC 双转义 `\\"`，按 JS 转义规则解码；条目 `{"name","local","short","group",
+     "learn","yellow","green","grey","reagents[{id,count}]","isNew","formula"}`），导入 165 条
+     真附魔（profession=Enchanting、category=craft、**outputs=[]**、difficulty=[learn,yellow,green,grey]、
+     categoryName=栏位中文、skillLevel=learn，材料名按 Item 表反查）。栏位分布与网站统计卡完全一致：
+     手腕35/胸部19/背部19/武器24/双手武器16/盾牌11/脚11/手24/颈部5/副手1 = 165。幂等 upsert。
+   - **`src/lib/recipe-profits.ts`**：`RecipeProfitRow.status` 增加 **"cost-only"**（无物品产出且
+     材料价齐，仅可算成本）；排序 ok → cost-only（成本低→高）→ missing。
+   - **`src/components/recipe-library.tsx`**：卡片三分支——ok 利润率/利润，cost-only 显示
+     "附魔 · 无产出 | 成本 X"，missing 缺货；产出行 cost-only 显示"附魔效果（无物品产出）"；
+     材料总价筛选纳入 cost-only（利润率筛选仍只对 ok）。统计行加"附魔成本 N 条"。
+   - **`src/app/recipes/page.tsx`** 统计面板：附魔成本另计 N 条（当前 127 条材料价齐可算）。
+   - **`src/components/favorite-recipes-panel.tsx`**：附魔收藏行显示名称+附魔标记、成本 X。
+   - 实测：/recipes → 附魔(259) → 手腕分类 → "附魔护腕 - 初级耐力 附魔·无产出 成本 1s80c
+     材料：奇异之尘×2 (90c)" ✓；类型检查 + 164/164 测试通过。
+   - 遗留：Enchanting 下旧的 94 条物品配方（"公式：xxx"卷轴、附魔棒、圣物/魔杖/油/营地等）
+     仍在（分类可见），未删除（保守）。**true 附魔 = outputs 为空的 165 条**。
+   - **商人青睐标注（同批次追加）**：用户要求"所有专业商人青睐物品标注需要多少商人青睐币，
+     以及原料和产出（如果有；暂无数据就标注，将来扫到自动补"。**数据已存在**：Recipe.favorCost
+     （currency 3402）由旧脚本填充，全库 merchant 320 条全有值（分布 30/45/60/90/120/180/200/
+     240/270/360/1000/1200/1500；1000=各专业认证、200=艾泽拉斯贸易局战袍、1200=广告许可申请、
+     1500=Packmule Treat）。**本轮核对**：抓 7 个专业页（附魔/炼金/锻造/工程/制皮/裁缝/烹饪）
+     解析 #favor 章节（`<div class="en3-tier"><h3>X 商人青睐</h3>` + li itemId/名称/技能），311 条
+     兑换物，与 DB 按 outputs itemId + 名称去前缀（设计图：/公式：/图纸：/图样：/食谱：/结构图：）
+     双向核对：**240 条完全一致、0 不一致**（其余来自旧数据源，信任保留）。
+     **UI**：recipe-library.tsx + favorite-recipes-panel.tsx 的 merchant 卡片状态行由"假利润
+     （0材料→产出价全算利润，误导）"改为 **"青睐 ×N · 产出价 X"**（favorCost=0 时显示"青睐：
+     暂无数据"，未来新配方默认 0 自动走该标注）；标题旁保留"兑换"标记；原料/产出行原本就有。
+     实测：/recipes → 附魔 → 商人兑换 → "Formula: ... 青睐 ×240 产出价 19s" ✓；tsc + 164 测试通过。
+     **将来补充机制**：新扫描配方 favorCost 默认 0 → UI 显示"青睐：暂无数据"；数据源更新时按
+     itemId/名称补写 favorCost 即可（核对脚本逻辑见本轮记录）。
+   - **merchant 双维度改造（同批次·用户纠偏）**：用户澄清——**图纸价值与制造成本是两个概念**：
+     商人青睐币是兑换图纸（设计图/公式/食谱/结构图卷轴）的唯一货币；每张图纸能制造的**成品**
+     需标注材料+单价+**总制造成本**；图纸价值=青睐（或金币）。据此：
+     - **数据**：恢复 266 条 merchant 的制造材料（从同专业同名 craft 配方复制，此前误清空）；
+       54 条保持空 = 附魔公式卷轴（制造=附魔效果无物品，合理）+ 各专业认证（无制造）+ **5 条
+       锻造高级护腕设计图（军官/哨兵/守望者/督军/裁决者护腕——craft 成品配方旧抓取缺失，
+       待办补抓）**。
+     - **引擎** `recipe-profits.ts`：RecipeProfitRow 加 `linkedCraft`（merchant 关联同专业
+       同名去前缀 craft 行的成品名/利润率/利润/成本；无同名 → null）；`stripRecipePrefix`
+       处理"设计图：/公式：/图纸：/图样：/食谱：/结构图："前缀。
+     - **UI** `recipe-library.tsx`：merchant 状态行 = **"图纸：青睐 ×N · 制造：{成品名}
+       {利润率}"**（无成品 →"制造：无成品记录"）；产出行前缀 **"总制造成本 {cost}"**；
+       材料行显示单价（恢复后）。`favorite-recipes-panel.tsx` hover 底部行 merchant =
+       "图纸 青睐×N · 制造成本 X · 成品利润 Y (Z%)"。
+     - 实测：/recipes → 锻造 → 商人兑换 → "食谱：邪恶冰沙 图纸：青睐×90 · 制造：邪恶冰沙
+       -99.91% · 总制造成本 11s"、"结构图：防滑安全型号衬垫 制造 +244.15% · 总成本 3g88s18c" ✓；
+       tsc + 164 测试通过。
+     - **数据缺口待办**：锻造 5 条高级护腕设计图缺同名 craft（军官/哨兵/守望者/督军/裁决者护腕），
+       后续从 foreverchanges 锻造页补抓 craft 成品配方。
+   - **百分比 NPC 标记（同批次·用户规则）**：成品收入若用了 NPC 收购价兜底（拍卖行无该成品
+     挂单），**百分比后必须标注"NPC"**。引擎 `recipe-profits.ts`：RecipeProfitRow 加
+     `revenueFromFloor`（outputs 任一无 AH 价、收入走 revenueFloor 兜底为 true），linkedCraft
+     同传；UI recipe-library.tsx 利润率与 merchant"制造：xxx %"后、favorite-recipes-panel
+     行内/hover 利润率后加"NPC"。实测：老兵手套（AH 无挂单，材料 80s90c，保底收入 4s62c）
+     →"制造：老兵手套 -94.28% NPC"；防滑安全型号衬垫（成品 AH 有价）→"+244.15%"无标记 ✓；
+     tsc + 164 测试通过。
+   - **图纸拍卖行价值标注（同批次·用户规则）**：所有专业非商人青睐图纸/公式，同样标注图纸
+     AH 价值（**仅掉落可拍卖图纸**——训练师/NPC 购买的图纸公式不标价）、产品材料价格与总成本、
+     产品利润与盈亏百分比。实现：
+     - **数据/判据**：Item 表卷轴类物品 540 条（"设计图：/公式：/图纸：/图样：/食谱：/结构图：
+       /配方：/手册：/指南：/地图："前缀）。craft 2187 条中 582 条有卷轴物品，289 条卷轴 AH
+       有价；1605 条无卷轴物品 = 训练师/NPC 直接学会（自动不标价）。repositories 新增
+       `getScrollItemIds()`（卷轴名去前缀 → itemId Map）。
+     - **引擎**：RecipeProfitRow 加 `scrollItemId`（卷轴物品 id，无 → null）与 `scrollPrice`
+       （卷轴 AH 最低买入价，无挂单不设）；computeRecipeProfits 加参 `scrollItemIdByBase`，
+       craft 行按 stripRecipePrefix(name) 匹配卷轴。recipes/page 与首页 page 均传入。
+     - **UI**：craft 卡材料行上方新增图纸行——`图纸 {AH价} AH`（有挂单）或 `图纸 暂无挂单`
+       （有卷轴但 AH 无价）；**无卷轴物品（训练师/NPC）不显示图纸行**。产出行 craft ok 加
+       `总成本 {cost} · ` 前缀（对齐 merchant 总制造成本）。收藏面板 hover 加图纸行。
+       顺带修复单品页 `items/[itemId]/page.tsx` 遗留：cost-only（附魔）不再误显示"缺货"，
+       改显"附魔 · 成本 X"，材料行按 status!==missing 渲染。
+     - 实测三类：初级精神药剂（掉落，卷轴 250380 AH 1g）→ `图纸 1g AH · 利润 2s80c
+       +115.23%`；老兵手套（有卷轴 251360 无挂单）→ `图纸 暂无挂单 · -94.28% NPC · 总成本
+       80s90c`；初级奥法药剂（训练师无卷轴）→ 无图纸行 · `总成本 1s77c` ✓；tsc + 164 测试通过。
 
 ## 8. git 状态
 
 - HEAD = **购物清单 v3.5 批次**（2026-10-15 提交；上版 M4h 012b0e9：AH 残留旧价归零 + vendor 无限服版
   全量重核 + 404 脏价清理 + 前缀物品澄清 v3.3 修复批次）。
+- **v3.6 附魔核对批次（本次）未 commit / 未 push**（用户未指示推）：scripts/scrape-enchanting.ts +
+  recipe-profits.ts + recipe-library.tsx + recipes/page.tsx + favorite-recipes-panel.tsx + HANDOFF v3.6。
 - 纪律：**只有用户明确说"推/推一版"才 push；说"提交git"才 commit**；只提交点名范围。
 
 ## 9. 已知坑 / 机制限制
