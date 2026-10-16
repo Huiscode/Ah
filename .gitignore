@@ -27,6 +27,7 @@ public/icons/
 
 # scratch files and local artifacts — never tracked
 .tmp-*
+_tmp-*
 dev.db
 WoWderhoiAH-*.zip
 .watch-state.json

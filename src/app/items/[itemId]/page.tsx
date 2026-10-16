@@ -1,5 +1,6 @@
 ﻿import { notFound } from "next/navigation";
 import Link from "next/link";
+import type { Route } from "next";
 import { buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
 import {
   getItemDetail,
@@ -28,8 +29,15 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
   const { itemId } = await params;
   const raw = await searchParams;
   const mode: MarketMode = raw.history === "1" ? "history" : "current";
+  const market = raw.market === "neutral" ? "neutral" : "faction";
   const numericItemId = Number(itemId);
-  const item = await getItemDetail(numericItemId, mode);
+  const marketSuffix = market === "neutral" ? "&market=neutral" : "";
+  const marketHrefOther: Route = (market === "neutral"
+    ? `/items/${numericItemId}${mode === "history" ? "?history=1" : ""}`
+    : `/items/${numericItemId}?market=neutral${mode === "history" ? "&history=1" : ""}`) as Route;
+  const historyHref: Route = `/items/${numericItemId}${marketSuffix}` as Route;
+  const marketLabel = market === "neutral" ? "中立（赤脊山贸易营地）" : "联盟（主城）";
+  const item = await getItemDetail(numericItemId, mode, market);
   if (!item) notFound();
 
   // 制作配方面板按需取数：只查产出此物品的配方，以及这些配方涉及的
@@ -45,7 +53,7 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
     for (const output of recipe.outputs) involvedItemIds.add(output.itemId);
   }
   const [priceByItemId, vendorPrices, sellerPrices] = await Promise.all([
-    getLatestPricesByItemIds(Array.from(involvedItemIds), mode),
+    getLatestPricesByItemIds(Array.from(involvedItemIds), mode, market),
     getItemVendorPricesByIds(Array.from(involvedItemIds)),
     getItemSellerPricesByIds(Array.from(involvedItemIds))
   ]);
@@ -112,10 +120,11 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
                   : null}
           </h1>
           <div className={freshness.stale ? "font-mono text-xs text-terminal-red" : "font-mono text-xs text-terminal-green"}>
-            数据更新于 {freshness.label}
+            {marketLabel}·数据更新于 {freshness.label}
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Link href={marketHrefOther} className="font-mono text-xs text-terminal-amber underline">{market === "neutral" ? "← 联盟市场" : "中立市场 →"}</Link>
           <span className="text-xl"><WatchStar itemId={item.itemId} watched={watchedIds.has(item.itemId)} /></span>
           <CloseTabButton />
         </div>
@@ -123,12 +132,12 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
       {mode === "history" ? (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-amber/50 bg-amber-500/10 px-4 py-2 font-mono text-xs">
           <span className="text-terminal-amber">历史模式 · Beta 删档数据 · P10 口径（2026-10-13 前自研插件）——仅供参考</span>
-          <Link href={`/items/${numericItemId}`} className="text-terminal-amber underline">← 返回当前数据（Auctionator 最低价）</Link>
+          <Link href={historyHref} className="text-terminal-amber underline">← 返回当前数据（Auctionator 最低价）</Link>
         </div>
       ) : (
         <div className="mb-3 flex items-center justify-between gap-3 border border-terminal-border bg-terminal-panel2 px-4 py-2 font-mono text-xs text-terminal-muted">
           <span>数据口径自 2026-10-13 起为 Auctionator 最低买入价</span>
-          <Link href={`/items/${numericItemId}?history=1`} className="text-terminal-amber underline">查看 Beta 历史 P10 →</Link>
+          <Link href={`/items/${numericItemId}?history=1${marketSuffix}` as Route} className="text-terminal-amber underline">查看 Beta 历史 P10 →</Link>
         </div>
       )}
       <div className="grid gap-3 xl:grid-cols-[1fr_420px]">

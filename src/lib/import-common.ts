@@ -306,14 +306,14 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
       ? chunk(pointDayResult.creates, BULK_CHUNK).map((slice) => prisma.dailySummary.createMany({ data: slice }))
       : []),
     ...pointDayResult.updates.map((update) => prisma.dailySummary.update({
-      where: { itemId_date_source: { itemId: update.itemId, date: update.date, source } },
+      where: { itemId_date_source_market: { itemId: update.itemId, date: update.date, source, market } },
       data: update.data
     })),
     ...(dayCreates.length > 0
       ? chunk(dayCreates, BULK_CHUNK).map((slice) => prisma.dailySummary.createMany({ data: slice }))
       : []),
     ...dayUpdates.map((update) => prisma.dailySummary.update({
-      where: { itemId_date_source: { itemId: update.itemId, date, source } },
+      where: { itemId_date_source_market: { itemId: update.itemId, date, source, market } },
       data: update.data
     })),
     ...rulesPayload,

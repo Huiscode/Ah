@@ -1,4 +1,5 @@
 import { Bell, Hammer, RadioTower, ShoppingCart, Star } from "lucide-react";
+import type { Route } from "next";
 import { buildDealRadar } from "@/lib/analytics";
 import { evaluateAlertRules } from "@/lib/alerts";
 import { buildRecipeFloors, computeRecipeProfits } from "@/lib/recipe-profits";
@@ -52,13 +53,18 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   };
   const raw = await searchParams;
   const mode: MarketMode = raw.history === "1" ? "history" : "current";
+  const market = raw.market === "neutral" ? "neutral" : "faction";
+  const marketSuffix = market === "neutral" ? "&market=neutral" : "";
+  const marketHrefOther: Route = (market === "neutral" ? "/" : "/?market=neutral") as Route;
+  const historyHref: Route = `/?history=1${marketSuffix}` as Route;
+  const marketLabel = market === "neutral" ? "中立（赤脊山贸易营地）" : "联盟（主城）";
   const view = parseMarketView(raw);
   const [{ signals, latestSnapshotAt }, watchedIds, alertRules, latestRound, recipes, vendorPrices, sellerPrices, shoppingLists] = await Promise.all([
-    getMarketSignals(mode),
+    getMarketSignals(market, mode),
     getWatchedItemIds(),
     getAlertRules(),
     // 雷达 universe：该模式最新一轮扫描的在售物品集合。
-    getLatestRoundItemIds(mode),
+    getLatestRoundItemIds(mode, market),
     // 关注配方面板展示配方库中被收藏的配方（craft + merchant 全量，
     // 面板按收藏过滤；收藏在 /recipes 配方库页设置）。
     getRecipes(),
@@ -108,7 +114,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         </div>
         <div className="flex items-center gap-3 font-mono text-xs text-terminal-muted">
           <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
-            <RadioTower size={14} /> 联盟·数据更新于 {freshness.label}
+            <RadioTower size={14} /> {marketLabel}·数据更新于 {freshness.label}
           </span>
           <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><Hammer size={14} /> 配方库</Link>
           <Link href="/lists" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ShoppingCart size={14} /> 购物清单</Link>
@@ -121,14 +127,18 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <span className="flex items-center gap-2 text-terminal-amber">
             <RadioTower size={14} /> 历史模式 · Beta 删档数据 · P10 口径（{DATA_SWITCH_DAY} 前自研插件）——仅供参考，与当前 Auctionator 最低价不同
           </span>
-          <Link href="/" className="text-terminal-amber underline">← 返回当前数据（Auctionator 最低价）</Link>
+          <Link href={historyHref} className="text-terminal-amber underline">← 返回当前数据（Auctionator 最低价）</Link>
         </div>
       ) : (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel2 px-4 py-2 font-mono text-xs text-terminal-muted">
           <span>数据口径自 {DATA_SWITCH_DAY} 起为 <span className="text-terminal-amber">Auctionator 最低买入价</span>（旧 Beta P10 数据保留在库中）</span>
-          <Link href="/?history=1" className="text-terminal-amber underline">查看 Beta 历史数据（P10）→</Link>
+          <Link href={historyHref} className="text-terminal-amber underline">查看 Beta 历史数据（P10）→</Link>
         </div>
       )}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel2 px-4 py-2 font-mono text-xs text-terminal-muted">
+        <span>当前市场：<span className="text-terminal-amber">{marketLabel}</span>（价格数据独立分槽，互不混源）</span>
+        <Link href={marketHrefOther} className="text-terminal-amber underline">{market === "neutral" ? "← 联盟市场" : "中立市场（赤脊山）→"}</Link>
+      </div>
 
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">

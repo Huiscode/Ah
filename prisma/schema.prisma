@@ -62,6 +62,7 @@ model DailySummary {
   itemId     Int      @map("item_id")
   date       DateTime
   source     String   @default("addon") // data channel, mirrors AuctionSnapshot.source
+  market     String   @default("faction") // "faction" (主城阵营市场) | "neutral" (中立地精市场)；中立 daily 不得进入联盟分析
   openPrice  BigInt   @map("open_price")
   closePrice BigInt   @map("close_price")
   highPrice  BigInt   @map("high_price")
@@ -69,8 +70,9 @@ model DailySummary {
   volume     Int
   item       Item     @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
 
-  @@unique([itemId, date, source])
+  @@unique([itemId, date, source, market])
   @@index([date])
+  @@index([market])
 }
 
 // M4：转录插件（WoWderhoiAH-Transcript）落盘的完整价格档位——单次扫描内

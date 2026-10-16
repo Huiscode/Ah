@@ -42,6 +42,7 @@ function history(
       return {
         date,
         source,
+        market: "faction",
         openPrice: snap.marketPrice,
         closePrice: snap.marketPrice,
         highPrice: snap.marketPrice,

@@ -12,6 +12,7 @@
 //   （Lua os.time 表参数按本地时区）。day 边界 = 玩家本地午夜。
 import { readFileSync } from "node:fs";
 import cbor from "cbor";
+import { lua, lauxlib, lualib, to_luastring, type LuaState } from "fengari";
 
 export type AuctionatorItemBlock = {
   /** 最后见到的买入最低价（铜）；最新价锚点 */
@@ -34,6 +35,10 @@ export type AuctionatorParsed = {
   postingHistory: Record<string, unknown>;
   /** AUCTIONATOR_SAVEDVARS.TimeOfLastBrowseScan：最近浏览/扫描时间戳（秒）；新鲜度锚点候选 */
   timeOfLastBrowseScan?: number;
+  /** WAHScanTimes：每市场最近扫描完成时间（market="faction"|"neutral" → 秒时间戳）。
+   *  全局 TimeOfLastBrowseScan 会被任一市场扫描刷新，快照共用它会让"扫中立后联盟也显示刚刚"；
+   *  此字段按市场独立记录（插件 AutoReload 扫描完成事件写入）。旧存档缺失时回退全局时间。 */
+  scanTimes: Record<string, number>;
   /** 原始解析出的全部顶层变量（供导入端按需取用） */
   rawGlobals: Record<string, unknown>;
 };
@@ -74,11 +79,31 @@ export function decodeLuaString(raw: string): string {
   );
 }
 
-/** 顶层变量块（从 `NAME = {` 到第一个行首 `}`）。 */
+/** 顶层变量块（从 `NAME = {` 到配对的 `}`，含外层大括号）。用大括号配对扫描，
+ *  而非 `^}` 正则——明文多行嵌套表（如 PvP_N）的闭括号在行首，`^}` 会提前截断。 */
 export function extractTopLevelVariable(source: string, name: string): string | null {
-  const re = new RegExp(`^${name} = \\{([\\s\\S]*?)^\\}`, "m");
-  const m = re.exec(source);
-  return m ? m[1] : null;
+  const startRe = new RegExp(`^${name} = \\{`, "m");
+  const start = startRe.exec(source);
+  if (!start) return null;
+  const openIdx = start.index + start[0].length - 1; // '{' 位置
+  let depth = 0;
+  let i = openIdx;
+  let inString = false;
+  let quote: string | null = null;
+  while (i < source.length) {
+    const c = source[i];
+    if (inString) {
+      if (c === "\\") { i += 2; continue; }
+      if (c === quote) inString = false;
+    } else {
+      if (c === '"' || c === "'") { inString = true; quote = c; }
+      else if (c === "{") depth++;
+      else if (c === "}") { depth--; if (depth === 0) break; }
+    }
+    i++;
+  }
+  if (depth !== 0) return null;
+  return source.slice(openIdx, i + 1);
 }
 
 /** 提取 [key] = "..." 字符串（单行），返回 Lua 转义还原后的 JS 字符串。 */
@@ -114,19 +139,91 @@ function toPlainObject(x: unknown): unknown {
 function decodePriceDatabase(block: string, realmSlot: string): Record<string, AuctionatorItemBlock> {
   const version = extractIntField(block, "__dbversion");
   const text = extractStringField(block, realmSlot);
-  if (text === null) {
-    throw new Error(`AUCTIONATOR_PRICE_DATABASE 找不到 [${realmSlot}] 槽（__dbversion=${version ?? "?"}；请先在游戏内用 Auctionator 扫描）`);
+  if (text !== null) {
+    const buf = Buffer.from(text, "latin1");
+    let decoded: unknown;
+    try {
+      decoded = cbor.decodeFirstSync(buf);
+    } catch (e) {
+      throw new Error(`CBOR 解码失败（槽 ${realmSlot}）: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const obj = toPlainObject(decoded);
+    if (!obj || typeof obj !== "object") throw new Error(`CBOR 解码结果不是对象（槽 ${realmSlot}）`);
+    return obj as Record<string, AuctionatorItemBlock>;
   }
-  const buf = Buffer.from(text, "latin1");
-  let decoded: unknown;
+  // 明文 Lua 表槽（Forever：PvP_N 已排除 Auctionator 启动串行化编码，以表保存在存档）。
+  const plain = parsePlainTableSlot(block, realmSlot);
+  if (plain !== null) return plain;
+  throw new Error(`AUCTIONATOR_PRICE_DATABASE 找不到 [${realmSlot}] 槽（__dbversion=${version ?? "?"}；请先在游戏内用 Auctionator 扫描）`);
+}
+
+/** 提取 `["key"] = { ... }` 的完整表文本（大括号配对，跨行、含嵌套与字符串）。 */
+function extractTableField(block: string, key: string): string | null {
+  const startRe = new RegExp(`\\["${key}"\\] = \\{`, "m");
+  const start = startRe.exec(block);
+  if (!start) return null;
+  const openIdx = start.index + start[0].length - 1; // '{' 位置
+  let depth = 0;
+  let i = openIdx;
+  let inString = false;
+  let quote: string | null = null;
+  while (i < block.length) {
+    const c = block[i];
+    if (inString) {
+      if (c === "\\") { i += 2; continue; }
+      if (c === quote) inString = false;
+    } else {
+      if (c === '"' || c === "'") { inString = true; quote = c; }
+      else if (c === "{") depth++;
+      else if (c === "}") { depth--; if (depth === 0) break; }
+    }
+    i++;
+  }
+  if (depth !== 0) return null;
+  return block.slice(openIdx, i + 1);
+}
+
+/** Lua 栈值 → JS 值（数字→number、字符串→string、表→普通对象递归）。
+ *  注意：fengari 的 lua_tostring 返回 Uint8Array，须用 lua_tojsstring 正确解码。 */
+function luaValueToJS(L: LuaState): unknown {
+  const t = lua.lua_type(L, -1);
+  if (t === lua.LUA_TNUMBER) return lua.lua_tonumber(L, -1);
+  if (t === lua.LUA_TSTRING) {
+    const js = (lua as unknown as { lua_tojsstring: (L: LuaState, i: number) => string }).lua_tojsstring(L, -1);
+    return js;
+  }
+  if (t === lua.LUA_TBOOLEAN) return lua.lua_toboolean(L, -1) ? true : false;
+  if (t === lua.LUA_TTABLE) {
+    const obj: Record<string, unknown> = {};
+    lua.lua_pushnil(L);
+    while (lua.lua_next(L, -2) !== 0) {
+      const key = lua.lua_tostring(L, -2);
+      const keyStr = key instanceof Uint8Array ? String.fromCharCode(...key) : String(key);
+      const val = luaValueToJS(L);
+      if (val !== undefined) obj[keyStr] = val;
+      lua.lua_pop(L, 1);
+    }
+    return obj;
+  }
+  return undefined;
+}
+
+/** 用 fengari 解析明文 Lua 表槽（`["PvP_N"] = { ... }`）→ 物品块记录。 */
+function parsePlainTableSlot(block: string, key: string): Record<string, AuctionatorItemBlock> | null {
+  const tableText = extractTableField(block, key);
+  if (tableText === null) return null;
+  const L = lauxlib.luaL_newstate();
+  lualib.luaL_openlibs(L);
   try {
-    decoded = cbor.decodeFirstSync(buf);
-  } catch (e) {
-    throw new Error(`CBOR 解码失败（槽 ${realmSlot}）: ${e instanceof Error ? e.message : String(e)}`);
+    const status = lauxlib.luaL_loadbuffer(L, to_luastring("return " + tableText), 0, to_luastring("@neutral-slot"));
+    if (status !== 0) return null;
+    if (lua.lua_pcall(L, 0, 1, 0) !== 0) return null;
+    const obj = luaValueToJS(L);
+    if (!obj || typeof obj !== "object") return null;
+    return obj as Record<string, AuctionatorItemBlock>;
+  } finally {
+    lua.lua_close(L);
   }
-  const obj = toPlainObject(decoded);
-  if (!obj || typeof obj !== "object") throw new Error(`CBOR 解码结果不是对象（槽 ${realmSlot}）`);
-  return obj as Record<string, AuctionatorItemBlock>;
 }
 
 function decodeVendorPriceCache(block: string): Record<number, number> {
@@ -165,5 +262,16 @@ export function readAuctionatorSavedVars(path: string, realmSlot: string): Aucti
   // POSTING_HISTORY 是明文（当前 { __dbversion=1 } 空对象）；结构随版本变化，导入端做最小适配。
   const postingHistory: Record<string, unknown> = { __dbversion: postingBlock !== undefined ? extractIntField(postingBlock, "__dbversion") : undefined };
 
-  return { priceDatabase, vendorPriceCache, postingHistory, timeOfLastBrowseScan, rawGlobals };
+  // WAHScanTimes 是驼峰顶层变量（rawGlobals 正则只抓全大写名），单独提取明文表：
+  // WAHScanTimes = { ["faction"] = <秒>, ["neutral"] = <秒> }
+  const scanTimesBlock = extractTopLevelVariable(source, "WAHScanTimes");
+  const scanTimes: Record<string, number> = {};
+  if (scanTimesBlock !== null) {
+    for (const key of ["faction", "neutral"]) {
+      const v = extractIntField(scanTimesBlock, key);
+      if (v !== null) scanTimes[key] = v;
+    }
+  }
+
+  return { priceDatabase, vendorPriceCache, postingHistory, timeOfLastBrowseScan, scanTimes, rawGlobals };
 }

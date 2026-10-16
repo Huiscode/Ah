@@ -9,9 +9,9 @@ import { getLatestSnapshotTime, getItemMetaVersion, getMarketUniverse } from "@/
 import type { MarketMode } from "@/lib/repositories";
 
 type SignalFetchers = {
-  getLatestSnapshotTime: (market?: string, mode?: MarketMode) => Promise<Date | null>;
+  getLatestSnapshotTime: (market: string, mode?: MarketMode) => Promise<Date | null>;
   getItemMetaVersion: () => Promise<number>;
-  getMarketUniverse: (mode?: MarketMode) => Promise<MarketHistory[]>;
+  getMarketUniverse: (market: string, mode?: MarketMode) => Promise<MarketHistory[]>;
 };
 
 export function createMarketSignalSource(fetchers: SignalFetchers) {
@@ -20,15 +20,15 @@ export function createMarketSignalSource(fetchers: SignalFetchers) {
   let cachedLatestAt: Date | null = null;
 
   return {
-    async getMarketSignals(mode: MarketMode = "current"): Promise<{ signals: MarketSignal[]; latestSnapshotAt: Date | null }> {
-      const latestSnapshotAt = await fetchers.getLatestSnapshotTime("faction", mode);
+    async getMarketSignals(market: string = "faction", mode: MarketMode = "current"): Promise<{ signals: MarketSignal[]; latestSnapshotAt: Date | null }> {
+      const latestSnapshotAt = await fetchers.getLatestSnapshotTime(market, mode);
       if (latestSnapshotAt === null) {
         return { signals: [], latestSnapshotAt: null };
       }
       const metaVersion = await fetchers.getItemMetaVersion();
-      const key = `${mode}:${latestSnapshotAt.getTime()}:${metaVersion}`;
+      const key = `${market}:${mode}:${latestSnapshotAt.getTime()}:${metaVersion}`;
       if (cachedKey !== key) {
-        const universe = await fetchers.getMarketUniverse(mode);
+        const universe = await fetchers.getMarketUniverse(market, mode);
         // `now` is frozen per generation; med7's 7-day window drifting by
         // one scan interval is immaterial next to scan cadence.
         const now = new Date();
