@@ -4,6 +4,7 @@ import type { Route } from "next";
 import { buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
 import {
   getItemDetail,
+  getItemPriceTiers,
   getItemSellerPricesByIds,
   getItemVendorPricesByIds,
   getLatestPricesByItemIds,
@@ -23,7 +24,38 @@ import { CandlestickChart, TimeSeriesChart } from "@/components/charts";
 import { WatchStar } from "@/components/watch-star";
 import { CloseTabButton } from "@/components/close-tab-button";
 import { markBaitDays } from "@/lib/bait-filter";
+import { splitCopper } from "@/lib/wow-money";
 import { Panel, PanelHeader } from "@/components/ui/panel";
+
+// 档位价格：统一金/银/铜三列（各自固定宽右对齐），保证各档位货币单位按位对齐
+// （金对金、银对银、铜对铜）。没有的货币位只保留透明占宽，不显示数字与图标。
+const TIER_COIN_ICONS = {
+  gold: "https://wow.zamimg.com/images/icons/money-gold.gif",
+  silver: "https://wow.zamimg.com/images/icons/money-silver.gif",
+  copper: "https://wow.zamimg.com/images/icons/money-copper.gif"
+} as const;
+
+function TierPrice({ copper }: { copper: number }) {
+  const { gold, silver, copper: copperPart } = splitCopper(copper);
+  const part = (value: number, kind: keyof typeof TIER_COIN_ICONS, widthClass: string, color: string) => (
+    <span className={`inline-flex ${widthClass} items-center justify-end gap-0.5`}>
+      {value > 0 ? (
+        <>
+          <span className={`tabular-nums ${color}`}>{value.toLocaleString("en-US")}</span>
+          {/* eslint-disable-next-line @next/next/no-img-element -- tiny external sprite */}
+          <img src={TIER_COIN_ICONS[kind]} alt="" width={10} height={10} className="inline-block shrink-0" />
+        </>
+      ) : null}
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center whitespace-nowrap">
+      {part(gold, "gold", "w-14", "text-wow-gold")}
+      {part(silver, "silver", "w-12", "text-wow-silver")}
+      {part(copperPart, "copper", "w-10", "text-wow-copper")}
+    </span>
+  );
+}
 
 export default async function ItemDetail({ params, searchParams }: { params: Promise<{ itemId: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { itemId } = await params;
@@ -36,16 +68,17 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
     ? `/items/${numericItemId}${mode === "history" ? "?history=1" : ""}`
     : `/items/${numericItemId}?market=neutral${mode === "history" ? "&history=1" : ""}`) as Route;
   const historyHref: Route = `/items/${numericItemId}${marketSuffix}` as Route;
-  const marketLabel = market === "neutral" ? "中立（赤脊山贸易营地）" : "联盟（主城）";
+  const marketLabel = market === "neutral" ? "中立" : "联盟";
   const item = await getItemDetail(numericItemId, mode, market);
   if (!item) notFound();
 
   // 制作配方面板按需取数：只查产出此物品的配方，以及这些配方涉及的
   // 物品的最新市场价 / NPC 保底价——不做全量市场信号扫描（单品页加载
   // 快的关键：med7 在 getItemDetail 里也只算当前物品）。
-  const [watchedIds, producingRecipes] = await Promise.all([
+  const [watchedIds, producingRecipes, priceTiers] = await Promise.all([
     getWatchedItemIds(),
-    getRecipesProducing(numericItemId)
+    getRecipesProducing(numericItemId),
+    getItemPriceTiers(numericItemId, market)
   ]);
   const involvedItemIds = new Set<number>([numericItemId]);
   for (const recipe of producingRecipes) {
@@ -103,6 +136,12 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
         { key: "low" as const, color: "#39d98a", name: "当日最低" }
       ]
     : [{ key: "close" as const, color: "#39d98a", name: "每日收盘" }];
+  // 价格档位（真档位，转录补档）：前 5 个不同价位 + 档位跨度（第5 vs 第1）。
+  // 与雷达"价格档位差距"筛选项同口径；无档位数据时面板整体不渲染。
+  const tierTop5 = [...new Set(priceTiers.map((t) => t.price))].sort((a, b) => a - b).slice(0, 5);
+  const tierGapPercent = tierTop5.length >= 2
+    ? ((tierTop5[tierTop5.length - 1] - tierTop5[0]) / tierTop5[0]) * 100
+    : 0;
 
   return (
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
@@ -204,6 +243,30 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
               )}
             </div>
           </Panel>
+          {tierTop5.length >= 2 && (
+            <Panel>
+              <PanelHeader title="价格档位（前5档）" />
+              <div className="space-y-1.5 p-4 font-mono text-sm">
+                {priceTiers
+                  .filter((tier) => tierTop5.includes(tier.price))
+                  .sort((a, b) => a.price - b.price)
+                  .slice(0, 5)
+                  .map((tier, index) => (
+                    <div key={tier.price} className="flex items-center gap-3 text-xs">
+                      <span className="text-terminal-muted">档{index + 1}</span>
+                      <span className="ml-auto"><TierPrice copper={tier.price} /></span>
+                      <span className="w-16 text-right text-terminal-muted">×{tier.qty.toLocaleString("en-US")}</span>
+                    </div>
+                  ))}
+                {tierGapPercent > 0 && (
+                  <div className="mt-2 flex items-center justify-between border-t border-terminal-border pt-2 text-xs">
+                    <span className="text-terminal-muted">档位差距（第5 vs 第1）</span>
+                    <span className="text-terminal-green">{tierGapPercent.toFixed(1)}%</span>
+                  </div>
+                )}
+              </div>
+            </Panel>
+          )}
           <Panel>
             <PanelHeader title="制作配方" />
             <div className="space-y-2 p-3 font-mono text-xs">

@@ -1,4 +1,4 @@
--- WoWderhoiAH-Transcript v0.1.0
+-- WoWderhoiAH-Transcript v0.2.0
 -- 把拍卖行搜索结果的完整价格档位转录到 SavedVariables，供 WoWderhoiAH 网页版读取。
 --
 -- 设计（M4，2026-10-13）：
@@ -7,12 +7,19 @@
 --   * 扫描方式 = 打开拍卖行后逐个物品 SendSearchQuery，等搜索结果事件返回后
 --     读取该物品全部拍卖条目，按单价聚合为档位 {p,q}（同价合并数量），落盘。
 --     事件驱动天然串行，避免拍卖行查询限速。
---   * 落盘 = WAHTranscribeDB.scans[itemId] = { t = 服务器时间戳, tiers = {...} }，
+--   * 落盘 = WAHTranscribeDB.scans[itemId] = { t = 服务器时间戳, market, tiers = {...} }，
 --     只保留最新一轮（网页端导入时按轮次累积历史，DB 保留全部轮次）。
 --   * 断点续扫 = WAHTranscribeState 存队列/进度（SavedVariables 登出时写盘）。
 --
+-- v0.2.0（2026-10-16）：
+--   * 自动补档：Auctionator 增量扫描完成后（IncrementalScan ScanComplete）自动调用
+--     Auctionator.Forever.StartTierBackfill()，只对"候选物品"（必赚：最低买入价 < NPC
+--     收购价；或潜在捡漏：7 日最低价中位数 × 0.95 − 最低买入价 ≥ 50c）逐个搜索补档，
+--     覆盖网页雷达池的真前 5 档价位需求。候选读 AUCTIONATOR_PRICE_DATABASE（m/l 历史）
+--     与 WAHVendorDB（NPC 收购价），不重复网页侧完整雷达逻辑。
+--   * 条目增加 market 字段（faction/neutral），网页导入按市场分流。
+--
 -- 用法：/wahscan start [fresh] | stop | resume | status
---   start fresh：忽略已扫记录，重建全部物品队列重扫。
 
 local frame = CreateFrame("Frame")
 local MIN_QUERY_GAP = 0.6     -- 两次查询之间的最小间隔（秒）
@@ -86,6 +93,7 @@ end
 local function saveItemTiers(itemId, tierMap)
   WAHTranscribeDB.scans[tostring(itemId)] = {
     t = now(),
+    market = Auctionator.Forever and Auctionator.Forever.CurrentScanMarket or "faction",
     tiers = flattenTiers(tierMap),
   }
 end
@@ -145,6 +153,71 @@ local function makeItemKey(itemId)
     if ok and ik then return ik end
   end
   return { itemID = itemId }
+end
+
+-- ---------- 自动补档（v0.2.0） ----------
+
+-- 候选：当日有在售（m > 0）且满足
+--   * 必赚：最低买入价 m < NPC 收购价（WAHVendorDB.scans[itemId].p）；或
+--   * 潜在捡漏：7 日最低价（block.l 最近 7 天）中位数 × 0.95 − m ≥ 50c。
+-- 口径与网页雷达一致（AH 税 5%、绝对净利 50c 地板），但不重复 med7 的
+-- 稀薄日过滤等细节——候选只是"值得补档位"的近似，宽进严出。
+local function collectCandidates()
+  local candidates = {}
+  if not Auctionator.Forever then return candidates end
+  local slot = (Auctionator.Forever.CurrentScanMarket == "neutral") and "PvP_N" or "PvP"
+  local db = AUCTIONATOR_PRICE_DATABASE
+  local slotData = (type(db) == "table") and db[slot]
+  if type(slotData) ~= "table" then return candidates end
+  for k, block in pairs(slotData) do
+    local id = tonumber(k)
+    if id and type(block) == "table" and block.m and block.m > 0 then
+      local vendor = WAHVendorDB and WAHVendorDB.scans and WAHVendorDB.scans[tostring(id)]
+      if vendor and vendor.p and vendor.p > block.m then
+        candidates[#candidates + 1] = id
+      else
+        local days = {}
+        for day, l in pairs(block.l or {}) do
+          if type(day) == "number" and l and l > 0 then days[#days + 1] = day end
+        end
+        table.sort(days)
+        local n = #days
+        local lows = {}
+        for i = math.max(1, n - 6), n do lows[#lows + 1] = block.l[days[i]] end
+        if #lows > 0 then
+          table.sort(lows)
+          local med = lows[math.ceil(#lows / 2)]
+          if med and med * 0.95 - block.m >= 50 then candidates[#candidates + 1] = id end
+        end
+      end
+    end
+  end
+  table.sort(candidates)
+  return candidates
+end
+
+-- 扫描完成后自动补档：对候选物品逐搜索采集真实档位（事件驱动，复用 advance/onResults）。
+-- 拍卖行必须开着；扫描中（state.running）时跳过；候选为空提示无需补档。
+function Auctionator.Forever.StartTierBackfill()
+  if state.running then
+    chat("补档跳过：已有扫描队列在运行。")
+    return
+  end
+  if not C_AuctionHouse then
+    chat("补档失败：拍卖行 API 不可用（请保持拍卖行打开）。")
+    return
+  end
+  local candidates = collectCandidates()
+  if #candidates == 0 then
+    chat("补档跳过：无候选物品（必赚或潜在捡漏）。")
+    return
+  end
+  state.queue = candidates
+  state.pos = 1
+  state.done = 0
+  state.running = true
+  chat(string.format("正在补档 %d 个候选物品的真实档位（约 %.0f 秒）…", #candidates, #candidates * MIN_QUERY_GAP))
+  advance()
 end
 
 -- ---------- 扫描控制 ----------

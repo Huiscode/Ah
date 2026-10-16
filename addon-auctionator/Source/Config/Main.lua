@@ -130,7 +130,7 @@ Auctionator.Config.Defaults = {
   [Auctionator.Config.Options.CRAFTING_INFO_SHOW_PROFIT] = true,
   [Auctionator.Config.Options.CRAFTING_INFO_SHOW_COST] = true,
 
-  [Auctionator.Config.Options.SHOPPING_LIST_MISSING_TERMS] = false,
+  [Auctionator.Config.Options.SHOPPING_LIST_MISSING_TERMS] = true,
   [Auctionator.Config.Options.SHOPPING_LAST_CONTAINER_VIEW] = Auctionator.Constants.ShoppingListViews.Lists,
 }
 

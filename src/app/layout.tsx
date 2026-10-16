@@ -6,7 +6,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "WoWderhoi AHelper",
+  title: "AH",
   description: "面向魔兽世界经典版拍卖行交易者的短周期市场情报终端。"
 };
 

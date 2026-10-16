@@ -10,11 +10,11 @@ import { ProductBadge } from "@/components/product-badge";
 import { qualityColorClass } from "@/lib/quality";
 import { turnoverBadgeClass } from "@/lib/turnover";
 import { formatPercent } from "@/lib/utils";
-import { categoryLabel, categoryMatches } from "@/lib/category-zh";
+import { categoryMatches } from "@/lib/category-zh";
 import type { DealRadarRow } from "@/lib/analytics";
 import { usePersistedState } from "@/lib/use-persisted-state";
 import { RadarSettingsButton } from "@/components/radar-settings-button";
-import { AddToListButton } from "@/components/add-to-list-button";
+import { CopyListButton } from "@/components/copy-list-button";
 
 type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" | "changePercent" | "quantity";
 
@@ -24,19 +24,21 @@ type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" |
 // Headers sort: first click high-to-low, second click low-to-high; without
 // any click the rows keep the radar's own ranking (NPC deals first, then
 // absolute profit).
-export function DealRadarTable({ deals, prices, categories, watchedItemIds, productItemIds, lists }: {
+export function DealRadarTable({ deals, prices, categories, watchedItemIds, productItemIds, tierGapByItemId }: {
   deals: DealRadarRow[];
   prices: Map<number, number>;
   categories: string[];
   watchedItemIds: number[];
   productItemIds: Set<number>;
-  lists: Array<{ id: string; name: string }>;
+  tierGapByItemId?: Map<number, number>; // 价格档位差距%（市场价 vs 最低价，近似口径）
 }) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
   const [category, setCategory] = usePersistedState<string>("wah:deal-radar:category", "");
   const [onlyLiquid, setOnlyLiquid] = usePersistedState<boolean>("wah:deal-radar:onlyLiquid", false);
-  const [fMinPrice, setFMinPrice] = usePersistedState<number>("wah:filter:minPrice", 0);
+  const [onlyVendor, setOnlyVendor] = usePersistedState<boolean>("wah:deal-radar:onlyVendor", false);
+  const [minQuantity, setMinQuantity] = usePersistedState<number>("wah:deal-radar:minQuantity", 0);
+  const [minTierGap, setMinTierGap] = usePersistedState<number>("wah:deal-radar:minTierGap", 0);
   const watched = new Set(watchedItemIds);
 
   useEffect(() => {
@@ -47,11 +49,22 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
     ? deals.filter((deal) => categoryMatches(deal.category, category))
     : [...deals];
 
-  // 客户端二级筛选：价格下限按最低价。
-  if (fMinPrice > 0) rows = rows.filter((d) => d.minPrice >= fMinPrice);
-
   // 仅限高流通：只保留有流通分的商品（turnoverScore > 0）。
   if (onlyLiquid) rows = rows.filter((deal) => deal.turnoverScore > 0);
+
+  // 必赚：只保留 NPC 倒卖行（vendor === true）。
+  if (onlyVendor) rows = rows.filter((deal) => deal.vendor);
+
+  // 在售量下限：quantity（总在售量）≥ 设置值。
+  if (minQuantity > 0) rows = rows.filter((deal) => deal.quantity >= minQuantity);
+
+  // 价格档位差距：市场价 vs 最低价的差距 % ≥ 设置值（近似口径，见 tierGapByItemId）。
+  if (minTierGap > 0) {
+    rows = rows.filter((deal) => {
+      const gap = tierGapByItemId?.get(deal.itemId);
+      return gap !== undefined && gap >= minTierGap;
+    });
+  }
 
   if (sortKey) {
     rows.sort((left, right) => {
@@ -83,29 +96,13 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
 
   const mark = (key: SortKey) => (sortKey === key ? (sortAsc ? " ▲" : " ▼") : "");
   const thClass = "cursor-pointer select-none border-b border-terminal-border px-3 py-2 hover:text-slate-200";
-  const inputClass = "border border-terminal-border bg-terminal-panel2 px-2 py-1 text-slate-100 focus:outline-none";
 
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 border-b border-terminal-border px-3 py-2 font-mono text-xs">
-        <select value={category} onChange={(event) => setCategory(event.target.value)} className={inputClass}>
-          <option value="">全部品类</option>
-          {categories.map((value) => (
-            <option key={value} value={value}>{categoryLabel(value)}</option>
-          ))}
-        </select>
-        <label className="flex cursor-pointer select-none items-center gap-1.5 text-slate-100" title="只显示有流通分的商品，默认按流通分从高到低排列">
-          <input
-            type="checkbox"
-            checked={onlyLiquid}
-            onChange={(event) => setOnlyLiquid(event.target.checked)}
-            className="h-3.5 w-3.5 accent-terminal-amber"
-          />
-          仅限高流通商品
-        </label>
         <span className="ml-auto flex items-center gap-2">
-          <AddToListButton items={rows.map((deal) => ({ itemId: deal.itemId, name: deal.name }))} lists={lists} label="当前筛选加入清单" />
-          <RadarSettingsButton />
+          <CopyListButton names={rows.map((deal) => deal.name)} label="复制当前筛选清单" />
+          <RadarSettingsButton categories={categories} />
           <span className="text-terminal-muted">{rows.length} / {deals.length} 条</span>
         </span>
       </div>

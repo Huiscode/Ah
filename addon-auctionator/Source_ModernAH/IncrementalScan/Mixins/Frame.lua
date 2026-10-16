@@ -152,6 +152,12 @@ function AuctionatorIncrementalScanFrameMixin:NextStep()
       if doingFullScan then
         Auctionator.Utilities.Message(AUCTIONATOR_L_FINISHED_PROCESSING:format(count))
         Auctionator.EventBus:Fire(self, Auctionator.IncrementalScan.Events.ScanComplete, rawScan)
+        -- WoWderhoiAH：扫描完成自动对候选物品补档（真实前 5 档价位，供网页雷达
+        -- "价格档位差距"筛选）。补档走 Transcript 的逐物品搜索采集，事件驱动，
+        -- 与当前浏览扫描无冲突（扫描已结束）。
+        if Auctionator.Forever and Auctionator.Forever.StartTierBackfill then
+          Auctionator.Forever.StartTierBackfill()
+        end
       end
       Auctionator.EventBus:Fire(self, Auctionator.IncrementalScan.Events.PricesProcessed)
     end)

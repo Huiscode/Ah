@@ -204,6 +204,28 @@ async function getTranscriptLatestSnapshots(itemIds?: number[]): Promise<Map<num
   return out;
 }
 
+// 单品价格档位（真档位）：该物品最新转录轮（source='transcript'）的挂单档位
+// （单价升序 + 数量），供商品终端右侧"价格档位"面板展示。无档位数据返回空数组。
+export async function getItemPriceTiers(itemId: number, market: string = "faction"): Promise<Array<{ price: number; qty: number }>> {
+  const rows = await prisma.$queryRaw<Array<{ price: number | bigint; qty: number | bigint }>>(
+    Prisma.sql`
+    WITH latest AS (
+      SELECT MAX("ts") AS "ts"
+      FROM "AuctionTier"
+      WHERE "source" = 'transcript' AND "market" = ${market} AND "item_id" = ${itemId}
+    )
+    SELECT t."price" AS "price", t."qty" AS "qty"
+    FROM "AuctionTier" t
+    JOIN latest l ON l."ts" = t."ts"
+    WHERE t."source" = 'transcript' AND t."market" = ${market} AND t."item_id" = ${itemId}
+    ORDER BY t."price" ASC
+    `
+  );
+  return rows
+    .map((r) => ({ price: Number(r.price), qty: Number(r.qty) }))
+    .filter((t) => t.price > 0 && t.qty > 0);
+}
+
 export async function getMarketUniverse(market: string = "faction", mode: MarketMode = "current"): Promise<MarketHistory[]> {
   // current 模式排除 addon（旧 Beta 删档数据不得进入当前口径的任意查询层）；
   // history 模式只看 addon。
@@ -379,6 +401,69 @@ export async function getLatestSnapshotTime(market: string = "faction", mode: Ma
   const candidates = pickLatestDate(tier?.ts, snapshot?.timestamp);
   if (candidates === null) return null;
   return candidates;
+}
+
+// 价格档位差距（真档位口径）：最新转录轮（AuctionTier, source='transcript'）里每物品
+// 取最低的 5 个不同挂单价位（前 5 档），差距 = (第 5 档 − 第 1 档) / 第 1 档 × 100（%）。
+// 挂单阶梯越分散，该值越大；只有 1 档或全同价的物品无差距（不计入）。
+// 数据由插件扫描完成后对候选物品自动补档（Transcript 搜索采集）产生；
+// 无档位数据的物品不在 Map 中，筛选时自然被排除。历史模式（addon）无档位，
+// 沿用近似口径（marketPrice vs minPrice）。
+export async function getPriceTierGaps(mode: MarketMode, market: string = "faction"): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  if (mode === "history") {
+    const source = "addon";
+    const latest = await prisma.auctionSnapshot.findFirst({
+      where: { market, source },
+      orderBy: { timestamp: "desc" },
+      select: { timestamp: true }
+    });
+    if (!latest) return out;
+    const rows = await prisma.auctionSnapshot.findMany({
+      where: { market, source, timestamp: latest.timestamp },
+      select: { itemId: true, marketPrice: true, minPrice: true }
+    });
+    for (const row of rows) {
+      const min = Number(row.minPrice);
+      if (min <= 0) continue;
+      const gap = ((Number(row.marketPrice) - min) / min) * 100;
+      if (gap >= 0) out.set(row.itemId, Math.round(gap * 100) / 100);
+    }
+    return out;
+  }
+  // 每物品取各自最新转录轮（补档逐物品完成，时间不同；用全局 MAX(ts) 会漏掉
+  // 较早完成的其他候选）。与 getTranscriptLatestSnapshots 同口径。
+  const rows = await prisma.$queryRaw<Array<{ itemId: number | bigint; price: number | bigint; qty: number | bigint }>>(
+    Prisma.sql`
+    WITH latest AS (
+      SELECT "item_id" AS "itemId", MAX("ts") AS "ts"
+      FROM "AuctionTier"
+      WHERE "source" = 'transcript' AND "market" = ${market}
+      GROUP BY "item_id"
+    )
+    SELECT t."item_id" AS "itemId", t."price" AS "price", t."qty" AS "qty"
+    FROM "AuctionTier" t
+    JOIN latest l ON l."itemId" = t."item_id" AND l."ts" = t."ts"
+    WHERE t."source" = 'transcript' AND t."market" = ${market}
+    `
+  );
+  const byItem = new Map<number, number[]>();
+  for (const row of rows) {
+    const p = Number(row.price);
+    if (p <= 0 || Number(row.qty) <= 0) continue;
+    const id = Number(row.itemId);
+    const list = byItem.get(id);
+    if (list) list.push(p);
+    else byItem.set(id, [p]);
+  }
+  for (const [itemId, prices] of byItem) {
+    const distinct = [...new Set(prices)].sort((a, b) => a - b).slice(0, 5);
+    if (distinct.length < 2) continue;
+    const low = distinct[0];
+    const gap = ((distinct[distinct.length - 1] - low) / low) * 100;
+    if (gap > 0) out.set(itemId, Math.round(gap * 100) / 100);
+  }
+  return out;
 }
 
 // Metadata version of the item universe (MAX updated_at). The market-signal

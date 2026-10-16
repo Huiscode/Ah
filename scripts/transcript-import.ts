@@ -1,8 +1,9 @@
 // M4 数据层：转录插件（WoWderhoiAH-Transcript）存档导入。
 //
-// 数据流：游戏内 /wahscan start 扫描 → 登出落盘 WAHTranscribeDB.lua
-//   → 本脚本用 fengari（Lua 运行时）执行存档文件取出 WAHTranscribeDB 表
-//   → ① AuctionTier 重建完整档位（source='transcript'，先删后插）
+// 数据流：游戏内 /wahscan start 扫描（或增量扫描后自动补档）→ 登出落盘
+//   WAHTranscribeDB.lua → 本脚本用 fengari（Lua 运行时）执行存档文件取出
+//   WAHTranscribeDB 表 → ① AuctionTier 重建完整档位（source='transcript'，
+//      按条目 market 字段分流 faction/neutral，先删后插）
 //   → ② DailySummary 聚合 transcript 源每日代表价（close=该日最后一次扫描的
 //      tier-filter 有效最低价；volume=有效档在售量；先删后插）
 //   → ③ 旧 addon / auctionator 源数据不触碰。
@@ -12,6 +13,7 @@
 // 跑法：npx tsx scripts/transcript-import.ts
 import { readFileSync } from "node:fs";
 import { lua, lauxlib, lualib, to_luastring, to_jsstring, type LuaState } from "fengari";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { effectiveLowestPrice } from "@/lib/tier-filter";
 
@@ -21,7 +23,6 @@ const SV_PATH = process.env.AQ_TRANSCRIPT_SV_PATH
   ?? "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_\\WTF\\Account\\1120133458#1\\SavedVariables\\WoWderhoiAH-Transcript.lua";
 const SERVER = process.env.AQ_SERVER ?? "Classic Beta PvP 2";
 const FACTION = process.env.AQ_FACTION ?? "Alliance";
-const MARKET = "faction";
 const SOURCE = "transcript";
 
 function chunk<T>(rows: T[], size: number): T[][] {
@@ -80,7 +81,7 @@ function luaToJs(L: LuaState, idx: number): unknown {
 }
 
 type RawTier = { p?: number; q?: number };
-type RawScan = { t?: number; tiers?: RawTier[] };
+type RawScan = { t?: number; market?: string; tiers?: RawTier[] };
 
 async function main() {
   let source: string;
@@ -117,19 +118,22 @@ async function main() {
   }
 
   const tiers: Array<{ itemId: number; ts: Date; server: string; faction: string; market: string; source: string; price: bigint; qty: number }> = [];
-  const daily: Array<{ itemId: number; date: Date; source: string; openPrice: bigint; closePrice: bigint; highPrice: bigint; lowPrice: bigint; volume: number }> = [];
+  const daily: Array<{ itemId: number; date: Date; source: string; market: string; openPrice: bigint; closePrice: bigint; highPrice: bigint; lowPrice: bigint; volume: number }> = [];
   const byDay = new Map<string, Map<number, { ts: number; price: bigint; qty: number }>>();
+  const marketById = new Map<number, string>();
 
   for (const [key, scan] of scans) {
     const itemId = Number(key);
     if (!Number.isInteger(itemId) || !scan || typeof scan.t !== "number") continue;
+    const market = scan.market === "neutral" ? "neutral" : "faction";
+    marketById.set(itemId, market);
     const ts = new Date(scan.t * 1000);
     const utcDay = new Date(Date.UTC(ts.getUTCFullYear(), ts.getUTCMonth(), ts.getUTCDate())).getTime();
     const raw = (scan.tiers ?? []).map((t) => ({ price: Math.round(t.p ?? 0), qty: Math.round(t.q ?? 0) }));
     const result = effectiveLowestPrice(raw);
     for (const t of raw) {
       if (t.price > 0 && t.qty > 0) {
-        tiers.push({ itemId, ts, server: SERVER, faction: FACTION, market: MARKET, source: SOURCE, price: BigInt(t.price), qty: t.qty });
+        tiers.push({ itemId, ts, server: SERVER, faction: FACTION, market, source: SOURCE, price: BigInt(t.price), qty: t.qty });
       }
     }
     if (result.effectivePrice !== null) {
@@ -144,8 +148,10 @@ async function main() {
   for (const [dayKey, itemMap] of byDay) {
     const date = new Date(Number(dayKey));
     for (const [itemId, v] of itemMap) {
+      // 每日行的 market 与对应扫描条目一致（同日同物品只会有一条，取最后轮）。
+      const market = marketById.get(Number(itemId)) ?? "faction";
       daily.push({
-        itemId, date, source: SOURCE,
+        itemId, date, source: SOURCE, market,
         openPrice: v.price, closePrice: v.price, highPrice: v.price, lowPrice: v.price, volume: v.qty
       });
     }
@@ -153,15 +159,21 @@ async function main() {
 
   console.log(`存档解析：${scans.length} 物品 | ${tiers.length} 档位 | ${daily.length} 每日行（${byDay.size} 天）`);
 
-  // 事务：先删后插（source 隔离，addon/auctionator 数据不受影响）
+  // 事务：档位按市场先删后插（source 隔离，addon/auctionator 数据不受影响）；
+  // transcript 每日为全量语义，全删重建。
+  const tierOps: Prisma.PrismaPromise<unknown>[] = [];
+  for (const market of ["faction", "neutral"] as const) {
+    const rows = tiers.filter((t) => t.market === market);
+    tierOps.push(prisma.auctionTier.deleteMany({ where: { server: SERVER, faction: FACTION, market, source: SOURCE } }));
+    tierOps.push(...chunk(rows, BULK_CHUNK).map((slice) => prisma.auctionTier.createMany({ data: slice })));
+  }
   await prisma.$transaction([
-    prisma.auctionTier.deleteMany({ where: { server: SERVER, faction: FACTION, market: MARKET, source: SOURCE } }),
-    ...chunk(tiers, BULK_CHUNK).map((slice) => prisma.auctionTier.createMany({ data: slice })),
+    ...tierOps,
     prisma.dailySummary.deleteMany({ where: { source: SOURCE } }),
     ...chunk(daily, BULK_CHUNK).map((slice) => prisma.dailySummary.createMany({ data: slice }))
   ]);
 
-  console.log(`✅ 导入完成：${tiers.length} 档位 + ${daily.length} transcript 每日`);
+  console.log(`✅ 导入完成：${tiers.length} 档位 + ${daily.length} transcript 每日（按市场分流）`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

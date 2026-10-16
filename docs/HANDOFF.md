@@ -1,11 +1,11 @@
-# AH 项目交接文件（HANDOFF・v3.8 精简版）
+# AH 项目交接文件（HANDOFF・v4.0 精简版）
 
 > **新 AI 接手流程**：先读 `docs/PRODUCT.md`（产品全貌/架构/口径/血泪结论）→ 再读本文件（当前状态/待办/坑/纪律）。
-> 最后更新：2026-10-16 晚（双市场 + 转录并入 + 扫描引擎切换全链路落地，全部功能修复已同步游戏目录）。
+> 最后更新：2026-10-17 凌晨（设置弹窗即时生效 + 复制清单唯一名 + 无结果显示默认开 + 草药清单口径；git 已 push）。
 
 ## 1. 一句话现状
 
-**全链路已闭环**：联盟/中立双市场（分槽 PvP/PvP_N）扫描与导入正常、增量扫描引擎平滑无冷却、转录已并入、网页双市场同页切换。剩余事项：git 未 commit（等用户指示）；无已知功能性问题。
+**全链路已闭环**：联盟/中立双市场（分槽 PvP/PvP_N）扫描与导入正常、增量扫描引擎平滑无冷却、转录已并入、网页双市场同页切换。捡漏雷达筛选已精简进设置弹窗（必赚/在售量/档位差距，**改动即时生效无保存按钮**），价格档位差距已改用**真实前 5 档**（插件扫描完成后自动对候选物品搜索补档，需用户重扫一次生效）。购物清单复制名带唯一时间戳（不覆盖旧清单）、插件"无结果条目显示"默认开启。**v4.0 批次已 commit + push**（剩余：等用户重扫补档）。
 
 ## 2. 环境与关键路径
 
@@ -38,10 +38,17 @@
 7. **GameTooltip nil 弹窗**：无限版原生 bug（`GameTooltip_SetDefaultAnchor`，错误栈无插件代码），非插件问题；`/console scriptErrors 0` 关闭（**会话级，游戏内显式执行，reload 不重置**；Config.wtf 写入会被游戏写回覆盖，不可靠）
 8. 网页端 repositories 修复：`pickLatestDate`（过滤 undefined）+ 3 项回归测试
 9. **每市场扫描时间（WAHScanTimes，2026-10-16）**：存档 `TimeOfLastBrowseScan` 是全局字段，扫任一市场都刷新它 → 导入时联盟/中立快照共用 → "扫中立后联盟也显示刚刚"误报。插件 AutoReload 扫描完成事件把 `CurrentScanMarket` 对应时间写入 `WAHScanTimes`（新 SavedVariables，toc 已加）；解析端 `scanTimes` 字段、导入端 `scannedAt` 优先 `scanTimes[market]`（**必须 `time()` Unix 秒，勿用 `GetTime()` 相对秒——曾导致"20741 天前"**；无本市场扫描时间时按该市场数据最后一天近似，空市场回退全局）。顺带修复 `luaValueToJS(L: number)` 类型声明（应为 `LuaState`）+ `luaL_loadbuffer` name 参数 `to_luastring`。新增 2 项单测；tsc 干净、169 测试通过。**注意**：两市场各自扫过一次后 WAHScanTimes 才完整，之前联盟/中立时间戳互有近似
+10. **雷达筛选精简 + 设置弹窗（2026-10-16）**：工具栏只剩 [复制Max100条][设置][计数]；品类/高流通/必赚/在售量≥/价格档位差距≥ 全部移入设置弹窗（localStorage `wah:deal-radar:*` + storage 广播即时生效；**广播必须带 `storageArea: localStorage` 才能被 `usePersistedState` 同页收到**）；复制按钮固定"复制Max100条"（`捡漏清单^物品…` 格式，Auctionator 只认含 `^/*/,` 的导入，纯文本静默拒绝）；删除了"新鲜度""雷达条件（捡漏门槛）"标题、价格下限（UI+筛选逻辑）
+11. **价格档位真前5档（方案 A，2026-10-16）**：浏览 API（GetBrowseResults）只返回物品聚合最低价，**无挂单阶梯**；老转录（Transcript.lua）用搜索 API（SendSearchQuery + GetItemSearchResultInfo 每挂单）逐物品采集真实档位。落地：插件 `IncrementalScan ScanComplete` 后自动 `StartTierBackfill()`（Source_Forever/Transcript.lua v0.2.0）——候选 = 必赚（minPrice < NPC 收购价 WAHVendorDB）或潜在捡漏（7 日最低价中位数×0.95−m ≥ 50c），逐个搜索补档（0.6s/个，几百候选 ≈ 数分钟）；`WAHTranscribeDB.scans[itemId]` 条目**带 market 字段**；`transcript-import.ts` 按市场分流删插（无 market 默认 faction）；`getPriceTierGaps(mode, market)` 改用每物品**各自最新转录轮**的前 5 个不同价位，gap=(第5档−第1档)/第1档×100%。**需用户重扫一次**才有中立档位（现为 0）；联盟老转录仅 49 物品有档位（34 个多档）。**商品终端（详情页）右侧新增"价格档位（前5档）"面板**（getItemPriceTiers 单品查询，有档位才渲染：档1-5 单价+数量+档位差距）
+12. **minProfit 口径（雷达门槛）**：捡漏行需 `med7×0.95 − minPrice ≥ 最低盈利`（默认 50c）且 med7 有 2+ 天历史、2+ 不同收盘价；必赚行（vendorPrice>minPrice）无门槛。med7 = 近 7 个有效日**每日最低价**（Auctionator 存档 `l`）的**中位数**（剔稀薄日），源优先 transcript、无则 auctionator，绝不含 addon
+13. **设置弹窗无保存即时生效（2026-10-17）**：保存按钮删除——筛选类（品类/高流通/必赚/在售量≥/档位差距≥）改动即写 localStorage `wah:deal-radar:*` + storage 广播（**必须带 `storageArea: localStorage`**）即时过滤雷达表；门槛类（最低盈利/最少历史/参考可信度）**600ms 防抖自动 POST `/api/radar-rules` + `router.refresh()`**。**React 报错修复**：storage 广播绝不能在 `setState` updater 内做（updater 在渲染阶段执行，同步 dispatch 会触发其他组件 setState → "Cannot update a component (DealRadarTable) while rendering (RadarSettingsButton)"）——先算 next 再 setState 再广播
+14. **复制清单唯一名（2026-10-17）**：复制按钮清单名 = `捡漏` + 月日时分（如 `捡漏10161530`，`copy-list-button.tsx uniqueListName()`）——每次复制独立清单名，游戏内导入**不覆盖旧清单**；超 100 条仍截断（无限版解析过多会 Lua 错误风暴）
+15. **购物清单"无结果条目"默认开启（2026-10-17）**：插件 `Config/Main.lua` `SHOPPING_LIST_MISSING_TERMS = true`（用户存档无该键，默认值直接生效）——扫描购物清单时无货物品显示 ×0 占位行，不再静默消失。**草药清单口径**：`草药清单.txt`（根目录）为**游戏内真实数据库** 41 个草药（category=商品 且 subCategory=草药，含经典 26+ 无限新增 15，排除草药袋/草药包）；**Foreverchange 站点"草药"子类仅 17 个**（高等级经典草药如黑莲花/山鼠草/梦叶草等不在站点草药分类——站点数据未揭示/分类差异），**导入用数据库版更全**
 
 ## 5. 待办 / 未完成
 
-- **git**：✅ v3.7-v3.8 批次已 commit + push（双市场+转录并入+引擎切换+时间戳修复+文档）；后续改动未提交（等用户指示"推/推一版"）
+- **git**：✅ v3.7-v3.8 批次已 commit + push（双市场+转录并入+引擎切换+时间戳修复+文档）；**v4.0 批次已 commit + push**（雷达设置即时生效/复制清单唯一名/无结果显示默认开/草药清单口径+文档）
+- **重扫一次让补档生效**：插件已同步游戏目录，用户下次扫描（联盟+中立各一次）会自动对候选补档；中立档位现为 0、联盟仅老转录 49 物品
 - **转录全量重扫**（可选）：用户现已走 Auctionator 扫描 + watch 导入，转录（/wahscan）为可选补充
 - **锻造 5 条高级护腕设计图**缺同名 craft 成品配方（军官/哨兵/守望者/督军/裁决者护腕，可后续补抓）
 - **POSTING_HISTORY**：当前为空，`PostingRecord` 表已建、解析口子就绪
