@@ -30,7 +30,7 @@ const sortableColumns: Array<{ key: SignalSortKey; heading: string }> = [
   { key: "quantity", heading: "在售量" }
 ];
 
-export function MarketTable({ rows, watchedItemIds, view, categories, totalCount, filteredCount, page, pageCount, productItemIds }: {
+export function MarketTable({ rows, watchedItemIds, view, categories, totalCount, filteredCount, page, pageCount, productItemIds, server }: {
   rows: MarketSignal[];
   watchedItemIds: number[];
   view: MarketView;
@@ -40,6 +40,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
   page: number;
   pageCount: number;
   productItemIds: Set<number>;
+  server?: string; // 当前服务器视图（"eu"/"cn"），物品链接保持同服跳转
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -190,7 +191,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
               <tr key={signal.itemId} className="border-b border-terminal-border/70 hover:bg-slate-800/35">
                 <td className="px-2 py-2 text-center"><WatchStar itemId={signal.itemId} watched={watched.has(signal.itemId)} /></td>
                 <td className="px-3 py-2 text-left">
-                  <Link href={`/items/${signal.itemId}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(signal.quality)}`}>
+                  <Link href={`/items/${signal.itemId}${server === "cn" ? "?server=cn" : ""}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(signal.quality)}`}>
                     <ItemIcon itemId={signal.itemId} icon={signal.icon} />
                     {signal.name}
                   </Link>

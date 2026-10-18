@@ -1,11 +1,11 @@
-# AH 项目交接文件（HANDOFF・v4.0 精简版）
+# AH 项目交接文件（HANDOFF・v4.1 精简版）
 
 > **新 AI 接手流程**：先读 `docs/PRODUCT.md`（产品全貌/架构/口径/血泪结论）→ 再读本文件（当前状态/待办/坑/纪律）。
-> 最后更新：2026-10-17 凌晨（设置弹窗即时生效 + 复制清单唯一名 + 无结果显示默认开 + 草药清单口径；git 已 push）。
+> 最后更新：2026-10-18（双服务器 A 方案落地：server 维度贯穿导入/DB/查询/网页，tsc+165 测试通过，git 未 push）。
 
 ## 1. 一句话现状
 
-**全链路已闭环**：联盟/中立双市场（分槽 PvP/PvP_N）扫描与导入正常、增量扫描引擎平滑无冷却、转录已并入、网页双市场同页切换。捡漏雷达筛选已精简进设置弹窗（必赚/在售量/档位差距，**改动即时生效无保存按钮**），价格档位差距已改用**真实前 5 档**（插件扫描完成后自动对候选物品搜索补档，需用户重扫一次生效）。购物清单复制名带唯一时间戳（不覆盖旧清单）、插件"无结果条目显示"默认开启。**v4.0 批次已 commit + push**（剩余：等用户重扫补档）。
+**全链路已闭环 + 双服务器已就绪**：联盟/中立双市场（分槽 PvP/PvP_N）扫描与导入正常、增量扫描引擎平滑无冷却、转录已并入、网页双市场同页切换。**双服务器 A 方案落地**：插件存档按账号天然隔离（零改动），导入/DB/查询/网页全部增加 `server` 短标识（eu/cn），`DailySummary` 加 server 列，watch 支持双路径监视（第二服配置 `AQ_AUCTIONATOR_SV_PATH_2` 即启用）。捡漏雷达筛选精简进设置弹窗、价格档位差距用真实前 5 档、购物清单复制名唯一、无结果条目默认开启。**v4.1 批次已改完未 commit/push**（等用户确认；剩余：登录中国服后填路径 + 重启 watch）。
 
 ## 2. 环境与关键路径
 
@@ -14,8 +14,10 @@
 | 项目根 / 真实 DB | `C:\Users\Hz\Documents\Workspace\Ah` / `prisma\dev.db`（**根目录 `dev.db` 是 0 字节陷阱**） |
 | 游戏客户端 | `C:\Program Files (x86)\World of Warcraft\_classic_beta_\`（**官方无限版** camelot 1.60.1 / build 16001，**非私服**） |
 | 插件（游戏内） | `...\_classic_beta_\Interface\AddOns\Auctionator\`；**仓库受控副本 `addon-auctionator\`**（改插件先改副本再 robocopy 同步，升级官方版会被覆盖需 diff 重打） |
-| 插件 SV 存档 | `...\WTF\Account\1120133458#1\SavedVariables\Auctionator.lua`（槽 `PvP`=联盟、`PvP_N`=中立，含 WAH* 转录存档；`.manual-merge.bak` 备份） |
+| 插件 SV 存档 | `...\WTF\Account\1120133458#1\SavedVariables\Auctionator.lua`（槽 `PvP`=联盟、`PvP_N`=中立，含 WAH* 转录存档；`.manual-merge.bak` 备份）；**欧服/中国服账号不同 → 各自独立目录，天然隔离** |
 | 双市场代码 | `Source_Forever\Market.lua`（地点白名单判定+按钮路由）、`DatabaseNeutral.lua`（PvP_N 懒建+CBOR 解码）、扫描 `EndProcessing`/`NextStep` 按 `CurrentScanMarket` 分槽 |
+| 双服务器代码 | `src\lib\servers.ts`（server 短标识公共定义 eu/cn）；导入 `AQ_SERVER_KEY` 打标；`watch-auto-import.ts` 双路径监视；repositories/market-signals 全函数带 `server` 参数（默认 eu）；网页 `?server=` 切换 |
+| 双服配置 | `.env`：`AQ_SERVER_KEY`/`AQ_AUCTIONATOR_SV_PATH`/`AQ_TRANSCRIPT_SV_PATH`（主服）；`AQ_SERVER_KEY_2`/`AQ_AUCTIONATOR_SV_PATH_2`/`AQ_TRANSCRIPT_SV_PATH_2`（中国服，**路径待用户登录后填写，填了即启用**） |
 | 转录并入 | `Source_Forever\Transcript.lua` / `VendorPrice.lua` / `AutoReload.lua`（独立插件目录已删，存档全局名不变） |
 | 网页 market 参数化 | `src\lib\repositories.ts`（**函数签名顺序易踩坑，见 §6**）、`market-signals.ts`（缓存 key 加 market）、`src\app\page.tsx` / `items\[itemId]\page.tsx`（`?market=neutral`） |
 | 导入脚本 | `scripts\auctionator-import.ts`（双槽）、`transcript-import.ts`、`vendor-game-import.ts`、`watch-auto-import.ts`（常驻自动导入，`npm run watch`） |
@@ -29,6 +31,7 @@
 
 ## 4. 已完成并验证（勿重蹈）
 
+0. **双服务器 A 方案（2026-10-18）**：插件存档按账号目录天然隔离（零改动）；导入端 `AQ_SERVER_KEY` 打标（`auctionator-import.ts`/`transcript-import.ts`，**DailySummary 删插条件已加 server，transcript daily 全删改按服删**——双服并存时不误删另一服）；`DailySummary` 加 `server` 列并入唯一键；watch 双路径监视（第二服未配置时保持单服现状）；repositories/market-signals 全函数带 `server` 参数（默认 eu）+ 缓存键含 server；网页 `?server=` 切换（首页/单品页/配方页顶部 + 侧栏物品链接同服跳转）；API 路由支持 server；`market-data.ts` 类型把 server 设为可选（测试 fixture 兼容）；旧数据迁移 `scripts/migrate-server-key.ts`（快照/档位 47.8 万行 → 'eu'），验证 `scripts/verify-server-split.ts`（eu 有数据、cn 空）。**tsc 干净 + 165 测试通过**。**注意**：现跑 watch 是旧进程（单路径监视，导入子进程已是新代码仍正确）；配置中国服路径后**必须重启 watch**（WAH一键停止/启动.bat）
 1. **双市场按钮 + 地点判定 + 分槽**：联盟/中立按钮按 `GetRealZoneText()` 白名单（联盟=暴风城/铁炉堡/达纳苏斯，中立=艾尔文森林/赤脊山）自动显隐，未知区域两钮禁用；数据分槽 PvP/PvP_N **严禁混槽**
 2. **扫描引擎切换**：按钮优先走 **IncrementalScan（`SendBrowseQuery` 逐页）**——平滑 0-100%、无 15 分钟冷却、可无限重扫、中立可用（用户核心诉求，对标 AUC）。replicate 全量已降级为回退（有硬冷却+10% 停顿）
 3. **转录并入**：三文件平移 + toc 6 行 camelot + 4 个 SavedVariables；旧存档合并进 Auctionator.lua
@@ -47,7 +50,8 @@
 
 ## 5. 待办 / 未完成
 
-- **git**：✅ v3.7-v3.8 批次已 commit + push（双市场+转录并入+引擎切换+时间戳修复+文档）；**v4.0 批次已 commit + push**（雷达设置即时生效/复制清单唯一名/无结果显示默认开/草药清单口径+文档）
+- **git**：✅ v3.7-v3.8、v4.0 已 commit + push；**v4.1 双服务器批次已改完未 commit/push**（等用户确认后按"提交 git"触发）
+- **登录中国服账号填路径**：把中国服存档路径填进 `.env` 的 `AQ_AUCTIONATOR_SV_PATH_2`（transcript 缺省同目录推导，可用 `AQ_TRANSCRIPT_SV_PATH_2` 覆盖）→ **重启 watch**（WAH一键停止/启动.bat）→ 中国服扫描/`/reload` 后数据自动进 `server='cn'`，网页切"中国服"查看
 - **重扫一次让补档生效**：插件已同步游戏目录，用户下次扫描（联盟+中立各一次）会自动对候选补档；中立档位现为 0、联盟仅老转录 49 物品
 - **转录全量重扫**（可选）：用户现已走 Auctionator 扫描 + watch 导入，转录（/wahscan）为可选补充
 - **锻造 5 条高级护腕设计图**缺同名 craft 成品配方（军官/哨兵/守望者/督军/裁决者护腕，可后续补抓）
@@ -57,7 +61,8 @@
 ## 6. 已知坑 / 机制限制（重点）
 
 - **SV 落盘**：登出/`/reload` 才写盘；游戏内扫完必须手动 `/reload`（无限版禁插件 ReloadUI）→ 网页才更新
-- **repositories 函数签名顺序**：`getMarketSignals(market, mode)`、`getMarketUniverse(market, mode)`、`getItemDetail(itemId, mode, market)`、`getLatestRoundItemIds(mode, market)`、`getLatestPricesByItemIds(itemIds, mode, market)`、`getMed7Aggregates(itemIds?, mode, market)`、`getLatestSnapshotTime(market, mode)`；`pickLatestDate(...)` 过滤 `instanceof Date`
+- **repositories 函数签名顺序**：`getMarketSignals(market, mode, server)`、`getMarketUniverse(market, mode, server)`、`getItemDetail(itemId, mode, market, server)`、`getLatestRoundItemIds(mode, market, server)`、`getLatestPricesByItemIds(itemIds, mode, market, server)`、`getMed7Aggregates(itemIds?, mode, market, server)`、`getLatestSnapshotTime(market, mode, server)`、`getPriceTierGaps(mode, market, server)`、`getItemPriceTiers(itemId, market, server)`——server 一律在末尾，默认 'eu'；`pickLatestDate(...)` 过滤 `instanceof Date`
+- **双服不混服纪律**：server 值只允许 eu/cn（导入 `AQ_SERVER_KEY`、DB server 列、网页 `?server=` 三者必须一致）；任何 new 查询/删插必须带 server 条件（`DailySummary` 尤其注意，其唯一键已并入 server）；transcript 档位只扫联盟但**每个服务器各有自己的转录数据**（查询按 server 过滤，勿写死）
 - **Auctionator.lua 解码三坑**：ASCII 转义+原始二进制混合（latin1 字节保真读）；Lua `\DDD` 转义；CBOR byte-string 键
 - **taint 纪律**：EventBus 回调链内严禁 AddMessage/ReloadUI；只做纯赋值；操作全在独立 OnUpdate 帧
 - **slash 命令黄字**（/auc、/wahvendor）：无限版对插件 slash 命令的通用警告，不影响功能（`ReloadUI` 移除后自动重载不再产生新黄字）

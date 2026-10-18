@@ -6,6 +6,8 @@ import { AUCTIONATOR_STALE_MAX_AGE_MS, describeFreshness } from "@/lib/freshness
 import { RecipeLibrary } from "@/components/recipe-library";
 import { CloseTabButton } from "@/components/close-tab-button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
+import { parseServer, SERVER_LABELS } from "@/lib/servers";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +16,14 @@ export const dynamic = "force-dynamic";
 // （Auctionator 最低买入价）优先，NPC 保底价兜底；材料成本兜底优先用 NPC
 // 卖价（Item.sellPrice），其次收购价；产出价扣 5% 拍卖税后按利润率排序。
 // 拍卖行无价/无记录的配方标注"缺货"，扫到后自动补齐。
-export default async function RecipesPage() {
+// 双服：利润依赖市场价格 → 支持 ?server= 切换（默认主服 eu），配方库本身跨服共享。
+export default async function RecipesPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const raw = await searchParams;
+  const server = parseServer(raw.server);
+  const serverLabel = SERVER_LABELS[server] ?? server;
+  const serverHrefOther = server === "cn" ? "/recipes" : "/recipes?server=cn";
   const [{ signals, latestSnapshotAt }, recipes, vendorPrices, sellerPrices, scrollItemIds, shoppingLists] = await Promise.all([
-    getMarketSignals(),
+    getMarketSignals("faction", "current", server),
     getRecipes(),
     getItemVendorPrices(),
     getItemSellerPrices(),
@@ -41,11 +48,18 @@ export default async function RecipesPage() {
         </div>
         <div className="flex items-center gap-3 font-mono text-xs text-terminal-muted">
           <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
-            <RadioTower size={14} /> 市场数据更新于 {freshness.label}
+            <RadioTower size={14} /> {serverLabel}·市场数据更新于 {freshness.label}
           </span>
+          <Link href={serverHrefOther} className="text-terminal-amber underline">{server === "cn" ? "← 欧服" : "中国服 →"}</Link>
           <CloseTabButton />
         </div>
       </div>
+
+      {signals.length === 0 && (
+        <div className="mb-3 border border-terminal-amber/50 bg-amber-500/10 px-4 py-2 font-mono text-xs text-terminal-amber">
+          本服务器暂无市场数据 —— 利润计算不可用（配方本身跨服共享，可正常浏览）。请在游戏内用 Auctionator 全量扫描拍卖行后重跑导入。
+        </div>
+      )}
 
       <div className="mb-3 grid gap-3 font-mono text-[10px] leading-relaxed text-terminal-muted md:grid-cols-3">
         <Panel>
@@ -63,12 +77,14 @@ export default async function RecipesPage() {
         <Panel>
           <PanelHeader title="统计" />
           <div className="p-3">
-            共 {recipes.length} 条 · 当前可算利润 {okCount} 条 · 附魔等无物品产出配方另计 {recipeRows.filter((row) => row.status === "cost-only").length} 条（仅看材料成本）· 缺货 {recipeRows.filter((row) => row.status === "missing").length} 条。
+            {signals.length === 0
+              ? <>共 {recipes.length} 条 · 本服务器暂无市场数据，利润计算不可用（配方可正常浏览）。</>
+              : <>共 {recipes.length} 条 · 当前可算利润 {okCount} 条 · 附魔等无物品产出配方另计 {recipeRows.filter((row) => row.status === "cost-only").length} 条（仅看材料成本）· 缺货 {recipeRows.filter((row) => row.status === "missing").length} 条。</>}
           </div>
         </Panel>
       </div>
 
-      <RecipeLibrary rows={recipeRows} lists={listOptions} />
+      <RecipeLibrary rows={recipeRows} lists={listOptions} marketAvailable={signals.length > 0} />
       <footer className="mt-3 border border-terminal-border bg-terminal-panel px-4 py-2 font-mono text-[10px] leading-relaxed text-terminal-muted">
         配方数据来自 foreverchanges.pro 专业页核对与游戏内 /wahrecipes 扫描（客户端 1.60.1，非官方公布，以游戏内实装为准）。商人兑换的"青睐"货币成本按业绩奖励累积，未折算铜币。价格口径 = Auctionator 最低买入价：无 AH 挂单时以 NPC 收购价兜底计算，仅作参考下限；缺货配方待扫描/数据源补全后自动恢复计算。
       </footer>

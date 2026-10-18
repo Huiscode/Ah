@@ -26,11 +26,12 @@ function TurnoverBadge({ itemId, turnoverByItemId }: { itemId: number; turnoverB
   );
 }
 
-export function SecondaryMaterialsPanel({ rows, prices, floorPrices, turnoverByItemId }: {
+export function SecondaryMaterialsPanel({ rows, prices, floorPrices, turnoverByItemId, server }: {
   rows: SecondaryMaterialRow[];
   prices: Map<number, number>;
   floorPrices: Map<number, number>;
   turnoverByItemId: Map<number, number>;
+  server?: string; // 当前服务器视图（"eu"/"cn"），物品链接保持同服跳转
 }) {
   const [open, setOpen] = usePersistedState<boolean>("wah:secondary-materials:open", true);
   const [profession, setProfession] = usePersistedState<string>("wah:secondary-materials:profession", "");
@@ -56,7 +57,7 @@ export function SecondaryMaterialsPanel({ rows, prices, floorPrices, turnoverByI
         return (
           <div key={material.itemId} className="flex items-center justify-between gap-2">
             <span className="flex min-w-0 items-center gap-1.5">
-              <Link href={`/items/${material.itemId}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(material.quality)}`}>{material.name}</Link>
+              <Link href={`/items/${material.itemId}${server === "cn" ? "?server=cn" : ""}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(material.quality)}`}>{material.name}</Link>
               <span className="shrink-0 text-terminal-muted">×{material.quantity}</span>
             </span>
             <span>
@@ -162,7 +163,7 @@ export function SecondaryMaterialsPanel({ rows, prices, floorPrices, turnoverByI
                 >
                   <span className="flex min-w-0 items-center gap-1.5">
                     <Link
-                      href={`/items/${row.item.itemId}`}
+                      href={`/items/${row.item.itemId}${server === "cn" ? "?server=cn" : ""}`}
                       target="_blank"
                       data-no-ladder
                       className={`truncate ${qualityColorClassById(row.item.quality)}`}

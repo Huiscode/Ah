@@ -26,6 +26,7 @@ import { CloseTabButton } from "@/components/close-tab-button";
 import { markBaitDays } from "@/lib/bait-filter";
 import { splitCopper } from "@/lib/wow-money";
 import { Panel, PanelHeader } from "@/components/ui/panel";
+import { parseServer, SERVER_LABELS } from "@/lib/servers";
 
 // 档位价格：统一金/银/铜三列（各自固定宽右对齐），保证各档位货币单位按位对齐
 // （金对金、银对银、铜对铜）。没有的货币位只保留透明占宽，不显示数字与图标。
@@ -34,6 +35,12 @@ const TIER_COIN_ICONS = {
   silver: "https://wow.zamimg.com/images/icons/money-silver.gif",
   copper: "https://wow.zamimg.com/images/icons/money-copper.gif"
 } as const;
+
+/** 由显式参数生成 query 串（空值剔除；双服/市场/历史视图互切时保留其余参数）。 */
+function qs(params: Record<string, string | undefined>): string {
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== "");
+  return entries.length ? `?${entries.map(([k, v]) => `${k}=${v}`).join("&")}` : "";
+}
 
 function TierPrice({ copper }: { copper: number }) {
   const { gold, silver, copper: copperPart } = splitCopper(copper);
@@ -62,14 +69,27 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
   const raw = await searchParams;
   const mode: MarketMode = raw.history === "1" ? "history" : "current";
   const market = raw.market === "neutral" ? "neutral" : "faction";
+  const server = parseServer(raw.server);
   const numericItemId = Number(itemId);
-  const marketSuffix = market === "neutral" ? "&market=neutral" : "";
-  const marketHrefOther: Route = (market === "neutral"
-    ? `/items/${numericItemId}${mode === "history" ? "?history=1" : ""}`
-    : `/items/${numericItemId}?market=neutral${mode === "history" ? "&history=1" : ""}`) as Route;
-  const historyHref: Route = `/items/${numericItemId}${marketSuffix}` as Route;
   const marketLabel = market === "neutral" ? "中立" : "联盟";
-  const item = await getItemDetail(numericItemId, mode, market);
+  const serverLabel = SERVER_LABELS[server] ?? server;
+  const itemPath = `/items/${numericItemId}`;
+  const marketHrefOther: Route = `${itemPath}${qs({
+    market: market === "neutral" ? undefined : "neutral",
+    history: mode === "history" ? "1" : undefined,
+    server: server === "cn" ? "cn" : undefined
+  })}` as Route;
+  const historyHref: Route = `${itemPath}${qs({
+    history: mode === "history" ? undefined : "1",
+    market: market === "neutral" ? "neutral" : undefined,
+    server: server === "cn" ? "cn" : undefined
+  })}` as Route;
+  const serverHrefOther: Route = `${itemPath}${qs({
+    server: server === "cn" ? undefined : "cn",
+    market: market === "neutral" ? "neutral" : undefined,
+    history: mode === "history" ? "1" : undefined
+  })}` as Route;
+  const item = await getItemDetail(numericItemId, mode, market, server);
   if (!item) notFound();
 
   // 制作配方面板按需取数：只查产出此物品的配方，以及这些配方涉及的
@@ -78,7 +98,7 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
   const [watchedIds, producingRecipes, priceTiers] = await Promise.all([
     getWatchedItemIds(),
     getRecipesProducing(numericItemId),
-    getItemPriceTiers(numericItemId, market)
+    getItemPriceTiers(numericItemId, market, server)
   ]);
   const involvedItemIds = new Set<number>([numericItemId]);
   for (const recipe of producingRecipes) {
@@ -86,7 +106,7 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
     for (const output of recipe.outputs) involvedItemIds.add(output.itemId);
   }
   const [priceByItemId, vendorPrices, sellerPrices] = await Promise.all([
-    getLatestPricesByItemIds(Array.from(involvedItemIds), mode, market),
+    getLatestPricesByItemIds(Array.from(involvedItemIds), mode, market, server),
     getItemVendorPricesByIds(Array.from(involvedItemIds)),
     getItemSellerPricesByIds(Array.from(involvedItemIds))
   ]);
@@ -159,10 +179,11 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
                   : null}
           </h1>
           <div className={freshness.stale ? "font-mono text-xs text-terminal-red" : "font-mono text-xs text-terminal-green"}>
-            {marketLabel}·数据更新于 {freshness.label}
+            {serverLabel}·{marketLabel}·数据更新于 {freshness.label}
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Link href={serverHrefOther} className="font-mono text-xs text-terminal-amber underline">{server === "cn" ? "← 欧服" : "中国服 →"}</Link>
           <Link href={marketHrefOther} className="font-mono text-xs text-terminal-amber underline">{market === "neutral" ? "← 联盟市场" : "中立市场 →"}</Link>
           <span className="text-xl"><WatchStar itemId={item.itemId} watched={watchedIds.has(item.itemId)} /></span>
           <CloseTabButton />
@@ -176,7 +197,7 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
       ) : (
         <div className="mb-3 flex items-center justify-between gap-3 border border-terminal-border bg-terminal-panel2 px-4 py-2 font-mono text-xs text-terminal-muted">
           <span>数据口径自 2026-10-13 起为 Auctionator 最低买入价</span>
-          <Link href={`/items/${numericItemId}?history=1${marketSuffix}` as Route} className="text-terminal-amber underline">查看 Beta 历史 P10 →</Link>
+          <Link href={`${itemPath}${qs({ history: "1", market: market === "neutral" ? "neutral" : undefined, server: server === "cn" ? "cn" : undefined })}` as Route} className="text-terminal-amber underline">查看 Beta 历史 P10 →</Link>
         </div>
       )}
       <div className="grid gap-3 xl:grid-cols-[1fr_420px]">

@@ -77,7 +77,7 @@ const PROFESSION_ORDER = [
 // 配方库（独立页面）：专业配方页——来源/专业 tab 横条、
 // 左侧技能等级+分类筛选、搜索框、排序、两列卡片网格、分页。卡片保留本项目
 // 的核心增值：利润率与利润额（绿色/红色），缺价配方排最后并标"缺价"。
-export function RecipeLibrary({ rows, lists }: { rows: RecipeProfitRow[]; lists: Array<{ id: string; name: string }> }) {
+export function RecipeLibrary({ rows, lists, marketAvailable = true }: { rows: RecipeProfitRow[]; lists: Array<{ id: string; name: string }>; marketAvailable?: boolean }) {
   const [source, setSource] = usePersistedState<SourceFilter>("wah:recipes:source", "全部");
   // 筛选状态持久化：刷新后保留用户上次选的专业/技能档/分类/搜索/排序。
   const [profession, setProfession] = usePersistedState<string>("wah:recipes:profession", "全部");
@@ -205,7 +205,7 @@ export function RecipeLibrary({ rows, lists }: { rows: RecipeProfitRow[]; lists:
     return filtered.filter((row) => {
       if (row.status === "missing") return false;
       if (costFilterActive && row.cost > costLimitCopper) return false;
-      if (marginLimit !== null && row.status === "ok" && row.marginPercent < marginLimit) return false;
+      if (marginLimit !== null && marketAvailable && row.status === "ok" && row.marginPercent < marginLimit) return false;
       return true;
     });
   }, [filtered, costFilterActive, costLimitCopper, marginLimit]);
@@ -215,6 +215,7 @@ export function RecipeLibrary({ rows, lists }: { rows: RecipeProfitRow[]; lists:
     const rank: Record<string, number> = { ok: 0, "cost-only": 1, missing: 2 };
     switch (sort) {
       case "profit":
+        if (!marketAvailable) return arr.sort((a, b) => a.recipe.name.localeCompare(b.recipe.name, "zh-CN"));
         return arr.sort((a, b) => {
           if (a.status !== b.status) return rank[a.status] - rank[b.status];
           if (a.status === "ok") return b.marginPercent - a.marginPercent;
@@ -266,7 +267,7 @@ export function RecipeLibrary({ rows, lists }: { rows: RecipeProfitRow[]; lists:
         action={
           <span className="flex items-center gap-2 font-mono text-[10px] text-terminal-muted">
             <Hammer size={13} className="text-terminal-muted" />
-            共 {rows.length} 条 · 可算利润 {rows.filter((row) => row.status === "ok").length} 条 · 附魔成本 {rows.filter((row) => row.status === "cost-only").length} 条 · 已收藏 {favorites.length} 条
+            共 {rows.length} 条 · {marketAvailable ? <>可算利润 {rows.filter((row) => row.status === "ok").length} 条 · 附魔成本 {rows.filter((row) => row.status === "cost-only").length} 条</> : <>本服务器暂无行情，利润计算不可用</>} · 已收藏 {favorites.length} 条
           </span>
         }
       />
@@ -498,29 +499,35 @@ export function RecipeLibrary({ rows, lists }: { rows: RecipeProfitRow[]; lists:
                         {row.linkedCraft ? (
                           <>
                             {" · "}制造：{row.linkedCraft.outputName}
-                            <span className={row.linkedCraft.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}> {formatPercent(row.linkedCraft.marginPercent)}{row.linkedCraft.revenueFromFloor ? <span className="text-[9px]"> NPC</span> : ""}</span>
+                            {marketAvailable && (
+                              <span className={row.linkedCraft.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}> {formatPercent(row.linkedCraft.marginPercent)}{row.linkedCraft.revenueFromFloor ? <span className="text-[9px]"> NPC</span> : ""}</span>
+                            )}
                           </>
                         ) : (
                           <span className="text-terminal-muted"> · 制造：无成品记录</span>
                         )}
                       </span>
                     </>
-                  ) : row.status === "ok" ? (
-                    <>
-                      <span className={`text-sm ${row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
-                        {formatPercent(row.marginPercent)}{row.revenueFromFloor ? <span className="text-[9px]"> NPC</span> : ""}
-                      </span>
-                      <span className={`text-[10px] ${row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
-                        {row.profit >= 0 ? "利润 " : "亏损 "}<CopperAmount copper={row.profit} hideSign={row.profit < 0} />
-                      </span>
-                    </>
-                  ) : row.status === "cost-only" ? (
-                    <>
-                      <span className="text-[10px] text-terminal-muted">附魔</span>
-                      <span className="text-[10px] text-slate-200">成本 <CopperAmount copper={row.cost} /></span>
-                    </>
+                  ) : marketAvailable ? (
+                    row.status === "ok" ? (
+                      <>
+                        <span className={`text-sm ${row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
+                          {formatPercent(row.marginPercent)}{row.revenueFromFloor ? <span className="text-[9px]"> NPC</span> : ""}
+                        </span>
+                        <span className={`text-[10px] ${row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
+                          {row.profit >= 0 ? "利润 " : "亏损 "}<CopperAmount copper={row.profit} hideSign={row.profit < 0} />
+                        </span>
+                      </>
+                    ) : row.status === "cost-only" ? (
+                      <>
+                        <span className="text-[10px] text-terminal-muted">附魔</span>
+                        <span className="text-[10px] text-slate-200">成本 <CopperAmount copper={row.cost} /></span>
+                      </>
+                    ) : (
+                      <span className="truncate text-[10px] text-terminal-muted">缺货 · 缺 {row.missing.join("、")}</span>
+                    )
                   ) : (
-                    <span className="truncate text-[10px] text-terminal-muted">缺货 · 缺 {row.missing.join("、")}</span>
+                    <span className="truncate text-[10px] text-terminal-muted">本服务器暂无行情，利润不可用</span>
                   )}
                 </div>
                 {row.recipe.category !== "merchant" && row.scrollItemId !== undefined && row.scrollItemId !== null && (

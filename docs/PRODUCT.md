@@ -2,7 +2,7 @@
 
 > **供新 AI 接手前阅读的产品全貌**：讲清"这是什么、怎么运转、有哪些拍板口径、哪些是血泪结论"。
 > 交接清单（当前状态 / 待办 / 坑）见 `HANDOFF.md`；本文件与 `HANDOFF.md` 配合使用，先读本文件建立心智模型，再读 HANDOFF 拿当前状态。
-> 最后更新：2026-10-16（双市场 + 转录并入 + 扫描引擎切换全链路落地后）。
+> 最后更新：2026-10-18（双服务器 A 方案落地：server 维度贯穿导入/DB/查询/网页）。
 
 ---
 
@@ -26,6 +26,13 @@
   - 全量扫描按钮拆成「扫描联盟拍卖行」「扫描中立拍卖行」两个
   - 打开拍卖行时按**区域地点**自动判定市场（`Source_Forever\Market.lua` 的 `GetRealZoneText()` 白名单：联盟 = 暴风城/铁炉堡/达纳苏斯，中立 = 艾尔文森林/赤脊山，中英文都收），**只启用对应按钮**；未知区域两钮禁用。**判定只用地点，无挂单量回退**（宁可不扫不误判）
   - **数据严格分槽**：联盟 → `AUCTIONATOR_PRICE_DATABASE["PvP"]`；中立 → `["PvP_N"]`（`Source_Forever\DatabaseNeutral.lua` + 扫描 `EndProcessing`/`NextStep` 按 `CurrentScanMarket` 路由）。**两市场数据严禁混槽**，从落盘起就不在同一槽
+- **双服务器（2026-10-18 A 方案，用户拍板）**：欧服 + 中国服各一个账号时数据严格分服：
+  - **插件端零改动**——WoW 的 SavedVariables 按账号分目录（`WTF\Account\<账号ID#1>\SavedVariables\Auctionator.lua`），欧服/中国服账号不同 → 存档文件天然隔离，从落盘起就不在同一文件
+  - **server 短标识**贯穿全链路：`eu`（欧服/默认主服）/ `cn`（中国服）。导入脚本用 `AQ_SERVER_KEY` 打标 → DB `server` 列 → 网页 `?server=` 参数。`src\lib\servers.ts` 是公共定义（默认/解析/显示名）
+  - **watch 双路径监视**：`AQ_AUCTIONATOR_SV_PATH_2` 配置了中国服存档路径即启用第二路（transcript 缺省按同目录推导）；每组独立导入、独立打标。**配置后需重启 watch 生效**
+  - **DB**：`DailySummary` 新增 `server` 列并入唯一键；`AuctionSnapshot`/`AuctionTier` 原有 `server` 列统一改存短标识（旧值已迁移，`scripts/migrate-server-key.ts`）
+  - **查询/网页**：repositories 全部函数与 market-signals 缓存键加 `server` 参数（默认 `eu`）；首页/单品页/配方页顶部加"欧服/中国服"切换，侧栏物品链接保持同服跳转
+  - **vendor 价保持全局**：`Item.vendorPrice/sellPrice` 是 NPC 卖价（物品固有属性），按两服一致处理，不做分服
 - **扫描引擎（当前实际生效）**：按钮优先走 **IncrementalScan（增量扫描，`SendBrowseQuery` 逐页浏览）**——进度 0-100% 平滑、**无 15 分钟冷却、可无限重扫**、中立拍卖行同样可用。replicate 全量扫描（ModernAH FullScan）有 15 分钟硬冷却 + 10% 停顿，已降级为增量引擎不可用时的回退
 - **转录功能并入**（`Source_Forever\`：Transcript.lua + VendorPrice.lua + AutoReload.lua，独立插件目录已删除，存档全局名不变）：
   - `/wahscan start` 逐物品读完整价格档位 → `WAHTranscribeDB`（档位主源）
@@ -47,16 +54,17 @@
 | foreverchanges.pro | 物品/配方/NPC 卖价网站 | vendor 价唯一权威（游戏内值 > 网站） |
 
 ```
-游戏内插件扫描（联盟 PvP / 中立 PvP_N 分槽）
+游戏内插件扫描（联盟 PvP / 中立 PvP_N 分槽；欧服/中国服账号存档天然分文件）
   │  手动 /reload 或登出 → 写盘 Auctionator.lua（WAH* 同文件）
   ▼
-npm run auctionator:import   # 解码（ASCII/CBOR/明文 Lua 表）→ 快照 + DailySummary（market 列隔离）
-npm run transcript:import    # fengari 执行存档 → AuctionTier 档位 + tier-filter 聚合
-npm run vendor:import        # 游戏内实时商人价 → Item.vendorPrice / sellPrice
+npm run watch（双路径监视：AQ_AUCTIONATOR_SV_PATH[,_2]）→ 带 AQ_SERVER_KEY 打标
+npm run auctionator:import   # 解码（ASCII/CBOR/明文 Lua 表）→ 快照 + DailySummary（market+server 列隔离）
+npm run transcript:import    # fengari 执行存档 → AuctionTier 档位 + tier-filter 聚合（server 打标）
+npm run vendor:import        # 游戏内实时商人价 → Item.vendorPrice / sellPrice（全局，不分服）
   ▼
-SQLite（prisma\dev.db——根目录 dev.db 是 0 字节陷阱）
+SQLite（prisma\dev.db——根目录 dev.db 是 0 字节陷阱；server 列 = eu/cn）
   ▼
-网页（首页 / 单品页 / 配方页 / 清单页 / 雷达；当前 + 历史两模式；联盟 + ?market=neutral 同页切换）
+网页（首页 / 单品页 / 配方页 / 清单页 / 雷达；当前 + 历史两模式；?market=neutral + ?server=cn 切换）
 ```
 
 **常驻自动导入**：`npm run watch`（`scripts\watch-auto-import.ts`）每 2 秒 stat 存档 mtime，扫描落盘后自动依次跑三个导入（失败不崩、继续监视）。一键启停：`WAH一键启动.bat` / `WAH一键停止.bat`（`scripts\launch-services.ps1`）。
@@ -82,6 +90,7 @@ SQLite（prisma\dev.db——根目录 dev.db 是 0 字节陷阱）
 - **vendor 权威顺序**：游戏内实时商人价（WAHVendorDB）> foreverchanges.pro 无限服（FOREVER BETA it-add 版）卖价 > Auctionator 缓存（**已弃用，系统性失真**）
 - **配方成本兜底**：材料成本优先 NPC 卖价（`sellPrice`），成品收入兜底 = 收购价；用了兜底百分比后必须标 "NPC"
 - **双市场**：数据分槽严禁混槽；判定只用地点白名单；转录档位只有联盟数据，中立市场不参与档位合成
+- **双服务器**：server 短标识（eu/cn）贯穿导入/DB/查询/网页，严禁混服；插件存档按账号天然隔离；vendor 价（NPC 卖价）按两服一致处理不分服
 - **网页数据新鲜度（v3.8）**：快照时间戳按市场独立（`WAHScanTimes`，插件扫描完成写入 `time()` Unix 秒——**勿用 `GetTime()` 相对秒**，曾致"20741 天前"）；扫中立不再误报联盟"刚刚"
 
 ---
@@ -124,6 +133,8 @@ npm run vendor:import                # 游戏内实时商人价导入（幂等�
 npm run watch                        # 常驻自动导入（唯一同步入口）
 npm run auctionator:import           # 双槽分市场导入（联盟 PvP + 中立 PvP_N）
 npx tsx scripts/vendor-price-audit.ts  # vendor 价全量核对（断点续跑）
+npx tsx scripts/verify-server-split.ts  # 双服分服验证（server 分布 + eu/cn 查询隔离）
+npx tsx scripts/migrate-server-key.ts   # 旧服务器名 → 短标识迁移（幂等，仅重建时用）
 ```
 
 **改插件流程**：改 `addon-auctionator\` → fengari 语法检查（`scripts\lua-syntax-check.cjs`）→ robocopy 同步游戏目录 → 用户 `/reload`。

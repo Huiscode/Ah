@@ -35,25 +35,35 @@ import { CopyListButton } from "@/components/copy-list-button";
 import { FavoriteRecipesPanel } from "@/components/favorite-recipes-panel";
 import { InstructionsPanel } from "@/components/instructions-panel";
 import { Panel, PanelHeader } from "@/components/ui/panel";
+import { parseServer, SERVER_LABELS } from "@/lib/servers";
 import Link from "next/link";
 
 // 数据口径断点：2026-10-13 起为 Auctionator 最低价；此前为自研插件 Beta P10。
 const DATA_SWITCH_DAY = "2026-10-13";
 
+/** 由显式参数生成 query 串（空值剔除；server 双服切换时保留 market/history 视图）。 */
+function qs(params: Record<string, string | undefined>): string {
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== "");
+  return entries.length ? `?${entries.map(([k, v]) => `${k}=${v}`).join("&")}` : "";
+}
+
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const raw = await searchParams;
   const mode: MarketMode = raw.history === "1" ? "history" : "current";
   const market = raw.market === "neutral" ? "neutral" : "faction";
-  const marketSuffix = market === "neutral" ? "&market=neutral" : "";
-  const marketHrefOther: Route = (market === "neutral" ? "/" : "/?market=neutral") as Route;
-  const historyHref: Route = `/?history=1${marketSuffix}` as Route;
+  const server = parseServer(raw.server);
   const marketLabel = market === "neutral" ? "中立" : "联盟";
+  const serverLabel = SERVER_LABELS[server] ?? server;
+  const marketHrefOther: Route = qs({ market: market === "neutral" ? undefined : "neutral", history: mode === "history" ? "1" : undefined, server: server === "cn" ? "cn" : undefined }) as Route;
+  const historyHref: Route = qs({ history: mode === "history" ? undefined : "1", market: market === "neutral" ? "neutral" : undefined, server: server === "cn" ? "cn" : undefined }) as Route;
+  const serverHrefOther: Route = qs({ server: server === "cn" ? undefined : "cn", market: market === "neutral" ? "neutral" : undefined, history: mode === "history" ? "1" : undefined }) as Route;
+  const itemServerQ = server === "cn" ? "?server=cn" : "";
   const view = parseMarketView(raw);
   const [{ signals, latestSnapshotAt }, watchedIds, latestRound, recipes, vendorPrices, sellerPrices, shoppingLists] = await Promise.all([
-    getMarketSignals(market, mode),
+    getMarketSignals(market, mode, server),
     getWatchedItemIds(),
-    // 雷达 universe：该模式最新一轮扫描的在售物品集合。
-    getLatestRoundItemIds(mode, market),
+    // 雷达 universe：该模式最新一轮扫描的在售物品集合（按当前服务器）。
+    getLatestRoundItemIds(mode, market, server),
     // 关注配方面板展示配方库中被收藏的配方（craft + merchant 全量，
     // 面板按收藏过滤；收藏在 /recipes 配方库页设置）。
     getRecipes(),
@@ -71,7 +81,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // 该模式最新扫描轮 owns the radar's universe：只推荐该模式数据源在售的物品。
   const deals = latestRound === null ? allDeals : allDeals.filter((deal) => latestRound.has(deal.itemId));
   // 价格档位差距（市场价 vs 最低价 %）：最新快照轮，供雷达"价格档位差距 ≥"筛选用。
-  const tierGapByItemId = await getPriceTierGaps(mode, market);
+  const tierGapByItemId = await getPriceTierGaps(mode, market, server);
   const radarCategories = groupedCategoryOptions(Array.from(new Set(deals.map((deal) => deal.category))));
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
   const turnoverByItemId = new Map(signals.map((signal) => [signal.itemId, signal.turnoverScore]));
@@ -106,8 +116,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         </div>
         <div className="flex items-center gap-3 font-mono text-[15px] text-terminal-muted">
           <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
-            <RadioTower size={14} /> {marketLabel}·数据更新于 {freshness.label}
+            <RadioTower size={14} /> {serverLabel}·{marketLabel}·数据更新于 {freshness.label}
           </span>
+          <Link href={serverHrefOther} className="flex items-center gap-1 text-terminal-amber hover:underline">{server === "cn" ? "← 欧服" : "中国服 →"}</Link>
           <Link href={marketHrefOther} className="flex items-center gap-1 text-terminal-amber hover:underline">{market === "neutral" ? "← 联盟市场" : "中立市场 →"}</Link>
           <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><Hammer size={14} /> 配方库</Link>
           <Link href="/lists" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ShoppingCart size={14} /> 购物清单</Link>
@@ -136,7 +147,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                     : "当前没有满足利润与参考价门槛的捡漏挂单。"}
                 </div>
               ) : (
-                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} productItemIds={productItemIds} tierGapByItemId={tierGapByItemId} />
+                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} productItemIds={productItemIds} tierGapByItemId={tierGapByItemId} server={server} />
               )}
             </div>
           </Panel>
@@ -152,12 +163,24 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               page={marketPage.page}
               pageCount={marketPage.pageCount}
               productItemIds={productItemIds}
+              server={server}
             />
           </Panel>
         </div>
         <div className="space-y-3">
-          <SecondaryMaterialsPanel rows={secondaryRows} prices={priceByItemId} floorPrices={floors.costFloor} turnoverByItemId={turnoverByItemId} />
-          <FavoriteRecipesPanel rows={recipeRows} prices={priceByItemId} floorPrices={floors.costFloor} lists={listOptions} />
+          {signals.length === 0 ? (
+            <Panel>
+              <PanelHeader title="利润计算" />
+              <div className="p-3 font-mono text-xs text-terminal-muted">
+                本服务器暂无市场数据，利润计算不可用。请在游戏内用 Auctionator 全量扫描拍卖行（每次进入拍卖行时），然后重跑导入。
+              </div>
+            </Panel>
+          ) : (
+            <>
+              <SecondaryMaterialsPanel rows={secondaryRows} prices={priceByItemId} floorPrices={floors.costFloor} turnoverByItemId={turnoverByItemId} server={server} />
+              <FavoriteRecipesPanel rows={recipeRows} prices={priceByItemId} floorPrices={floors.costFloor} lists={listOptions} server={server} />
+            </>
+          )}
           <Panel>
             <PanelHeader title="关注物品" />
             <div className="flex items-center gap-2 border-b border-terminal-border px-3 py-1.5">
@@ -170,7 +193,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 <div key={signal.itemId} className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-2">
                     <WatchStar itemId={signal.itemId} watched />
-                    <Link href={`/items/${signal.itemId}`} target="_blank" data-no-ladder className={`inline-flex items-center gap-1 ${qualityColorClass(signal.quality)}`}><ItemIcon itemId={signal.itemId} size={16} />{signal.name}</Link>
+                    <Link href={`/items/${signal.itemId}${itemServerQ}`} target="_blank" data-no-ladder className={`inline-flex items-center gap-1 ${qualityColorClass(signal.quality)}`}><ItemIcon itemId={signal.itemId} size={16} />{signal.name}</Link>
                     {productItemIds.has(signal.itemId) && <ProductBadge itemId={signal.itemId} />}
                   </span>
                   <span className="flex items-center gap-3">

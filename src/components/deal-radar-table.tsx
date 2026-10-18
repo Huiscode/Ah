@@ -24,13 +24,14 @@ type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" |
 // Headers sort: first click high-to-low, second click low-to-high; without
 // any click the rows keep the radar's own ranking (NPC deals first, then
 // absolute profit).
-export function DealRadarTable({ deals, prices, categories, watchedItemIds, productItemIds, tierGapByItemId }: {
+export function DealRadarTable({ deals, prices, categories, watchedItemIds, productItemIds, tierGapByItemId, server }: {
   deals: DealRadarRow[];
   prices: Map<number, number>;
   categories: string[];
   watchedItemIds: number[];
   productItemIds: Set<number>;
   tierGapByItemId?: Map<number, number>; // 价格档位差距%（市场价 vs 最低价，近似口径）
+  server?: string; // 当前服务器视图（"eu"/"cn"），物品链接保持同服跳转
 }) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
@@ -138,7 +139,7 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
             <tr key={deal.itemId} className="border-b border-terminal-border/70 hover:bg-slate-800/35">
               <td className="px-2 py-2 text-center"><WatchStar itemId={deal.itemId} watched={watched.has(deal.itemId)} /></td>
               <td className="px-3 py-2 text-left">
-                <Link href={`/items/${deal.itemId}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(deal.quality)}`}>
+                <Link href={`/items/${deal.itemId}${server === "cn" ? "?server=cn" : ""}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(deal.quality)}`}>
                   <ItemIcon itemId={deal.itemId} icon={deal.icon} />
                   <span className="truncate">{deal.name}</span>
                 </Link>

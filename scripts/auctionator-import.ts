@@ -26,7 +26,9 @@ const SV_PATH = process.env.AQ_AUCTIONATOR_SV_PATH
   ?? "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_\\WTF\\Account\\1120133458#1\\SavedVariables\\Auctionator.lua";
 const REALM_SLOT = process.env.AQ_AUCTIONATOR_REALM_SLOT ?? "PvP";
 const NEUTRAL_SLOT = process.env.AQ_AUCTIONATOR_NEUTRAL_SLOT ?? "PvP_N";
-const SERVER = process.env.AQ_SERVER ?? "Classic Beta PvP 2";
+// 服务器短标识（双服隔离键）："eu"（欧服/默认主服）| "cn"（中国服）。
+// server 列、网页 ?server= 参数、DailySummary 唯一键全部以此为准，严禁混服。
+const SERVER_KEY = process.env.AQ_SERVER_KEY ?? "eu";
 const FACTION = process.env.AQ_FACTION ?? "Alliance";
 const NEUTRAL_FACTION = process.env.AQ_AUCTIONATOR_NEUTRAL_FACTION ?? "Neutral";
 const SOURCE = "auctionator";
@@ -81,7 +83,7 @@ type SnapshotRow = {
   minPrice: bigint; marketPrice: bigint; altPrice: null; quantity: number; numAuctions: number; rawPayload: Prisma.InputJsonValue;
 };
 type DailyRow = {
-  itemId: number; date: Date; market: string; source: string;
+  itemId: number; date: Date; server: string; market: string; source: string;
   openPrice: bigint; closePrice: bigint; highPrice: bigint; lowPrice: bigint; volume: number;
 };
 type MarketData = {
@@ -131,7 +133,7 @@ function buildMarketData(parsed: AuctionatorParsed, market: string, factionLabel
       const seenToday = quantityOnDay(block, latestSeenDay) > 0; // 本次扫描有在售
       const qty = seenToday ? quantityOnDay(block, latestSeenDay) : 0;
       snapshots.push({
-        itemId, timestamp: scannedAt, server: SERVER, faction: factionLabel, market, source: SOURCE,
+        itemId, timestamp: scannedAt, server: SERVER_KEY, faction: factionLabel, market, source: SOURCE,
         // 无在售物品 price=0（本次未扫到），前端按"缺货"处理，绝不复用残留 m。
         minPrice: seenToday ? m : 0n, marketPrice: seenToday ? m : 0n, altPrice: null,
         quantity: qty, numAuctions: qty,
@@ -147,7 +149,7 @@ function buildMarketData(parsed: AuctionatorParsed, market: string, factionLabel
       if (l === undefined && h === undefined) continue;
       const price = BigInt(l ?? h ?? 0);
       daily.push({
-        itemId, date: auctionatorDayToUtcDay(day), market, source: SOURCE,
+        itemId, date: auctionatorDayToUtcDay(day), server: SERVER_KEY, market, source: SOURCE,
         openPrice: price, closePrice: price, highPrice: BigInt(h ?? l ?? 0), lowPrice: price,
         volume: block.a?.[dayKey] ?? 0
       });
@@ -202,9 +204,10 @@ async function main() {
   if (itemCreates.length > 0) ops.push(prisma.item.createMany({ data: itemCreates }));
   ops.push(...vendorUpdates.map((u) => prisma.item.update({ where: { itemId: u.itemId }, data: { vendorPrice: u.price } })));
   for (const marketData of [faction, neutral].filter((m): m is MarketData => m !== null)) {
-    ops.push(prisma.auctionSnapshot.deleteMany({ where: { server: SERVER, faction: marketData.faction, market: marketData.market, source: SOURCE } }));
+    ops.push(prisma.auctionSnapshot.deleteMany({ where: { server: SERVER_KEY, faction: marketData.faction, market: marketData.market, source: SOURCE } }));
     ops.push(...chunk(marketData.snapshots, BULK_CHUNK).map((slice) => prisma.auctionSnapshot.createMany({ data: slice })));
-    ops.push(prisma.dailySummary.deleteMany({ where: { source: SOURCE, market: marketData.market } }));
+    // 每日按 server+market 隔离删插：双服并存时绝不误删另一服务器同 market 的 daily。
+    ops.push(prisma.dailySummary.deleteMany({ where: { server: SERVER_KEY, source: SOURCE, market: marketData.market } }));
     ops.push(...chunk(marketData.daily, BULK_CHUNK).map((slice) => prisma.dailySummary.createMany({ data: slice })));
   }
   await prisma.$transaction(ops);

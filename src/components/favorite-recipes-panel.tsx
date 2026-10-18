@@ -32,11 +32,12 @@ function isFavorite(row: RecipeProfitRow, favorites: FavoriteKey[]): boolean {
 
 // 关注配方面板：只显示被收藏的配方，每行 = 产出物×数量 + 利润 + 盈利百分比；
 // 悬停显示完整制作链路（材料名/数量/单价、产出物×数量）与利润明细。
-export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists }: {
+export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists, server }: {
   rows: RecipeProfitRow[];
   prices: Map<number, number>;
   floorPrices: Map<number, number>;
   lists: Array<{ id: string; name: string }>;
+  server?: string; // 当前服务器视图（"eu"/"cn"），物品链接保持同服跳转
 }) {
   const [favorites, setFavorites] = usePersistedState<FavoriteKey[]>(FAVORITES_KEY, []);
   const [open, setOpen] = useState(true);
@@ -100,7 +101,7 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists }: {
                 <span key={i} className="inline-flex items-center gap-1">
                   {i > 0 && <span className="text-terminal-muted">+</span>}
                   <Link
-                    href={`/items/${output.itemId}`}
+                    href={`/items/${output.itemId}${server === "cn" ? "?server=cn" : ""}`}
                     target="_blank"
                     data-no-ladder
                     className={`inline-flex items-center gap-1 truncate ${qualityColorClassById(output.quality)}`}
@@ -144,7 +145,7 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists }: {
                 return (
                   <div key={material.itemId} className="flex items-center justify-between gap-2">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <Link href={`/items/${material.itemId}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(material.quality)}`}>{material.name}</Link>
+                      <Link href={`/items/${material.itemId}${server === "cn" ? "?server=cn" : ""}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(material.quality)}`}>{material.name}</Link>
                       <span className="shrink-0 text-terminal-muted">×{material.quantity}</span>
                     </span>
                     <span>
@@ -161,7 +162,7 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists }: {
                 return (
                   <div key={output.itemId} className="flex items-center justify-between gap-2">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <Link href={`/items/${output.itemId}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(output.quality)}`}>{output.name}</Link>
+                      <Link href={`/items/${output.itemId}${server === "cn" ? "?server=cn" : ""}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(output.quality)}`}>{output.name}</Link>
                       <span className="shrink-0 text-terminal-muted">×{output.quantity}</span>
                       <ProductBadge itemId={output.itemId} />
                     </span>

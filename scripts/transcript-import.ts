@@ -21,7 +21,9 @@ process.loadEnvFile();
 
 const SV_PATH = process.env.AQ_TRANSCRIPT_SV_PATH
   ?? "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_\\WTF\\Account\\1120133458#1\\SavedVariables\\WoWderhoiAH-Transcript.lua";
-const SERVER = process.env.AQ_SERVER ?? "Classic Beta PvP 2";
+// 服务器短标识（双服隔离键）："eu"（欧服/默认主服）| "cn"（中国服）。
+// server 列、网页 ?server= 参数、DailySummary 唯一键全部以此为准，严禁混服。
+const SERVER_KEY = process.env.AQ_SERVER_KEY ?? "eu";
 const FACTION = process.env.AQ_FACTION ?? "Alliance";
 const SOURCE = "transcript";
 
@@ -118,7 +120,7 @@ async function main() {
   }
 
   const tiers: Array<{ itemId: number; ts: Date; server: string; faction: string; market: string; source: string; price: bigint; qty: number }> = [];
-  const daily: Array<{ itemId: number; date: Date; source: string; market: string; openPrice: bigint; closePrice: bigint; highPrice: bigint; lowPrice: bigint; volume: number }> = [];
+  const daily: Array<{ itemId: number; date: Date; server: string; source: string; market: string; openPrice: bigint; closePrice: bigint; highPrice: bigint; lowPrice: bigint; volume: number }> = [];
   const byDay = new Map<string, Map<number, { ts: number; price: bigint; qty: number }>>();
   const marketById = new Map<number, string>();
 
@@ -133,7 +135,7 @@ async function main() {
     const result = effectiveLowestPrice(raw);
     for (const t of raw) {
       if (t.price > 0 && t.qty > 0) {
-        tiers.push({ itemId, ts, server: SERVER, faction: FACTION, market, source: SOURCE, price: BigInt(t.price), qty: t.qty });
+        tiers.push({ itemId, ts, server: SERVER_KEY, faction: FACTION, market, source: SOURCE, price: BigInt(t.price), qty: t.qty });
       }
     }
     if (result.effectivePrice !== null) {
@@ -151,7 +153,7 @@ async function main() {
       // 每日行的 market 与对应扫描条目一致（同日同物品只会有一条，取最后轮）。
       const market = marketById.get(Number(itemId)) ?? "faction";
       daily.push({
-        itemId, date, source: SOURCE, market,
+        itemId, date, server: SERVER_KEY, source: SOURCE, market,
         openPrice: v.price, closePrice: v.price, highPrice: v.price, lowPrice: v.price, volume: v.qty
       });
     }
@@ -159,17 +161,17 @@ async function main() {
 
   console.log(`存档解析：${scans.length} 物品 | ${tiers.length} 档位 | ${daily.length} 每日行（${byDay.size} 天）`);
 
-  // 事务：档位按市场先删后插（source 隔离，addon/auctionator 数据不受影响）；
-  // transcript 每日为全量语义，全删重建。
+  // 事务：档位按市场先删后插（server+source 隔离，addon/auctionator 数据不受影响，
+  // 双服并存时绝不误删另一服务器的档位/每日）；transcript 每日为全量语义，按服全删重建。
   const tierOps: Prisma.PrismaPromise<unknown>[] = [];
   for (const market of ["faction", "neutral"] as const) {
     const rows = tiers.filter((t) => t.market === market);
-    tierOps.push(prisma.auctionTier.deleteMany({ where: { server: SERVER, faction: FACTION, market, source: SOURCE } }));
+    tierOps.push(prisma.auctionTier.deleteMany({ where: { server: SERVER_KEY, faction: FACTION, market, source: SOURCE } }));
     tierOps.push(...chunk(rows, BULK_CHUNK).map((slice) => prisma.auctionTier.createMany({ data: slice })));
   }
   await prisma.$transaction([
     ...tierOps,
-    prisma.dailySummary.deleteMany({ where: { source: SOURCE } }),
+    prisma.dailySummary.deleteMany({ where: { server: SERVER_KEY, source: SOURCE } }),
     ...chunk(daily, BULK_CHUNK).map((slice) => prisma.dailySummary.createMany({ data: slice }))
   ]);
 

@@ -198,7 +198,7 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
     affectedDates.add(new Date(Date.UTC(point.timestamp.getUTCFullYear(), point.timestamp.getUTCMonth(), point.timestamp.getUTCDate())).getTime());
   }
   const existingDayRows = await prisma.dailySummary.findMany({
-    where: { source, date: { in: Array.from(affectedDates).map((ms) => new Date(ms)) } },
+    where: { source, server, date: { in: Array.from(affectedDates).map((ms) => new Date(ms)) } },
     select: { itemId: true, date: true, openPrice: true, closePrice: true, highPrice: true, lowPrice: true }
   });
   // BigInt price columns come back as BigInt; coerce to number for the
@@ -303,17 +303,17 @@ export async function importSnapshot(payload: ImportPayload): Promise<ImportResu
       })
     ),
     ...(pointDayResult.creates.length > 0
-      ? chunk(pointDayResult.creates, BULK_CHUNK).map((slice) => prisma.dailySummary.createMany({ data: slice }))
+      ? chunk(pointDayResult.creates, BULK_CHUNK).map((slice) => prisma.dailySummary.createMany({ data: slice.map((row) => ({ ...row, server })) }))
       : []),
     ...pointDayResult.updates.map((update) => prisma.dailySummary.update({
-      where: { itemId_date_source_market: { itemId: update.itemId, date: update.date, source, market } },
+      where: { itemId_date_source_market_server: { itemId: update.itemId, date: update.date, source, market, server } },
       data: update.data
     })),
     ...(dayCreates.length > 0
-      ? chunk(dayCreates, BULK_CHUNK).map((slice) => prisma.dailySummary.createMany({ data: slice }))
+      ? chunk(dayCreates, BULK_CHUNK).map((slice) => prisma.dailySummary.createMany({ data: slice.map((row) => ({ ...row, server })) }))
       : []),
     ...dayUpdates.map((update) => prisma.dailySummary.update({
-      where: { itemId_date_source_market: { itemId: update.itemId, date, source, market } },
+      where: { itemId_date_source_market_server: { itemId: update.itemId, date, source, market, server } },
       data: update.data
     })),
     ...rulesPayload,

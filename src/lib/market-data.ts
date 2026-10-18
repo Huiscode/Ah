@@ -30,6 +30,6 @@ export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt"> & {
   // Price columns are BigInt in the DB (to hold 100k-gold prices), but the
   // repositories convert them to Number before they reach domain code, so the
   // domain types use number.
-  snapshots: Array<Omit<AuctionSnapshot, "id" | "itemId" | "item" | "rawPayload" | "source" | "minPrice" | "marketPrice" | "altPrice"> & Partial<Pick<AuctionSnapshot, "id" | "itemId" | "rawPayload">> & { source?: string; minPrice: number; marketPrice: number; altPrice?: number }>;
-  dailySummaries: Array<Omit<DailySummary, "id" | "itemId" | "item" | "source" | "market" | "openPrice" | "closePrice" | "highPrice" | "lowPrice"> & Partial<Pick<DailySummary, "id" | "itemId">> & { source?: string; market?: string; openPrice: number; closePrice: number; highPrice: number; lowPrice: number }>;
+  snapshots: Array<Omit<AuctionSnapshot, "id" | "itemId" | "item" | "rawPayload" | "server" | "source" | "minPrice" | "marketPrice" | "altPrice"> & Partial<Pick<AuctionSnapshot, "id" | "itemId" | "rawPayload" | "server">> & { source?: string; minPrice: number; marketPrice: number; altPrice?: number }>;
+  dailySummaries: Array<Omit<DailySummary, "id" | "itemId" | "item" | "server" | "source" | "market" | "openPrice" | "closePrice" | "highPrice" | "lowPrice"> & Partial<Pick<DailySummary, "id" | "itemId" | "server">> & { source?: string; market?: string; openPrice: number; closePrice: number; highPrice: number; lowPrice: number }>;
 };
