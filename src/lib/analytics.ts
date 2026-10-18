@@ -4,7 +4,7 @@
 // source channel — never a blend of the legacy addon P10 and the new
 // auctionator lowest-buy channel.
 import type { MarketHistory, SnapshotSource } from "@/lib/market-data";
-import { dealRadarRules, AH_CUT, type DealRadarRules } from "@/lib/market-rules";
+import { dealRadarRules, spreadRules, moverRules, AH_CUT, type DealRadarRules, type SpreadRules, type MoverRules } from "@/lib/market-rules";
 import { isStale } from "@/lib/freshness";
 
 export type MarketSignal = {
@@ -27,7 +27,14 @@ export type MarketSignal = {
   latestAt: Date; // timestamp of the latest observation backing this signal
   turnoverScore: number; // #recipes that use this item as a reagent (higher = faster turnover)
   isVendorItem: boolean; // true = NPC sells this container/consumable (bottles, dyes, thread)
+  bandLow: number; // 近 7 日每日收盘最低（≈P10，7 点近似）；0 = 数据不足
+  bandHigh: number; // 近 7 日每日收盘最高（≈P90，7 点近似）；0 = 数据不足
+  volatilityRatio: number; // 起伏比 = (bandHigh − bandLow) / med7 × 100；0 = 数据不足
+  zone: Zone; // 当前价相对 7 日带的位置：跌破下沿=买入区，冲穿上沿=卖出区，带内=均衡
 };
+
+/** 价格区间（7 日带）位置：buy = 低于带下沿（买入区）；sell = 高于带上沿（卖出区）；flat = 带内；none = 数据不足/无波动。 */
+export type Zone = "buy" | "sell" | "flat" | "none";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MED_WINDOW_DAYS = 7;
@@ -39,6 +46,27 @@ function median(values: number[]): number {
 
 function snapshotSource(snapshot: { source?: string }): SnapshotSource {
   return snapshot.source === "addon" ? "addon" : "auctionator";
+}
+
+// 近 7 日价格带（7 点近似 P10/P90）：起伏比 + 当前价位置。
+// 样本 < 2 或参考价无效时不产出带（zone=none），避免单日噪声冒充区间。
+export function computeBand(prices: number[], current: number, med7: number): { bandLow: number; bandHigh: number; volatilityRatio: number; zone: Zone } {
+  if (prices.length < 2 || med7 <= 0 || current <= 0) {
+    return { bandLow: 0, bandHigh: 0, volatilityRatio: 0, zone: "none" };
+  }
+  let low = Infinity;
+  let high = -Infinity;
+  for (const price of prices) {
+    if (price < low) low = price;
+    if (price > high) high = price;
+  }
+  const volatilityRatio = high > low ? ((high - low) / med7) * 100 : 0;
+  let zone: Zone;
+  if (high === low) zone = "none";
+  else if (current < low) zone = "buy";
+  else if (current > high) zone = "sell";
+  else zone = "flat";
+  return { bandLow: low, bandHigh: high, volatilityRatio, zone };
 }
 
 export type SignalMode = "current" | "history";
@@ -60,6 +88,10 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
   if (mode === "history") {
     const sameSource = snapshots.filter((snapshot) => snapshotSource(snapshot) === "addon");
     const previous = sameSource[sameSource.length - 2];
+    const windowStart = now.getTime() - MED_WINDOW_DAYS * DAY_MS;
+    const windowPrices = sameSource
+      .filter((snapshot) => snapshot.timestamp.getTime() >= windowStart)
+      .map((snapshot) => snapshot.marketPrice);
     let med7: number;
     let med7Samples: number;
     let med7Distinct: number;
@@ -68,14 +100,11 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
       med7Samples = item.med7Info.samples;
       med7Distinct = item.med7Info.distinct;
     } else {
-      const windowStart = now.getTime() - MED_WINDOW_DAYS * DAY_MS;
-      const windowPrices = sameSource
-        .filter((snapshot) => snapshot.timestamp.getTime() >= windowStart)
-        .map((snapshot) => snapshot.marketPrice);
       med7 = windowPrices.length > 0 ? median(windowPrices) : latest.marketPrice;
       med7Samples = windowPrices.length;
       med7Distinct = new Set(windowPrices).size;
     }
+    const band = computeBand(windowPrices, latest.marketPrice, med7);
     return {
       itemId: item.itemId,
       name: item.name,
@@ -95,7 +124,8 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
       changePercent: previous && previous.marketPrice > 0 ? ((latest.marketPrice - previous.marketPrice) / previous.marketPrice) * 100 : 0,
       latestAt: latest.timestamp,
       turnoverScore: item.turnoverScore ?? 0,
-      isVendorItem: item.isVendorItem ?? false
+      isVendorItem: item.isVendorItem ?? false,
+      ...band
     };
   }
   // 当前模式（Auctionator）：走势与参考价来自 DailySummary，与最新快照
@@ -106,7 +136,12 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
   const previousDaily = daily[daily.length - 2];
   // med7Info 是仓储层 SQL 聚合（近 7 日 daily close 中位数）。快照数组在
   // 首页被截断（48 行），从它重算会随截断深度漂移；优先用聚合，仅手搭
-  // fixture（无 med7Info）回退到本地的 daily 计算。
+  // fixture（无 med7Info）回退到本地的 daily 计算。近 7 日带（bandLow/
+  // bandHigh/volatilityRatio/zone）同理从同源 daily close 计算。
+  const windowStart = now.getTime() - MED_WINDOW_DAYS * DAY_MS;
+  const closePrices = daily
+    .filter((summary) => summary.date.getTime() >= windowStart)
+    .map((summary) => summary.closePrice);
   let med7: number;
   let med7Samples: number;
   let med7Distinct: number;
@@ -115,14 +150,11 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
     med7Samples = item.med7Info.samples;
     med7Distinct = item.med7Info.distinct;
   } else {
-    const windowStart = now.getTime() - MED_WINDOW_DAYS * DAY_MS;
-    const windowPrices = daily
-      .filter((summary) => summary.date.getTime() >= windowStart)
-      .map((summary) => summary.closePrice);
-    med7 = windowPrices.length > 0 ? median(windowPrices) : latest.marketPrice;
-    med7Samples = windowPrices.length;
-    med7Distinct = new Set(windowPrices).size;
+    med7 = closePrices.length > 0 ? median(closePrices) : latest.marketPrice;
+    med7Samples = closePrices.length;
+    med7Distinct = new Set(closePrices).size;
   }
+  const band = computeBand(closePrices, latest.marketPrice, med7);
   return {
     itemId: item.itemId,
     name: item.name,
@@ -142,7 +174,8 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
     changePercent: previousDaily && previousDaily.closePrice > 0 ? ((latest.marketPrice - previousDaily.closePrice) / previousDaily.closePrice) * 100 : 0,
     latestAt: latest.timestamp,
     turnoverScore: item.turnoverScore ?? 0,
-    isVendorItem: item.isVendorItem ?? false
+    isVendorItem: item.isVendorItem ?? false,
+    ...band
   };
 }
 
@@ -247,6 +280,115 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
     if (left.turnoverScore !== right.turnoverScore) return right.turnoverScore - left.turnoverScore;
     return right.profit - left.profit;
   });
+}
+
+export type SpreadCandidateRow = {
+  itemId: number;
+  name: string;
+  quality: string;
+  category: string;
+  icon?: string | null;
+  price: number;
+  med7: number;
+  bandLow: number;
+  bandHigh: number;
+  volatilityRatio: number;
+  turnoverScore: number;
+  quantity: number;
+  zone: Zone;
+  changePercent: number;
+  discountPercent: number;
+};
+
+// 可做差价榜：起伏大 × 需求广 × 有人在卖 = 均值回归最赚钱的标的池。
+// 门槛在 market-rules.ts（spreadRules，可配）：起伏比 ≥ minVolatilityRatio
+// （7 日带宽 ÷ 参考价）、流通分 ≥ minTurnover（被 N 个配方使用）、
+// 在售量 ≥ minQuantity（买得到）。zone 非 none（有真实波动带）才上榜。
+export function buildSpreadCandidates(
+  signals: MarketSignal[],
+  rules: SpreadRules = spreadRules,
+  now: Date = new Date()
+): SpreadCandidateRow[] {
+  const out: SpreadCandidateRow[] = [];
+  for (const signal of signals) {
+    if (signal.isVendorItem) continue;
+    if (isStale(signal.latestAt, now, rules.staleWindowMs)) continue;
+    if (signal.price <= 0) continue;
+    if (signal.volatilityRatio < rules.minVolatilityRatio) continue;
+    if (signal.turnoverScore < rules.minTurnover) continue;
+    if (signal.quantity < rules.minQuantity) continue;
+    if (signal.zone === "none") continue;
+    out.push({
+      itemId: signal.itemId,
+      name: signal.name,
+      quality: signal.quality,
+      category: signal.category,
+      icon: signal.icon,
+      price: signal.price,
+      med7: signal.med7,
+      bandLow: signal.bandLow,
+      bandHigh: signal.bandHigh,
+      volatilityRatio: signal.volatilityRatio,
+      turnoverScore: signal.turnoverScore,
+      quantity: signal.quantity,
+      zone: signal.zone,
+      changePercent: signal.changePercent,
+      discountPercent: signal.discountPercent
+    });
+  }
+  // 综合分 = 起伏比 × (1 + 流通分)：起伏越大、需求越广越靠前；同分按在售量。
+  return out.sort((left, right) => {
+    const scoreLeft = left.volatilityRatio * (1 + left.turnoverScore);
+    const scoreRight = right.volatilityRatio * (1 + right.turnoverScore);
+    if (scoreLeft !== scoreRight) return scoreRight - scoreLeft;
+    return right.quantity - left.quantity;
+  });
+}
+
+export type MoverRow = {
+  itemId: number;
+  name: string;
+  quality: string;
+  category: string;
+  icon?: string | null;
+  price: number;
+  med7: number;
+  changePercent: number;
+  quantity: number;
+  turnoverScore: number;
+  zone: Zone;
+};
+
+// 异动榜：两次扫描/两日之间价格大幅变动（|changePercent| ≥ minMovePercent，
+// 默认 20%）。大跌 = 甩货/错杀 → 买点候选；大涨 = 需求脉冲/抬价 → 卖点候选。
+// 需要 previousDaily 存在（否则 changePercent 为 0，自然落榜），开服初期
+// daily 不足时榜为空是预期。
+export function buildMoverBoard(
+  signals: MarketSignal[],
+  rules: MoverRules = moverRules,
+  now: Date = new Date()
+): MoverRow[] {
+  const out: MoverRow[] = [];
+  for (const signal of signals) {
+    if (isStale(signal.latestAt, now, rules.staleWindowMs)) continue;
+    if (signal.price <= 0) continue;
+    if (signal.quantity < rules.minQuantity) continue;
+    if (Math.abs(signal.changePercent) < rules.minMovePercent) continue;
+    out.push({
+      itemId: signal.itemId,
+      name: signal.name,
+      quality: signal.quality,
+      category: signal.category,
+      icon: signal.icon,
+      price: signal.price,
+      med7: signal.med7,
+      changePercent: signal.changePercent,
+      quantity: signal.quantity,
+      turnoverScore: signal.turnoverScore,
+      zone: signal.zone
+    });
+  }
+  return out.sort((left, right) => Math.abs(right.changePercent) - Math.abs(left.changePercent));
 }
 
 export type WeekdaySeasonality = {

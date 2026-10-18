@@ -1,0 +1,145 @@
+{
+  "src": "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\AH稳定赚金优化评估.html",
+  "url": "file:///C:/Users/Hz/Documents/Workspace/Ah/optimization-report/AH%E7%A8%B3%E5%AE%9A%E8%B5%9A%E9%87%91%E4%BC%98%E5%8C%96%E8%AF%84%E4%BC%B0.html",
+  "outdir": "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots",
+  "include": [
+    "lint",
+    "screenshots",
+    "structure"
+  ],
+  "shots": {
+    "desktop": {
+      "slices": [
+        "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\AH稳定赚金优化评估_desktop_p1of2.jpg",
+        "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\AH稳定赚金优化评估_desktop_p2of2.jpg"
+      ],
+      "sliceHint": "按顺序 Read slices 里的各分片。",
+      "truncated": false,
+      "structure": {
+        "title": "AH助手 · 稳定长期赚金优化评估",
+        "firstH1": "把AH助手从「行情终端」升级成「稳定长期赚金引擎」",
+        "viewport": {
+          "w": 1424,
+          "h": 749
+        },
+        "fullpage": {
+          "w": 1424,
+          "h": 8182
+        },
+        "counts": {
+          "section": 7,
+          "h1": 1,
+          "h2": 8,
+          "img": 0,
+          "canvas": 2,
+          "svg": 1,
+          "links": 8,
+          "buttons": 0
+        }
+      },
+      "consoleErrors": [],
+      "consoleWarnings": [],
+      "horizontalOverflow": [],
+      "resourceErrors": [],
+      "reportSource": "cdp"
+    },
+    "mobile": {
+      "slices": [
+        "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\AH稳定赚金优化评估_mobile_p1of4.jpg",
+        "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\AH稳定赚金优化评估_mobile_p2of4.jpg",
+        "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\AH稳定赚金优化评估_mobile_p3of4.jpg",
+        "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\AH稳定赚金优化评估_mobile_p4of4.jpg"
+      ],
+      "sliceHint": "按顺序 Read slices 里的各分片。",
+      "truncated": false,
+      "structure": {
+        "title": "AH助手 · 稳定长期赚金优化评估",
+        "firstH1": "把AH助手从「行情终端」升级成「稳定长期赚金引擎」",
+        "viewport": {
+          "w": 500,
+          "h": 693
+        },
+        "fullpage": {
+          "w": 500,
+          "h": 11701
+        },
+        "counts": {
+          "section": 7,
+          "h1": 1,
+          "h2": 8,
+          "img": 0,
+          "canvas": 2,
+          "svg": 1,
+          "links": 8,
+          "buttons": 0
+        }
+      },
+      "consoleErrors": [],
+      "consoleWarnings": [],
+      "horizontalOverflow": [],
+      "resourceErrors": [],
+      "reportSource": "cdp"
+    }
+  },
+  "engine": "chrome_cli",
+  "chromiumExec": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "engineDegraded": true,
+  "engineDegradedReason": "playwright 未装",
+  "elapsedSec": 17.02,
+  "schemaVersion": 2,
+  "status": "pass",
+  "engineInfo": {
+    "name": "chrome_cli",
+    "degraded": true,
+    "degradedReasons": [
+      "playwright 未装"
+    ]
+  },
+  "input": {
+    "original": "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\AH稳定赚金优化评估.html",
+    "resolvedPath": "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\AH稳定赚金优化评估.html",
+    "baseUrl": "file:///C:/Users/Hz/Documents/Workspace/Ah/optimization-report/AH%E7%A8%B3%E5%AE%9A%E8%B5%9A%E9%87%91%E4%BC%98%E5%8C%96%E8%AF%84%E4%BC%B0.html",
+    "protocol": "file",
+    "cwd": "C:\\Users\\Hz\\Documents\\Workspace\\Ah",
+    "mediaMode": {
+      "reducedMotion": true
+    }
+  },
+  "artifacts": {
+    "screenshots": [
+      {
+        "viewport": "desktop",
+        "tiles": [
+          "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\AH稳定赚金优化评估_desktop_p1of2.jpg",
+          "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\AH稳定赚金优化评估_desktop_p2of2.jpg"
+        ],
+        "visualCoverage": {
+          "complete": true,
+          "reason": null
+        }
+      },
+      {
+        "viewport": "mobile",
+        "tiles": [
+          "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\AH稳定赚金优化评估_mobile_p1of4.jpg",
+          "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\AH稳定赚金优化评估_mobile_p2of4.jpg",
+          "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\AH稳定赚金优化评估_mobile_p3of4.jpg",
+          "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\AH稳定赚金优化评估_mobile_p4of4.jpg"
+        ],
+        "visualCoverage": {
+          "complete": true,
+          "reason": null
+        }
+      }
+    ]
+  },
+  "summary": {
+    "blocker": 0,
+    "error": 0,
+    "warning": 0,
+    "info": 0
+  },
+  "findings": [],
+  "prioritizedActions": [],
+  "reportPath": "C:\\Users\\Hz\\Documents\\Workspace\\Ah\\optimization-report\\_shots\\report.json"
+}

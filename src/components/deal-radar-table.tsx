@@ -13,8 +13,6 @@ import { formatPercent } from "@/lib/utils";
 import { categoryMatches } from "@/lib/category-zh";
 import type { DealRadarRow } from "@/lib/analytics";
 import { usePersistedState } from "@/lib/use-persisted-state";
-import { RadarSettingsButton } from "@/components/radar-settings-button";
-import { CopyListButton } from "@/components/copy-list-button";
 
 type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" | "changePercent" | "quantity";
 
@@ -103,13 +101,6 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2 border-b border-terminal-border px-3 py-2 font-mono text-xs">
-        <span className="ml-auto flex items-center gap-2">
-          <CopyListButton names={rows.map((deal) => deal.name)} label="复制当前筛选清单" />
-          <RadarSettingsButton categories={categories} />
-          <span className="text-terminal-muted">{rows.length} / {deals.length} 条</span>
-        </span>
-      </div>
       <div className="max-h-[344px] overflow-y-auto [scrollbar-gutter:stable]">
       <table className="w-full min-w-[1000px] table-fixed border-collapse font-mono text-xs">
         <colgroup>

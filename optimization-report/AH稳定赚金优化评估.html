@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AH助手 · 稳定长期赚金优化评估</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0e13'/%3E%3Ctext x='16' y='23' font-size='18' text-anchor='middle' fill='%23f2b04d' font-family='monospace' font-weight='bold'%3EAH%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --bg:#0a0e13; --panel:#10161f; --panel2:#141c27; --border:#223042;
+    --text:#c9d4e0; --muted:#7d8aa0; --dim:#55657a;
+    --amber:#f2b04d; --amber-dim:#b98a3f; --green:#41c48a; --red:#e0635e; --blue:#5b8dd6;
+    --mono:"JetBrains Mono","Cascadia Code",Consolas,monospace;
+    --sans:"Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.7;font-size:15px;-webkit-font-smoothing:antialiased}
+  ::selection{background:rgba(242,176,77,.25)}
+  a{color:var(--amber);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+
+  /* ===== hero ===== */
+  .hero{border-bottom:1px solid var(--border);background:
+    radial-gradient(900px 320px at 15% -10%, rgba(242,176,77,.10), transparent 60%),
+    radial-gradient(800px 300px at 90% 0%, rgba(65,196,138,.08), transparent 60%),
+    var(--bg);
+    padding:56px 0 40px}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--amber);text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .kicker::before{content:"";width:26px;height:1px;background:var(--amber)}
+  h1.title{font-size:clamp(28px,4.6vw,44px);font-weight:900;line-height:1.22;letter-spacing:.01em;margin-bottom:16px}
+  h1.title .ah{color:var(--amber);font-family:var(--mono)}
+  .thesis{max-width:760px;font-size:16px;color:#aab6c4;margin-bottom:26px}
+  .thesis b{color:var(--text)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;max-width:860px}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+  .stat .n{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--amber);line-height:1.2}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:2px}
+  @media(max-width:640px){.stats{grid-template-columns:repeat(2,1fr)}}
+
+  /* ===== nav ===== */
+  .nav{position:sticky;top:0;z-index:50;background:rgba(10,14,19,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+  .nav-in{display:flex;flex-wrap:wrap;gap:4px 18px;padding:10px 20px;max-width:1080px;margin:0 auto;font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .nav-in a{color:var(--muted)}
+  .nav-in a:hover{color:var(--amber);text-decoration:none}
+  .nav-in .sec{color:var(--dim)}
+  .nav-in .go{color:var(--amber)}
+
+  /* ===== sections ===== */
+  section{padding:44px 0;border-bottom:1px solid var(--border)}
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+  .sec-no{font-family:var(--mono);font-size:13px;color:var(--amber);font-weight:600;flex-shrink:0}
+  h2{font-size:24px;font-weight:900;letter-spacing:.01em}
+  .sec-sub{color:var(--muted);font-size:14px;margin-bottom:22px;max-width:820px}
+
+  h3{font-size:17px;font-weight:700;margin:26px 0 10px}
+  p{margin-bottom:12px;max-width:820px}
+  .muted{color:var(--muted)}
+  .dim{color:var(--dim)}
+  .mono{font-family:var(--mono)}
+
+  /* ===== verdict cards ===== */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:18px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px}
+  .card .tag{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--amber);text-transform:uppercase;display:block;margin-bottom:8px}
+  .card .c-title{font-weight:700;font-size:15px;margin-bottom:6px}
+  .card p{color:var(--muted);font-size:13.5px;line-height:1.65;margin:0}
+
+  /* ===== tables ===== */
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel);margin-top:18px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:640px}
+  thead th{background:var(--panel2);color:var(--amber);font-family:var(--mono);font-size:12px;text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+  tbody td{padding:10px 14px;border-bottom:1px solid rgba(34,48,64,.6);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:rgba(255,255,255,.015)}
+  td .mono{color:var(--amber)}
+  .pos{color:var(--green);font-weight:600}
+  .neg{color:var(--red);font-weight:600}
+  .warn{color:var(--amber);font-weight:600}
+
+  /* ===== principle cards ===== */
+  .principles{display:grid;grid-template-columns:1fr;gap:12px;margin-top:18px}
+  @media(min-width:700px){.principles{grid-template-columns:repeat(2,1fr)}}
+  .principles .wide{grid-column:1/-1}
+  .principle{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+  .principle .p-head{display:flex;align-items:center;gap:10px}
+  .principle .p-num{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--bg);background:var(--amber);border-radius:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .principle .p-name{font-weight:700;font-size:15px}
+  .principle .p-principle{font-size:13px;color:var(--muted);line-height:1.65}
+  .principle .p-now{font-size:13px;color:#aab6c4;line-height:1.65;border-left:2px solid var(--border);padding-left:10px}
+  .principle .p-opt{font-size:13px;line-height:1.65;border-left:2px solid var(--amber);padding-left:10px;color:#e8d5b8}
+  .principle .p-ev{font-size:12px;color:var(--dim);line-height:1.55}
+  .badge{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:20px;border:1px solid var(--border);color:var(--muted);margin-right:6px;white-space:nowrap}
+  .badge.p0{color:var(--green);border-color:rgba(65,196,138,.4)}
+  .badge.p1{color:var(--amber);border-color:rgba(242,176,77,.4)}
+  .badge.p2{color:var(--blue);border-color:rgba(91,141,214,.4)}
+
+  /* ===== charts ===== */
+  .chart-box{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:18px}
+  .chart-box .chart-title{font-family:var(--mono);font-size:12px;color:var(--amber);margin-bottom:4px}
+  .chart-box .chart-note{font-size:12px;color:var(--dim);margin-bottom:8px}
+  .chart{width:100%;height:420px}
+  .chart.h300{height:300px}
+  .chart.h480{height:480px}
+
+  /* ===== roadmap timeline ===== */
+  .timeline{margin-top:22px;display:grid;gap:0}
+  .tl-row{display:grid;grid-template-columns:130px 26px 1fr;gap:14px;padding:14px 0;position:relative}
+  .tl-row::before{content:"";position:absolute;left:141px;top:0;bottom:0;width:1px;background:var(--border)}
+  .tl-row:first-child::before{top:28px}
+  .tl-row:last-child::before{bottom:auto;height:28px}
+  .tl-phase{font-family:var(--mono);font-weight:700;font-size:13px;text-align:right;padding-top:4px}
+  .tl-phase.p0{color:var(--green)} .tl-phase.p1{color:var(--amber)} .tl-phase.p2{color:var(--blue)}
+  .tl-dot{display:flex;justify-content:center;padding-top:4px;position:relative;z-index:1}
+  .tl-dot::before{content:"";width:12px;height:12px;border-radius:50%;background:var(--bg);border:3px solid var(--amber)}
+  .tl-dot.p0::before{border-color:var(--green)} .tl-dot.p1::before{border-color:var(--amber)} .tl-dot.p2::before{border-color:var(--blue)}
+  .tl-body{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 16px}
+  .tl-body .t-title{font-weight:700;font-size:14px;margin-bottom:4px}
+  .tl-body p{font-size:13px;color:var(--muted);margin:0;line-height:1.6}
+  @media(max-width:600px){.tl-row{grid-template-columns:90px 22px 1fr;gap:8px}.tl-row::before{left:103px}.tl-phase{font-size:11.5px}}
+
+  /* ===== footer ===== */
+  footer{padding:36px 0 48px}
+  .src-list{display:grid;gap:8px;margin-top:12px}
+  .src-list div{font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+  .src-list .u{color:var(--dim);font-family:var(--mono);font-size:11.5px}
+
+  .callout{border-left:3px solid var(--amber);background:rgba(242,176,77,.07);padding:12px 16px;border-radius:0 8px 8px 0;font-size:13.5px;color:#e8d5b8;margin:16px 0}
+  .callout b{color:var(--amber)}
+
+  @media print{
+    .nav{display:none}
+    body{background:#fff;color:#111}
+    .card,.principle,.tbl-wrap,.chart-box,.tl-body{background:#fff;border-color:#ccc}
+    .hero{border-color:#ccc}
+    a{color:#000}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== HERO ===== -->
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker">AH 助手 · 优化评估报告 · 2026-10-19</div>
+    <h1 class="title">把<span class="ah">AH</span>助手从「行情终端」升级成<br>「稳定长期赚金引擎」</h1>
+    <p class="thesis">本项目已具备顶级玩家的<b>信息优势</b>：双市场分槽扫描 × 双服务器隔离 × 7 日历史价格 × 自动增量导入。但按经济学里「稳定、长期、赚钱」的标准衡量，当前系统<b>采集强、分析弱、执行为零</b>——本报告用 6 条可迁移的经济学原理逐条映射现状，给出 11 项优化，其中 3 项基于<b>已有数据</b>可在 1–2 天内落地。</p>
+    <div class="stats">
+      <div class="stat"><div class="n">478,287</div><div class="l">快照行（AuctionSnapshot，全 eu）</div></div>
+      <div class="stat"><div class="n">68,810</div><div class="l">每日汇总行（DailySummary）</div></div>
+      <div class="stat"><div class="n">3,950+</div><div class="l">联盟扫描物品 · 中立 676</div></div>
+      <div class="stat"><div class="n">2×2</div><div class="l">市场（联盟/中立）× 服务器（eu/cn）</div></div>
+    </div>
+  </div>
+</header>
+
+<!-- ===== NAV ===== -->
+<nav class="nav">
+  <div class="nav-in">
+    <span class="sec">§</span>
+    <a href="#verdict">结论</a>
+    <a href="#assets">现状盘点</a>
+    <a href="#theory">经济学原理</a>
+    <a href="#gaps">关键差距</a>
+    <a href="#plan">优化建议</a>
+    <a href="#roadmap">路线图</a>
+    <a href="#risk">风险与纪律</a>
+    <a href="#sources">来源</a>
+    <span class="go" style="margin-left:auto">AH·MARKET DESK</span>
+  </div>
+</nav>
+
+<!-- ===== 0. VERDICT ===== -->
+<section id="verdict">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-no">§0</span><h2>结论先行</h2></div>
+    <p class="sec-sub">三个判断决定后续所有优先级。它们都来自「项目已有的数据能力」与「经典服拍卖行的市场结构」之间的差距。</p>
+
+    <div class="cards">
+      <div class="card">
+        <span class="tag">判断 01 · 定位</span>
+        <div class="c-title">已经是一台统计套利终端，但缺「决策层」</div>
+        <p>经典服 AH 是<b>单边市场</b>——没有常驻买单，只有卖家挂单，赚钱的本质是<b>时间性套利</b>：买相对历史均价的低估、按市价重挂（AuricDB）。本项目 7 日 P10/P50、档位、双市场、watch 高频导入全部就位，恰好是统计套利所需的全部原料；缺的只是把「展示」变成「信号」。</p>
+      </div>
+      <div class="card">
+        <span class="tag">判断 02 · 三个金矿</span>
+        <div class="c-title">最大的钱在三个没打通的地方</div>
+        <p>① 均值回归信号——有历史，没 σ 带；② 跨市场价差——联盟/中立数据已分槽，没有对比视图；③ 挂单纪律——<span class="mono">POSTING_HISTORY</span> 一直为空，做市与挂单管理完全空白。这三项对应三类独立收益来源：<span class="pos">买点</span>、<span class="pos">搬运套利</span>、<span class="pos">卖出质量</span>。</p>
+      </div>
+      <div class="card">
+        <span class="tag">判断 03 · 稳定与长期</span>
+        <div class="c-title">「稳定长期」= 高信息 + 低摩擦 + 快周转 + 严纪律</div>
+        <p>稳定赚钱不靠单次暴利，靠可重复的小优势叠加：信息优势（扫描频率）、交易成本控制（5% 税 + 时间成本都要进利润门槛）、资金周转（不碰慢动销的贵货）、风险纪律（分散 + 仓位上限）。本报告的建议按这条公式排序。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 1. ASSETS ===== -->
+<section id="assets">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-no">§1</span><h2>现状资产盘点：手里已经有什么</h2></div>
+    <p class="sec-sub">先清点「武器库」，再谈优化。以下数字来自项目数据库与文档（2026-10-18 状态）。</p>
+
+    <h3>数据资产</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>资产</th><th>规模 / 状态</th><th>对「赚金」的意义</th></tr></thead>
+        <tbody>
+          <tr><td><b>扫描快照</b> AuctionSnapshot</td><td><span class="mono">478,287</span> 行 · server=eu · 联盟 3,950 / 中立 676 物品</td><td>每次进拍卖行的全量价格快照——是「信息优势」的地基</td></tr>
+          <tr><td><b>每日汇总</b> DailySummary</td><td><span class="mono">68,810</span> 行 · 含 7 日 P10/P50 历史</td><td>均值回归、趋势判断的唯一事实来源</td></tr>
+          <tr><td><b>档位</b> AuctionTier</td><td><span class="mono">256</span> 行 · 真实前 5 档</td><td>价格深度代理——但目前只有联盟转录</td></tr>
+          <tr><td><b>双市场分槽</b> 联盟 PvP / 中立 PvP_N</td><td>扫描按地点判定、数据严格分槽</td><td>同物品在两张市场有价 → 空间套利原料</td></tr>
+          <tr><td><b>双服务器</b> eu / cn</td><td>server 列贯穿导入/DB/查询/网页</td><td>两服经济独立 → 风险分散与资本分配</td></tr>
+          <tr><td><b>NPC 固定价</b> Item.vendorPrice/sellPrice</td><td>全局不分服</td><td>利润兜底下限（成本与保底收入）</td></tr>
+          <tr><td><b>配方库 + 中间材料</b> Recipe</td><td>跨服共享 · craft + merchant</td><td>制造利润链——纯套利的一种（材料→成品）</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>工具资产（执行层）</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>工具</th><th>状态</th><th>对「赚金」的意义</th></tr></thead>
+        <tbody>
+          <tr><td><b>增量扫描引擎</b></td><td>对标 AUC · 禁改回 replicate</td><td>每次进 AH 自动补扫，成本低到可常驻</td></tr>
+          <tr><td><b>watch 自动导入</b></td><td>双路径监视（eu 主服 + cn 待配置）</td><td>登出/重载即入库——延迟 = 分钟级</td></tr>
+          <tr><td><b>捡漏雷达</b></td><td>必赚 / 在售量 / 档位差距筛选</td><td>当前唯一的「信号」，但口径是启发式而非统计</td></tr>
+          <tr><td><b>配方利润 / 中间材料</b></td><td>利润 = 市价收入 − 最低成本（扣 5% 税）</td><td>纯套利视图：材料→成品价差</td></tr>
+          <tr><td><b>购物清单 / 关注物品</b></td><td>清单复制名唯一 · 关注物品</td><td>只到「记录」，没有「资金/仓位」概念</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout"><b>盘点结论：</b>信息采集能力已是玩家前 1%（准实时、双市场、带历史），但<b>没有任何一个模块把数据变成「该买 / 该卖 / 挂多少 / 什么时候挂」的可执行指令</b>。优化的主线就是把已有数据转化为决策信号。</div>
+  </div>
+</section>
+<!-- ===== 2. THEORY ===== -->
+<section id="theory">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-no">§2</span><h2>稳定长期赚钱的经济学原理 → 策略映射</h2></div>
+    <p class="sec-sub">经典服 AH 的本质是<b>单边市场</b>：没有常驻买单，只有卖家的挂单，因此不存在双边价差套利，赚钱来自「时间」——在错误定价时买入、在正常定价时卖出（AuricDB 对 WoW 与 GW2 市场的关键区分）。Blizzard 官方论坛把 AH 玩法归纳为四类：<b>纯套利 / 统计套利 / 基本面投资 / 波段交易</b>——本项目天然适合前两类。以下 6 条原理按「稳定、长期」的标准筛选，每条都给出：原理 → 项目现状 → 优化方向 → 外部证据。</p>
+
+    <div class="principles">
+      <div class="principle">
+        <div class="p-head"><span class="p-num">1</span><span class="p-name">统计套利 · 均值回归</span></div>
+        <div class="p-principle"><b>原理：</b>价格围绕均衡波动。持续扫描得到的价格序列可以估算「均衡区间」（如 P10–P90），当前价低于区间下沿即统计上被低估 → 买入；高于上沿 → 卖出。赚的是回归的钱，不是预测涨跌的钱。</div>
+        <div class="p-now"><b>项目现状：</b>7 日 P10/P50 与价格变化率已有（<span class="mono">getMed7Aggregates</span>、daily 表），捡漏雷达用「最低价 vs 7日参考价」做启发式比较——但<b>没有 σ / 分位区间 / 偏离度</b>，无法回答「低 20% 算不算真低估」。</div>
+        <div class="p-opt"><b>优化：</b>基于 DailySummary 算 P10/P50/P90 + 简单 σ，首页/单品页标记「买入区 / 均衡区 / 卖出区」，把启发式门槛升级为统计口径（见 P0-1）。</div>
+        <div class="p-ev"><b>证据：</b>AuricDB —「WoW 的策略是时间性的：买当前相对历史均价被低估的物品，按正常市价重挂」；Blizzard 论坛将「统计套利」列为 AH 四大玩法之一。</div>
+      </div>
+
+      <div class="principle">
+        <div class="p-head"><span class="p-num">2</span><span class="p-name">空间套利 · 跨市场价差</span></div>
+        <div class="p-principle"><b>原理：</b>同一物品在两个市场的价差超过「搬运成本」（跑图时间）即可套利。经典服联盟/部落 AH 互通、中立 AH 独立，本质是同一经济的两个柜台。</div>
+        <div class="p-now"><b>项目现状：</b>联盟（PvP）与中立（PvP_N）已<b>分槽采集</b>同一物品的双价格——数据齐全，但没有任何「价差视图」，两价格从不对比。</div>
+        <div class="p-opt"><b>优化：</b>新增「跨市场价差」面板：同物品两市场价差排序、价差 &gt; 门槛（税 + 跑图成本）时标「可搬运」（见 P0-2）。</div>
+        <div class="p-ev"><b>证据：</b>九游 AH 指南将「跨区/跨时段价差低买高卖」列为稳定盈利方式之一；经典服中立 AH 是独立价格形成的既有事实。</div>
+      </div>
+
+      <div class="principle">
+        <div class="p-head"><span class="p-num">3</span><span class="p-name">做市与挂单纪律</span></div>
+        <div class="p-principle"><b>原理：</b>单边市场没有 buy order，卖出质量决定一切：挂在「sweet spot」（总卖得掉的价位）、undercut 只压 1–2%（避免价格螺旋）、材料按 20–50 堆叠吸引批量买家。</div>
+        <div class="p-now"><b>项目现状：</b><span class="mono">POSTING_HISTORY</span> 解析口子已建但<b>一直为空</b>——没有挂单记录，无法知道「上次挂多少、成交没有、当前占位在哪」；清单只记录「想买什么」。</div>
+        <div class="p-opt"><b>优化：</b>激活挂单历史 → 输出「建议挂单价（sweet spot）/ 建议堆叠 / undercut 提醒 / 到期重挂」（见 P1-5）。</div>
+        <div class="p-ev"><b>证据：</b>Warcraft Tavern —「sweet spot 是物品总能卖出去的那个价位」；spaceforce —「undercut 1–2% 保持竞争力而不触发价格下行螺旋；材料按 20–50 堆叠」。</div>
+      </div>
+
+      <div class="principle">
+        <div class="p-head"><span class="p-num">4</span><span class="p-name">库存与资金效率</span></div>
+        <div class="p-principle"><b>原理：</b>回报 = 利润率 × 周转率。资金占用是隐性成本：一笔钱压在慢货上 = 机会成本；「不买贵的、慢动的投资品」是经典纪律。</div>
+        <div class="p-now"><b>项目现状：</b>购物清单 = 「要买清单」，无资金占用、无预计周转、无 ROI——无法判断「同 1,000g 买哪批货最优」。</div>
+        <div class="p-opt"><b>优化：</b>清单升级为仓位管理：每行给「资金占用 × 预计周转 × ROI」评分并排序，提示持仓分散（见 P1-6）。</div>
+        <div class="p-ev"><b>证据：</b>Warcraft Tavern —「不要买贵的、慢动的投资」；零售/库存理论：周转率决定资本回报率。</div>
+      </div>
+
+      <div class="principle">
+        <div class="p-head"><span class="p-num">5</span><span class="p-name">信息优势与时机</span></div>
+        <div class="p-principle"><b>原理：</b>价格信息有时效性：先看到 = 先动手。两个已被验证的窗口：<b>采集者倾倒时段</b>（非高峰，材料超供 → 价格暴跌 = 买点）与<b>raid reset / 制造高峰前</b>（需求上升 = 卖点）。</div>
+        <div class="p-now"><b>项目现状：</b>watch 自动导入已是分钟级延迟（强），但<b>没有</b>「单日暴跌检测」（-20% 标买点）、没有扫描窗口建议、没有 raid reset 日历。</div>
+        <div class="p-opt"><b>优化：</b>价格异动检测 + 建议扫描窗口 + 周常/raid reset 日历提示（见 P0-3、P0-4）。</div>
+        <div class="p-ev"><b>证据：</b>mmofox —「非高峰时段监控，竞争者更少」；PewPewShop（TBC）—「采集者批量倾倒材料→超供→价格崩溃→这是你的买点；raid reset 前是制造与消耗的卖点」。</div>
+      </div>
+
+      <div class="principle">
+        <div class="p-head"><span class="p-num">6</span><span class="p-name">交易成本与风险纪律</span></div>
+        <div class="p-principle"><b>原理：</b>每笔交易的真实成本 = 5% 拍卖税 + 时间成本 + 机会成本。利润门槛必须覆盖它们；同时分散持仓控制尾部风险，才谈得上「稳定长期」。</div>
+        <div class="p-now"><b>项目现状：</b>利润计算已扣 5% 税（<span class="mono">AH_CUT</span>，好）；但<b>没有</b>时间成本维度、没有最小利润门槛、没有仓位上限/分散提示。</div>
+        <div class="p-opt"><b>优化：</b>按单笔规模设最小利润门槛（如 ≥ 15% 或 ≥ 税后 + 时间补偿），清单/雷达增加「仓位与分散」提示（见 P1-6、P2-11）。</div>
+        <div class="p-ev"><b>证据：</b>Warcraft Tavern —「把一切成本算进利润」；资产配置常识：分散降低尾部风险。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 3. GAPS ===== -->
+<section id="gaps">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-no">§3</span><h2>关键差距：哪些能力缺口在「漏钱」</h2></div>
+    <p class="sec-sub">差距按「阻断哪种收益来源」归类。每一项都对应 §5 中一条优化建议。</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>能力缺口</th><th>阻断的收益来源</th><th>现状证据</th><th>建议</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>挂单历史为空</b><br><span class="mono">POSTING_HISTORY</span></td>
+            <td class="warn">做市收益（卖出质量、成交跟踪）</td>
+            <td>解析口子已建，表始终为空；无「挂过什么、成交没有、当前价占位」</td>
+            <td><span class="badge p1">P1-5</span>挂单记录 + sweet spot</td>
+          </tr>
+          <tr>
+            <td><b>无 σ / 分位区间</b></td>
+            <td class="warn">均值回归（买点/卖点信号）</td>
+            <td>只有 P10/P50 与变化率；雷达门槛是启发式，非统计口径</td>
+            <td><span class="badge p0">P0-1</span>σ 带 + 买卖区</td>
+          </tr>
+          <tr>
+            <td><b>无跨市场价差视图</b></td>
+            <td class="warn">空间套利（联盟 ↔ 中立搬运）</td>
+            <td>双市场已分槽采集，两价格从不对比</td>
+            <td><span class="badge p0">P0-2</span>价差面板</td>
+          </tr>
+          <tr>
+            <td><b>无价格异动检测</b></td>
+            <td class="warn">买点信号（采集倾倒、错杀）</td>
+            <td>daily 历史在库，但没有任何「单日暴跌/暴涨」触发器</td>
+            <td><span class="badge p0">P0-3</span>异动检测</td>
+          </tr>
+          <tr>
+            <td><b>无仓位/资金管理</b></td>
+            <td class="warn">资金效率（周转 × ROI）</td>
+            <td>清单是「要买清单」，无占用、无周转、无 ROI</td>
+            <td><span class="badge p1">P1-6</span>仓位管理</td>
+          </tr>
+          <tr>
+            <td><b>无流通分评分（需求广度）</b></td>
+            <td class="warn">定价与周转（需求广 = 卖得快）</td>
+            <td>只有市场在售量，缺「被多少配方使用」的需求广度</td>
+            <td><span class="badge p1">P1-7</span>流通分</td>
+          </tr>
+          <tr>
+            <td><b>中立档位 = 0</b></td>
+            <td>中立市场档位信号</td>
+            <td>转录只扫联盟；中立档位 256 行全部来自联盟槽</td>
+            <td><span class="badge p1">P1-8</span>补中立转录</td>
+          </tr>
+          <tr>
+            <td><b>配方不完整（护腕等）</b></td>
+            <td>制造利润面不全</td>
+            <td>5 条高级护腕设计图缺同名 craft 成品配方</td>
+            <td><span class="badge p1">P1-8</span>配方补全</td>
+          </tr>
+          <tr>
+            <td><b>vendor 价全局假设</b></td>
+            <td>eu/cn 分服定价精度</td>
+            <td>NPC 价两服一致成立；但 AH 策略参数必须分服（经济规模不同）</td>
+            <td><span class="badge p2">P2-11</span>分服参数</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="chart-box">
+      <div class="chart-title">GAP / 缺口影响度</div>
+      <div class="chart-note">横向：收益来源被阻断的程度（1–10，来自上表性质判断）；无成交量/成交记录时无法客观量化，评分为内部口径。</div>
+      <div class="chart h300" id="gapChart"></div>
+    </div>
+  </div>
+</section>
+<!-- ===== 4. PLAN ===== -->
+<section id="plan">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-no">§4</span><h2>优化建议：11 项，按优先级分三档</h2></div>
+    <p class="sec-sub">优先级 = 预期价值 ÷ 实施成本，且<b>优先吃「数据已有」的低垂果实</b>。P0 全部基于现库数据（不动采集、不动插件）；P1 需要补采集或补组件；P2 是长期工程。</p>
+
+    <div class="chart-box">
+      <div class="chart-title">PRIORITY MATRIX · 价值 × 成本</div>
+      <div class="chart-note">y = 预期长期收益贡献（1–10），x = 实施成本（1–10，越小越省力）；气泡 = 建议编号。P0（绿色）集中在上方左侧。</div>
+      <div class="chart" id="matrixChart"></div>
+    </div>
+
+    <h3>P0 · 低垂果实（本周，1–2 天，全部基于已有数据）</h3>
+    <div class="principles">
+      <div class="principle">
+        <div class="p-head"><span class="p-num">1</span><span class="p-name">均值回归带（σ + P10/P90 + 买卖区）</span></div>
+        <div class="p-principle"><b>改什么：</b>在 daily 数据上算每个物品 7 日窗口的 P10/P50/P90 与近似 σ（P90−P10 的稳健估计）；首页/单品页/雷达把「当前价 vs 参考价」升级为「当前价处于哪个区间」，低于 P10 标<span class="pos">买入区</span>、高于 P90 标<span class="neg">卖出区</span>。</div>
+        <div class="p-opt"><b>价值：</b>把「看着像便宜」变成「统计上确实便宜」——均值回归是本报告收益贡献最大的单一信号；<b>成本：</b>低，仅查询层 + 一个统计函数。</div>
+        <div class="p-ev"><b>入口：</b><span class="mono">getMed7Aggregates</span> 扩展为返回分位/σ；雷达筛选加「偏离度 ≥ kσ」条件。</div>
+      </div>
+      <div class="principle">
+        <div class="p-head"><span class="p-num">2</span><span class="p-name">跨市场价差视图（联盟 ↔ 中立）</span></div>
+        <div class="p-principle"><b>改什么：</b>新增「价差套利」面板：同物品两市场最新价差排序（|联盟−中立|），价差覆盖 2×税 + 跑图时间成本后标<span class="pos">可搬运</span>，带一键「买入低价侧 → 挂高价侧」的操作提示。</div>
+        <div class="p-opt"><b>价值：</b>双市场数据已分槽，只差一个对比查询——几乎零成本换一类独立收益；<b>成本：</b>低。</div>
+        <div class="p-ev"><b>入口：</b><span class="mono">getMarketUniverse</span> 按双市场各取最新价，join 后按价差排序。</div>
+      </div>
+      <div class="principle">
+        <div class="p-head"><span class="p-num">3</span><span class="p-name">价格异动检测（暴跌/暴涨触发器）</span></div>
+        <div class="p-principle"><b>改什么：</b>每日入库后扫 daily 最新轮：单日跌幅 ≥ 20%（参数可调）的物品进「异动榜」，标注<span class="pos">疑似采集倾倒 / 错杀 → 买点候选</span>；暴涨榜对应卖点候选。可叠加在 watch 导入后自动跑。</div>
+        <div class="p-opt"><b>价值：</b>采集者倾倒是最可靠的「买点」信号（PewPew 已验证），watch 已提供分钟级触发时机；<b>成本：</b>低。</div>
+        <div class="p-ev"><b>入口：</b>daily close 与 7 日均值对比，阈值可配；首页雷达加「异动」tab。</div>
+      </div>
+      <div class="principle">
+        <div class="p-head"><span class="p-num">4</span><span class="p-name">扫描窗口与 raid reset 日历</span></div>
+        <div class="p-principle"><b>改什么：</b>在首页提示「建议扫描窗口」（非高峰时段价格波动大、竞争者少）与「raid reset / 周常重置」日历（重置前后是消耗品与材料的需求高峰 = 卖出窗口）。</div>
+        <div class="p-opt"><b>价值：</b>把「时机」变成可执行日程，强化卖出质量；<b>成本：</b>低，纯展示 + 日历数据。</div>
+        <div class="p-ev"><b>入口：</b>服务端一个周历常量表 + 首页横幅。</div>
+      </div>
+    </div>
+
+    <h3>P1 · 中期（两周内，需要补采集或补组件）</h3>
+    <div class="principles">
+      <div class="principle">
+        <div class="p-head"><span class="p-num">5</span><span class="p-name">激活挂单历史（POSTING_HISTORY）→ 卖出质量</span></div>
+        <div class="p-principle"><b>改什么：</b>插件端把每次挂单/成交写入（口子已建），导入端解析入库；网页提供「我的挂单」：当前占位、sweet spot 建议价、undercut 提醒、到期重挂。</div>
+        <div class="p-opt"><b>价值：</b>唯一能提升「卖出质量」的数据层——做市收益的基石；<b>成本：</b>中，插件 + 导入 + UI 三端。</div>
+        <div class="p-ev"><b>入口：</b><span class="mono">PostingRecord</span> 表已建，解析口子就绪（HANDOFF 待办）。</div>
+      </div>
+      <div class="principle">
+        <div class="p-head"><span class="p-num">6</span><span class="p-name">清单升级为仓位管理</span></div>
+        <div class="p-principle"><b>改什么：</b>购物清单每行增加：资金占用（数量 × 单价）、预计周转（参考历史在售量/成交速度）、ROI 评分、分散度提示（同一材料占比 &gt; X% 标红）。</div>
+        <div class="p-opt"><b>价值：</b>把「买什么」决策变成「怎么分配资金最优」——直接对应库存效率原理；<b>成本：</b>中。</div>
+        <div class="p-ev"><b>入口：</b>现有清单组件加评分列；周转用历史 quantity/auction 数的代理。</div>
+      </div>
+      <div class="principle">
+        <div class="p-head"><span class="p-num">7</span><span class="p-name">流通分 + 可做差价榜（需求广度 × 在售 × 起伏）</span></div>
+        <div class="p-principle"><b>改什么：</b>流通分 = 该物品被多少个配方使用（下游配方数，需求广度）；叠加「在售门槛」（买得到）与「价格起伏分」，双高物品进「可做差价榜」，每次扫描后自动更新。</div>
+        <div class="p-opt"><b>价值：</b>起伏大 + 需求广 + 有人在卖 = 差价空间大、周转快——均值回归最赚钱的标的池；<b>成本：</b>中。</div>
+        <div class="p-ev"><b>入口：</b>Recipe 表数下游配方数 + daily volume + 7 日波动，全部现有数据可算。</div>
+      </div>
+      <div class="principle">
+        <div class="p-head"><span class="p-num">8</span><span class="p-name">数据补全 + 极低价防护</span></div>
+        <div class="p-principle"><b>改什么：</b>转录对中立市场也扫一遍（档位 0 → 有数据）；补齐 5 条护腕成品配方；开服初期档位稀少（多数物品仅 1 档/无档位），无档位物品的每日最低价可能被 1 单极低价污染——转录覆盖扩大前，先给无档位路径加「日级在售门槛」兜底。</div>
+        <div class="p-opt"><b>价值：</b>中立档位信号闭合 + 7 日均线不被 1 单极低价拉低；<b>成本：</b>低-中。</div>
+        <div class="p-ev"><b>入口：</b>HANDOFF 已列明两项待办；极低价防护 = bait-filter 日级扩展。</div>
+      </div>
+    </div>
+
+    <h3>P2 · 长期（季度内，系统工程）</h3>
+    <div class="principles">
+      <div class="principle">
+        <div class="p-head"><span class="p-num">9</span><span class="p-name">需求周期模型（阶段 + raid reset → 季节需求）</span></div>
+        <div class="p-principle"><b>改什么：</b>按版本阶段/周常日历建立需求系数（如 raid 重置前 3 天消耗品系数 ↑），叠加到利润与买卖信号上。</div>
+        <div class="p-opt"><b>价值：</b>从「跟随价格」进化到「预判需求」；<b>成本：</b>高，需要积累跨阶段数据。</div>
+      </div>
+      <div class="principle">
+        <div class="p-head"><span class="p-num">10</span><span class="p-name">挂单执行辅助（建议价/堆叠/窗口输出）</span></div>
+        <div class="p-principle"><b>改什么：</b>把 P1 的挂单建议汇总为「执行卡片」：建议价、建议堆叠、建议时段、到期提醒——游戏内照做即可。</div>
+        <div class="p-opt"><b>价值：</b>把分析闭环到动作；<b>成本：</b>高（依赖 P1-5）。</div>
+      </div>
+      <div class="principle wide">
+        <div class="p-head"><span class="p-num">11</span><span class="p-name">双服资本分配对比（eu/cn ROI）</span></div>
+        <div class="p-principle"><b>改什么：</b>两服各自跟踪策略收益/资金占用，给出「哪服机会更好」的资本配置建议；AH 参数分服标定。</div>
+        <div class="p-opt"><b>价值：</b>双服务器是天然的风险分散，值得显式利用；<b>成本：</b>中（需 cn 有数据后）。</div>
+        <div class="p-ev"><b>前提：</b>用户登录中国服、填入 <span class="mono">AQ_AUCTIONATOR_SV_PATH_2</span> 并重启 watch。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 5. ROADMAP ===== -->
+<section id="roadmap">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-no">§5</span><h2>路线图：三档推进节奏</h2></div>
+    <p class="sec-sub">P0 先落地（数据已有，立即可用）；P1 补采集与组件；P2 视使用情况再投入。每档结束时都有一轮「复盘」：哪类信号真实带来了收益、哪类参数要重标定。</p>
+
+    <div class="timeline">
+      <div class="tl-row">
+        <div class="tl-phase p0">P0 · 本周</div>
+        <div class="tl-dot p0"></div>
+        <div class="tl-body">
+          <div class="t-title">均值回归带 + 跨市场价差 + 异动检测 + 扫描窗口</div>
+          <p>全部基于现库数据，1–2 天内可交付。先跑 3 天观察：把「买入区 / 可搬运 / 异动榜」三类信号各自记收益，验证后再进 P1。</p>
+        </div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-phase p1">P1 · 两周</div>
+        <div class="tl-dot p1"></div>
+        <div class="tl-body">
+          <div class="t-title">挂单历史 + 仓位管理 + 流通分差价榜 + 数据补全</div>
+          <p>需要插件写入挂单记录（口子已建）。这档做完，系统才有「卖出侧」与「资金侧」——从纯买入工具变成完整交易闭环。</p>
+        </div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-phase p2">P2 · 季度内</div>
+        <div class="tl-dot p2"></div>
+        <div class="tl-body">
+          <div class="t-title">需求周期 + 执行辅助 + 双服资本配置</div>
+          <p>积累足够跨阶段数据后做需求预测；挂单执行卡片把分析闭环到游戏内动作；cn 数据就绪后做双服 ROI 对比。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout"><b>执行纪律（对应原理 6）：</b>所有信号落地时同时落地「利润门槛」（税后 + 时间补偿）与「仓位上限」（单物品 ≤ 总资金 20%），否则均值回归也会变成接飞刀。</div>
+  </div>
+</section>
+
+<!-- ===== 6. RISK ===== -->
+<section id="risk">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-no">§6</span><h2>风险与边界</h2></div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>风险</th><th>说明</th><th>应对</th></tr></thead>
+        <tbody>
+          <tr><td><b>版本阶段风险</b></td><td>Beta 删档、阶段推进会整体改写物价与需求结构；历史统计可能突然失效</td><td>信号按「当前阶段」窗口重标定；阶段切换日重置 σ 基线</td></tr>
+          <tr><td><b>服务器差异</b></td><td>eu/cn 人口、经济规模、物价水平不同；vendor 全局假设只对 NPC 价成立</td><td>AH 参数（门槛、阈值）一律分服存储；P2-11 显式做双服对比</td></tr>
+          <tr><td><b>行为边界</b></td><td>游戏内正常交易合规；RMT（金币买卖）违反服务条款，严禁；垄断/价格操纵属灰色地带</td><td>工具只做「信息与建议」，不做自动竞价/批量垄断脚本；避开 9game 示例中的垄断操作</td></tr>
+          <tr><td><b>数据质量</b></td><td>中立档位缺失、配方缺口、无成交记录 → 信号覆盖不全</td><td>按 P1-8 补全；未覆盖物品的信号标「数据不足」而非静默输出</td></tr>
+          <tr><td><b>执行偏差</b></td><td>信号再准，不按纪律执行（追涨、满仓、频繁改价）也会亏</td><td>落地利润门槛 + 仓位上限 + 每周复盘表</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SOURCES ===== -->
+<footer id="sources">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-no">§7</span><h2>资料来源与口径</h2></div>
+    <p class="muted" style="font-size:13.5px">项目现状数字（快照/每日/档位/双市场/双服/待办）来自项目数据库与 <span class="mono">docs/PRODUCT.md</span>、<span class="mono">docs/HANDOFF.md</span>（2026-10-18 状态）。经济学与游戏市场证据来自以下公开来源；「影响度/价值/成本」评分为本报告内部口径（1–10），非外部权威数据。</p>
+    <div class="src-list">
+      <div>① AuricDB — WoW Classic Auction House Flipping Guide（单边市场与时间性策略）<span class="u">https://auricdb.com/guides/wow-classic-auction-house</span></div>
+      <div>② Blizzard 官方论坛 — Where do players get gold?（AH 四类玩法：纯套利/统计套利/基本面/波段）<span class="u">https://us.forums.blizzard.com/en/wow/t/where-do-players-get-gold/1298222/76</span></div>
+      <div>③ Warcraft Tavern — Sinyou's Comprehensive Classic WoW Gold Guide（sweet spot；不买贵而慢动的投资）<span class="u">https://www.warcrafttavern.com/wow-classic/guides/sinyous-comprehensive-classic-wow-gold-guide/</span></div>
+      <div>④ mmofox — How to Get WoW Classic Gold Fast Without Farming（非高峰监控、价格区间认知）<span class="u">https://www.mmofox.com/blog/article/how-to-get-wow-classic-gold-fast-without-farming-the-complete-guide</span></div>
+      <div>⑤ PewPewShop — Primal Flipping in TBC（采集倾倒=买点；raid reset 前=卖点）<span class="u">https://pewpewshop.pro/wow-boost/blog~primal-eternal-flipping-how-to-profit-from-material-markets</span></div>
+      <div>⑥ spaceforce — WoW Gold source guides（undercut 1–2%；材料堆叠 20–50）<span class="u">https://spaceforce-game.com/</span></div>
+      <div>⑦ 九游 — 魔兽世界拍卖行交易指南（跨区/跨时段价差套利；垄断操作示例——仅引用为反面边界）<span class="u">https://a.9game.cn/moshoushijie2/11509008.html</span></div>
+    </div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script>
+(function(){
+  if (typeof echarts === "undefined") return;
+
+  /* ===== 优先级矩阵 ===== */
+  var matrix = echarts.init(document.getElementById("matrixChart"));
+  var items = [
+    { id:"P0-1", name:"均值回归带",   v:9, c:2, grp:"P0" },
+    { id:"P0-2", name:"跨市场价差",   v:8, c:2, grp:"P0" },
+    { id:"P0-3", name:"异动检测",     v:7, c:3, grp:"P0" },
+    { id:"P0-4", name:"扫描窗口日历", v:6, c:2, grp:"P0" },
+    { id:"P1-5", name:"挂单历史",     v:9, c:6, grp:"P1" },
+    { id:"P1-6", name:"仓位管理",     v:7, c:5, grp:"P1" },
+    { id:"P1-7", name:"流通分+差价榜", v:6, c:4, grp:"P1" },
+    { id:"P1-8", name:"补全+极低价防护", v:5, c:3, grp:"P1", lp:"left" },
+    { id:"P2-9", name:"需求周期",     v:7, c:7, grp:"P2" },
+    { id:"P2-10",name:"挂单执行辅助", v:8, c:8, grp:"P2" },
+    { id:"P2-11",name:"双服资本配置", v:5, c:4, grp:"P2", lp:"right" }
+  ];
+  var colors = { P0:"#41c48a", P1:"#f2b04d", P2:"#5b8dd6" };
+  var seriesData = ["P0","P1","P2"].map(function(g){
+    return { name:g, type:"scatter", symbolSize:22,
+      itemStyle:{ color:colors[g], opacity:.9, borderColor:"#0a0e13", borderWidth:1 },
+      data: items.filter(function(i){return i.grp===g;}).map(function(i){ return { value:[i.c, i.v], id:i.id, name:i.name, lp: i.lp || "top" }; }),
+      label:{ show:true, position:function(p){ return p.data.lp; }, formatter:function(p){ return p.data.id + " " + p.data.name; }, fontSize:11, color:"#c9d4e0", fontFamily:"JetBrains Mono, monospace" },
+      emphasis:{ label:{ show:true, fontWeight:"bold", color:"#f2b04d" } } };
+  });
+  matrix.setOption({
+    backgroundColor:"transparent",
+    grid:{ left:44, right:30, top:52, bottom:44 },
+    legend:{ data:["P0","P1","P2"], top:8, right:10, textStyle:{ color:"#7d8aa0", fontFamily:"JetBrains Mono, monospace", fontSize:11 }, itemWidth:12, itemHeight:12 },
+    tooltip:{ trigger:"item", confine:true,
+      formatter:function(p){ return "<b>"+p.data.id+" · "+p.data.name+"</b><br>价值 "+p.value[1]+"/10 · 成本 "+p.value[0]+"/10"; },
+      backgroundColor:"#10161f", borderColor:"#223042", textStyle:{ color:"#c9d4e0", fontSize:12 } },
+    xAxis:{ type:"value", name:"实施成本 →（越大越贵）", min:0, max:10, nameLocation:"middle", nameGap:28,
+      axisLine:{ lineStyle:{ color:"#55657a" } }, axisLabel:{ color:"#7d8aa0", fontFamily:"JetBrains Mono, monospace", fontSize:10 },
+      splitLine:{ lineStyle:{ color:"rgba(34,48,64,.5)" } }, nameTextStyle:{ color:"#7d8aa0", fontSize:11 } },
+    yAxis:{ type:"value", name:"预期价值 →", min:0, max:10, nameLocation:"middle", nameGap:34,
+      axisLine:{ lineStyle:{ color:"#55657a" } }, axisLabel:{ color:"#7d8aa0", fontFamily:"JetBrains Mono, monospace", fontSize:10 },
+      splitLine:{ lineStyle:{ color:"rgba(34,48,64,.5)" } }, nameTextStyle:{ color:"#7d8aa0", fontSize:11 } },
+    series: seriesData
+  });
+
+  /* ===== 缺口影响度 ===== */
+  var gap = echarts.init(document.getElementById("gapChart"));
+  var gaps = [
+    { name:"挂单历史为空", v:9 },
+    { name:"无 σ/分位区间", v:8 },
+    { name:"无跨市场价差", v:7 },
+    { name:"无仓位/资金管理", v:7 },
+    { name:"无价格异动检测", v:6 },
+    { name:"无流通分评分", v:6 },
+    { name:"中立档位=0", v:4 },
+    { name:"配方缺口", v:3 },
+    { name:"vendor 全局假设", v:3 }
+  ];
+  gap.setOption({
+    backgroundColor:"transparent",
+    grid:{ left:150, right:40, top:10, bottom:28 },
+    tooltip:{ trigger:"axis", axisPointer:{ type:"shadow" },
+      backgroundColor:"#10161f", borderColor:"#223042", textStyle:{ color:"#c9d4e0", fontSize:12 } },
+    xAxis:{ type:"value", max:10, axisLabel:{ color:"#7d8aa0", fontFamily:"JetBrains Mono, monospace", fontSize:10 }, splitLine:{ lineStyle:{ color:"rgba(34,48,64,.5)" } } },
+    yAxis:{ type:"category", inverse:true,
+      data: gaps.map(function(g){ return g.name; }),
+      axisLabel:{ color:"#c9d4e0", fontSize:11, width:130, overflow:"truncate" },
+      axisLine:{ show:false }, axisTick:{ show:false } },
+    series:[{ type:"bar", barWidth:14,
+      data: gaps.map(function(g){ return { value:g.v, itemStyle:{ color: g.v>=7 ? "#e0635e" : (g.v>=5 ? "#f2b04d" : "#5b8dd6"), borderRadius:[0,4,4,0] } }; }),
+      label:{ show:true, position:"right", formatter:"{c}", color:"#7d8aa0", fontFamily:"JetBrains Mono, monospace", fontSize:10 } }]
+  });
+
+  /* 均值回归示意（静态 SVG 插图）——示意性质 */
+  var svgDemo = '<svg viewBox="0 0 720 260" width="100%" style="display:block;margin-top:16px" xmlns="http://www.w3.org/2000/svg">'
+    + '<defs><linearGradient id="band" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#41c48a" stop-opacity=".14"/><stop offset="50%" stop-color="#41c48a" stop-opacity=".05"/><stop offset="100%" stop-color="#41c48a" stop-opacity=".14"/></linearGradient></defs>'
+    + '<rect x="30" y="30" width="660" height="200" fill="url(#band)" rx="6"/>'
+    + '<line x1="30" y1="70" x2="690" y2="70" stroke="#223042" stroke-dasharray="4 4" stroke-width="1"/>'
+    + '<line x1="30" y1="190" x2="690" y2="190" stroke="#223042" stroke-dasharray="4 4" stroke-width="1"/>'
+    + '<text x="34" y="60" font-size="11" fill="#41c48a" font-family="JetBrains Mono, monospace">P90 · 卖出区上沿</text>'
+    + '<text x="34" y="205" font-size="11" fill="#e0635e" font-family="JetBrains Mono, monospace">P10 · 买入区下沿</text>'
+    + '<polyline points="40,190 90,180 130,185 170,140 210,150 250,120 290,128 330,90 370,100 410,75 450,110 490,95 530,130 570,118 610,150 650,140 680,160" fill="none" stroke="#f2b04d" stroke-width="2" stroke-linejoin="round"/>'
+    + '<circle cx="330" cy="90" r="6" fill="none" stroke="#41c48a" stroke-width="2"/><text x="330" y="78" font-size="11" fill="#41c48a" text-anchor="middle" font-family="JetBrains Mono, monospace">买点</text>'
+    + '<circle cx="410" cy="75" r="6" fill="none" stroke="#e0635e" stroke-width="2"/><text x="410" y="63" font-size="11" fill="#e0635e" text-anchor="middle" font-family="JetBrains Mono, monospace">卖点</text>'
+    + '<line x1="450" y1="110" x2="490" y2="95" stroke="#e0635e" stroke-width="2"/>'
+    + '</svg>';
+  var demoBox = document.createElement("div");
+  demoBox.className = "chart-box";
+  demoBox.innerHTML = '<div class="chart-title">MEAN-REVERSION · 均值回归带（示意）</div>'
+    + '<div class="chart-note">示意结构：价格在 P10–P90 带内波动，跌破下沿 → 买入区，冲穿上沿 → 卖出区。实际数值由 P0-1 从数据库计算。</div>'
+    + svgDemo;
+  var planSec = document.getElementById("plan");
+  var planWrap = planSec.querySelector(".wrap");
+  planWrap.insertBefore(demoBox, planWrap.querySelector("h3"));
+})();
+</script>
+</body>
+</html>

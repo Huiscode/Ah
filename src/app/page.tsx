@@ -1,6 +1,6 @@
 import { Hammer, RadioTower, ShoppingCart, Star } from "lucide-react";
 import type { Route } from "next";
-import { buildDealRadar } from "@/lib/analytics";
+import { buildDealRadar, buildMoverBoard, buildSpreadCandidates } from "@/lib/analytics";
 import { buildRecipeFloors, computeRecipeProfits } from "@/lib/recipe-profits";
 import { buildSecondaryMaterialRows } from "@/lib/secondary-materials";
 import { mergeRadarRules } from "@/lib/market-rules";
@@ -28,7 +28,7 @@ import { ItemIcon } from "@/components/item-icon";
 import { ProductBadge } from "@/components/product-badge";
 import { MarketTable } from "@/components/market-table";
 import { WatchStar } from "@/components/watch-star";
-import { DealRadarTable } from "@/components/deal-radar-table";
+import { OpportunityTabs } from "@/components/opportunity-tabs";
 import { SecondaryMaterialsPanel } from "@/components/secondary-materials-panel";
 import { CopyListButton } from "@/components/copy-list-button";
 
@@ -80,6 +80,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const allDeals = buildDealRadar(signals, radarRules);
   // 该模式最新扫描轮 owns the radar's universe：只推荐该模式数据源在售的物品。
   const deals = latestRound === null ? allDeals : allDeals.filter((deal) => latestRound.has(deal.itemId));
+  // 可做差价榜 / 异动榜：同样只在最新扫描轮在售的物品中推荐（买得到才上榜）。
+  const allSpreads = buildSpreadCandidates(signals);
+  const spreads = latestRound === null ? allSpreads : allSpreads.filter((row) => latestRound.has(row.itemId));
+  const allMovers = buildMoverBoard(signals);
+  const movers = latestRound === null ? allMovers : allMovers.filter((row) => latestRound.has(row.itemId));
   // 价格档位差距（市场价 vs 最低价 %）：最新快照轮，供雷达"价格档位差距 ≥"筛选用。
   const tierGapByItemId = await getPriceTierGaps(mode, market, server);
   const radarCategories = groupedCategoryOptions(Array.from(new Set(deals.map((deal) => deal.category))));
@@ -136,20 +141,31 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="捡漏雷达" action={<span className="font-mono text-xs text-terminal-green">共 {deals.length} 条 · 必赚 + {mode === "history" ? "最低价 vs 7日参考价（P10）" : "最低买入价 vs 7日参考价"}</span>} />
-            <div className="p-3 font-mono text-xs">
-              {deals.length === 0 ? (
-                <div className="text-terminal-muted">
-                  {signals.length === 0
-                    ? mode === "history"
-                      ? "历史模式无 addon 数据。"
-                      : "暂无市场数据。请在游戏内用 Auctionator 全量扫描拍卖行（每次进入拍卖行时），然后重跑导入。"
-                    : "当前没有满足利润与参考价门槛的捡漏挂单。"}
-                </div>
-              ) : (
-                <DealRadarTable deals={deals} prices={priceByItemId} categories={radarCategories} watchedItemIds={Array.from(watchedIds)} productItemIds={productItemIds} tierGapByItemId={tierGapByItemId} server={server} />
-              )}
-            </div>
+            <PanelHeader title={
+              <span className="flex flex-wrap items-center gap-x-3">
+                <span>机会总览</span>
+                <span className="normal-case tracking-normal text-[10px] text-terminal-muted">建议：每天较晚时段扫描（档位更全）；raid 重置前后消耗品/材料易现卖出窗口；中立市场时有时无，抓到即对比。</span>
+              </span>
+            } action={<span className="font-mono text-xs text-terminal-green">最低买入价 vs 7日参考价</span>} />
+            {signals.length === 0 ? (
+              <div className="p-3 font-mono text-xs text-terminal-muted">
+                {mode === "history"
+                  ? "历史模式无 addon 数据。"
+                  : "暂无市场数据。请在游戏内用 Auctionator 全量扫描拍卖行（每次进入拍卖行时），然后重跑导入。"}
+              </div>
+            ) : (
+              <OpportunityTabs
+                deals={deals}
+                spreads={spreads}
+                movers={movers}
+                prices={priceByItemId}
+                radarCategories={radarCategories}
+                watchedItemIds={Array.from(watchedIds)}
+                productItemIds={productItemIds}
+                tierGapByItemId={tierGapByItemId}
+                server={server}
+              />
+            )}
           </Panel>
           <Panel>
             <PanelHeader title="市场监控" />

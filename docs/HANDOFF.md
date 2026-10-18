@@ -1,11 +1,11 @@
-# AH 项目交接文件（HANDOFF・v4.1 精简版）
+# AH 项目交接文件（HANDOFF・v4.2 精简版）
 
 > **新 AI 接手流程**：先读 `docs/PRODUCT.md`（产品全貌/架构/口径/血泪结论）→ 再读本文件（当前状态/待办/坑/纪律）。
-> 最后更新：2026-10-18（双服务器 A 方案落地：server 维度贯穿导入/DB/查询/网页，tsc+165 测试通过，git 未 push）。
+> 最后更新：2026-10-19（主页机会总览改造落地：三榜页签 + 7 日带区间列，tsc+174 测试通过，已 commit+push）。
 
 ## 1. 一句话现状
 
-**全链路已闭环 + 双服务器已就绪**：联盟/中立双市场（分槽 PvP/PvP_N）扫描与导入正常、增量扫描引擎平滑无冷却、转录已并入、网页双市场同页切换。**双服务器 A 方案落地**：插件存档按账号天然隔离（零改动），导入/DB/查询/网页全部增加 `server` 短标识（eu/cn），`DailySummary` 加 server 列，watch 支持双路径监视（第二服配置 `AQ_AUCTIONATOR_SV_PATH_2` 即启用）。捡漏雷达筛选精简进设置弹窗、价格档位差距用真实前 5 档、购物清单复制名唯一、无结果条目默认开启。**v4.1 批次已改完未 commit/push**（等用户确认；剩余：登录中国服后填路径 + 重启 watch）。
+**全链路已闭环 + 双服务器已就绪 + 主页机会总览已落地**：联盟/中立双市场（分槽 PvP/PvP_N）扫描与导入正常、增量扫描引擎平滑无冷却、转录已并入、网页双市场同页切换。**双服务器 A 方案落地**：插件存档按账号天然隔离（零改动），导入/DB/查询/网页全部增加 `server` 短标识（eu/cn），`DailySummary` 加 server 列，watch 支持双路径监视（第二服配置 `AQ_AUCTIONATOR_SV_PATH_2` 即启用）。**主页机会总览（2026-10-19）**：左列原"捡漏雷达"升级为三榜页签（捡漏 / 可做差价 / 异动），市场监控表加"区间"列（7 日带：买入区/卖出区/均衡），页签行承载复制/设置/计数，扫描建议提示并入标题行。v4.1、方案1修复、主页改造均已 commit+push；剩余：登录中国服后填路径 + 重启 watch。
 
 ## 2. 环境与关键路径
 
@@ -47,10 +47,11 @@
 13. **设置弹窗无保存即时生效（2026-10-17）**：保存按钮删除——筛选类（品类/高流通/必赚/在售量≥/档位差距≥）改动即写 localStorage `wah:deal-radar:*` + storage 广播（**必须带 `storageArea: localStorage`**）即时过滤雷达表；门槛类（最低盈利/最少历史/参考可信度）**600ms 防抖自动 POST `/api/radar-rules` + `router.refresh()`**。**React 报错修复**：storage 广播绝不能在 `setState` updater 内做（updater 在渲染阶段执行，同步 dispatch 会触发其他组件 setState → "Cannot update a component (DealRadarTable) while rendering (RadarSettingsButton)"）——先算 next 再 setState 再广播
 14. **复制清单唯一名（2026-10-17）**：复制按钮清单名 = `捡漏` + 月日时分（如 `捡漏10161530`，`copy-list-button.tsx uniqueListName()`）——每次复制独立清单名，游戏内导入**不覆盖旧清单**；超 100 条仍截断（无限版解析过多会 Lua 错误风暴）
 15. **购物清单"无结果条目"默认开启（2026-10-17）**：插件 `Config/Main.lua` `SHOPPING_LIST_MISSING_TERMS = true`（用户存档无该键，默认值直接生效）——扫描购物清单时无货物品显示 ×0 占位行，不再静默消失。**草药清单口径**：`草药清单.txt`（根目录）为**游戏内真实数据库** 41 个草药（category=商品 且 subCategory=草药，含经典 26+ 无限新增 15，排除草药袋/草药包）；**Foreverchange 站点"草药"子类仅 17 个**（高等级经典草药如黑莲花/山鼠草/梦叶草等不在站点草药分类——站点数据未揭示/分类差异），**导入用数据库版更全**
+16. **主页机会总览（2026-10-19）**：左列"捡漏雷达"升级为三榜页签（捡漏 / 可做差价 / 异动），共用左列区域；市场监控表加"区间"列（7 日带：买入区/卖出区/均衡），雷达行不加区间徽章（保持对齐）。数据层：`MarketSignal` 新增 `bandLow/bandHigh/volatilityRatio/zone`（`computeBand`，近 7 日同源每日收盘 min/max，7 点近似 P10/P90，样本<2 或平坦 → zone=none）；新增 `buildSpreadCandidates`（起伏比 ≥15% + 流通分 ≥1 + 在售量 ≥3 + 有波动带，综合分=起伏比×(1+流通分)）与 `buildMoverBoard`（|环比%| ≥20% 且 在售量 ≥1，大跌=买点/大涨=卖点），门槛在 `market-rules.ts` `spreadRules/moverRules`（可调）。**流通分 = 下游配方数（turnoverScore）**，项目早已内置，用户口径已拍板采纳。UI：`opportunity-tabs.tsx`（页签 + 复制/设置/计数合一，设置按钮仅捡漏 tab 显示）、`spread-candidates-table.tsx`、`mover-board-table.tsx`、`market-table.tsx` 区间列；扫描建议提示条原为页头整行，用户要求后并入"机会总览"标题旁。tsc 干净 + 174 测试通过（新增 9 个）。**开服初期差价/异动榜为空是预期**（需 2+ 天历史；异动还需前一日数据）
 
 ## 5. 待办 / 未完成
 
-- **git**：✅ v3.7-v3.8、v4.0 已 commit + push；**v4.1 双服务器批次已改完未 commit/push**（等用户确认后按"提交 git"触发）
+- **git**：✅ v3.7-v3.8、v4.0、v4.1 双服务器（00d5921）、方案1修复、主页机会总览改造（v4.2）均已 commit + push（2026-10-19）
 - **登录中国服账号填路径**：把中国服存档路径填进 `.env` 的 `AQ_AUCTIONATOR_SV_PATH_2`（transcript 缺省同目录推导，可用 `AQ_TRANSCRIPT_SV_PATH_2` 覆盖）→ **重启 watch**（WAH一键停止/启动.bat）→ 中国服扫描/`/reload` 后数据自动进 `server='cn'`，网页切"中国服"查看
 - **重扫一次让补档生效**：插件已同步游戏目录，用户下次扫描（联盟+中立各一次）会自动对候选补档；中立档位现为 0、联盟仅老转录 49 物品
 - **转录全量重扫**（可选）：用户现已走 Auctionator 扫描 + watch 导入，转录（/wahscan）为可选补充

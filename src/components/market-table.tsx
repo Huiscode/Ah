@@ -9,6 +9,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { MarketSignal } from "@/lib/analytics";
 import type { MarketView, SignalSortKey } from "@/lib/market-filter";
 import { formatPercent } from "@/lib/utils";
+import { zoneBadge } from "@/lib/utils";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import { categoryLabel } from "@/lib/category-zh";
 import { qualityColorClass } from "@/lib/quality";
@@ -170,6 +171,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
             <col className="w-[140px]" />
             <col className="w-[96px]" />
             <col className="w-[96px]" />
+            <col className="w-[88px]" />
           </colgroup>
           <thead className="bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
             <tr>
@@ -184,6 +186,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                   {column.heading}{sortMark(column.key)}
                 </th>
               ))}
+              <th className="border-b border-terminal-border px-3 py-2 text-right" title="当前价相对 7 日价格带的位置：跌破下沿=买入区，冲穿上沿=卖出区">区间</th>
             </tr>
           </thead>
           <tbody>
@@ -206,6 +209,7 @@ export function MarketTable({ rows, watchedItemIds, view, categories, totalCount
                 <td className={signal.discountPercent >= 15 ? "px-3 py-2 text-right text-terminal-green" : "px-3 py-2 text-right text-slate-300"}>{signal.discountPercent.toFixed(0)}%</td>
                 <td className={"px-3 py-2 text-right " + trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</td>
                 <td className="px-3 py-2 text-right text-slate-300">{signal.quantity.toLocaleString("en-US")}</td>
+                <td className={`whitespace-nowrap px-3 py-2 text-right ${zoneBadge(signal.zone).className}`}>{zoneBadge(signal.zone).label}</td>
               </tr>
             ))}
           </tbody>

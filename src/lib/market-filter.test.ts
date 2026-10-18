@@ -19,6 +19,10 @@ function makeSignal(partial: Partial<MarketSignal> & Pick<MarketSignal, "itemId"
     latestAt: new Date(),
     turnoverScore: 0,
     isVendorItem: false,
+    bandLow: 0,
+    bandHigh: 0,
+    volatilityRatio: 0,
+    zone: "none" as const,
     ...partial
   };
 }

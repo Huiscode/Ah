@@ -1,5 +1,5 @@
 ﻿import { describe, expect, it } from "vitest";
-import { buildDealRadar, buildMarketSignal, buildWeekdaySeasonality, type MarketSignal } from "@/lib/analytics";
+import { buildDealRadar, buildMarketSignal, buildMoverBoard, buildSpreadCandidates, buildWeekdaySeasonality, computeBand, type MarketSignal } from "@/lib/analytics";
 import { generateDemoHistory } from "@/lib/demo-history";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -10,7 +10,7 @@ const now = new Date("2026-07-24T12:00:00Z");
 // 按当日快照振幅）。med7/环比都从 daily 计算（与生产一致）。
 function history(
   snapshots: Array<{ daysAgo: number; marketPrice: number; minPrice?: number; quantity?: number; numAuctions?: number }>,
-  overrides?: { vendorPrice?: number; itemId?: number; name?: string; sellPrice?: number }
+  overrides?: { vendorPrice?: number; itemId?: number; name?: string; sellPrice?: number; turnoverScore?: number; isVendorItem?: boolean }
 ) {
   const source = "auctionator";
   return {
@@ -22,8 +22,8 @@ function history(
     vendorPrice: overrides?.vendorPrice ?? 0,
     sellPrice: overrides?.sellPrice ?? 0,
     icon: null,
-    turnoverScore: 0,
-    isVendorItem: false,
+    turnoverScore: overrides?.turnoverScore ?? 0,
+    isVendorItem: overrides?.isVendorItem ?? false,
     snapshots: snapshots.map((snap) => ({
       timestamp: new Date(now.getTime() - snap.daysAgo * DAY),
       server: "Anniversary",
@@ -256,5 +256,174 @@ describe("buildWeekdaySeasonality", () => {
     expect(tuesday.priceDeviation).toBeCloseTo(100, 5);
     expect(monday.listedShare).toBeCloseTo(50, 5);
     expect(seasonality.find((day) => day.weekday === 6)).toBeUndefined();
+  });
+});
+
+describe("7日带：band / zone / 起伏比", () => {
+  // zone 的 buy/sell 突破逻辑直接测 computeBand（fixture 模型里当日收盘 =
+  // 最新扫描价，current 恒在带内，无法经 buildMarketSignal 触发突破）。
+  it("computeBand: breaks below the 7d band -> buy zone", () => {
+    const band = computeBand([100, 120, 80], 70, 100);
+    expect(band.bandLow).toBe(80);
+    expect(band.bandHigh).toBe(120);
+    expect(band.volatilityRatio).toBeCloseTo(40, 5); // (120-80)/100
+    expect(band.zone).toBe("buy");
+  });
+
+  it("computeBand: above the band -> sell; inside -> flat; insufficient -> none", () => {
+    expect(computeBand([100, 120, 80], 130, 100).zone).toBe("sell");
+    expect(computeBand([100, 120, 80], 100, 100).zone).toBe("flat");
+    expect(computeBand([100], 100, 100).zone).toBe("none"); // 单样本
+    expect(computeBand([], 100, 100).zone).toBe("none");
+    expect(computeBand([100, 100], 100, 100).zone).toBe("none"); // 平坦
+  });
+
+  it("buildMarketSignal exposes the 7d band from same-source closes", () => {
+    const signal = buildMarketSignal(
+      history([
+        { daysAgo: 2, marketPrice: 100 },
+        { daysAgo: 1, marketPrice: 120 },
+        { daysAgo: 0, marketPrice: 90, quantity: 50 }
+      ]),
+      now
+    )!;
+    // window closes [100, 120, 90] -> bandLow 90, bandHigh 120, med7 100
+    expect(signal.bandLow).toBe(90);
+    expect(signal.bandHigh).toBe(120);
+    expect(signal.volatilityRatio).toBeCloseTo(30, 5);
+    expect(signal.zone).toBe("flat");
+  });
+
+  it("no band with a single scan (data insufficient)", () => {
+    const single = buildMarketSignal(history([{ daysAgo: 0, marketPrice: 100 }]), now)!;
+    expect(single.bandLow).toBe(0);
+    expect(single.zone).toBe("none");
+  });
+});
+
+describe("buildSpreadCandidates", () => {
+  function makeSignal(overrides: Partial<MarketSignal>): MarketSignal {
+    return {
+      itemId: 0,
+      name: "材料",
+      category: "材料",
+      quality: "common",
+      icon: null,
+      source: "auctionator",
+      price: 100,
+      minPrice: 100,
+      quantity: 50,
+      numAuctions: 0,
+      vendorPrice: 0,
+      med7: 100,
+      med7Samples: 3,
+      med7Distinct: 3,
+      discountPercent: 0,
+      changePercent: 0,
+      latestAt: now,
+      turnoverScore: 0,
+      isVendorItem: false,
+      bandLow: 0,
+      bandHigh: 0,
+      volatilityRatio: 0,
+      zone: "none",
+      ...overrides
+    };
+  }
+
+  it("lists volatile, demanded, in-stock items as spread candidates", () => {
+    const candidates = buildSpreadCandidates(
+      [
+        makeSignal({ itemId: 1, name: "波动材料", volatilityRatio: 40, turnoverScore: 3, quantity: 50, zone: "buy", bandLow: 80, bandHigh: 120 })
+      ],
+      undefined,
+      now
+    );
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].itemId).toBe(1);
+    expect(candidates[0].zone).toBe("buy");
+  });
+
+  it("drops flat, demand-less, or out-of-stock items", () => {
+    const candidates = buildSpreadCandidates(
+      [
+        makeSignal({ itemId: 1, name: "平坦材料", volatilityRatio: 0, turnoverScore: 3, quantity: 50, zone: "none" }),
+        makeSignal({ itemId: 2, name: "无需求材料", volatilityRatio: 40, turnoverScore: 0, quantity: 50, zone: "buy" }),
+        makeSignal({ itemId: 3, name: "缺货材料", volatilityRatio: 40, turnoverScore: 3, quantity: 0, zone: "buy" }),
+        makeSignal({ itemId: 4, name: "无波动带材料", volatilityRatio: 40, turnoverScore: 3, quantity: 50, zone: "none" })
+      ],
+      undefined,
+      now
+    );
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("ranks higher volatility × demand first", () => {
+    const candidates = buildSpreadCandidates(
+      [
+        makeSignal({ itemId: 1, name: "中波动", volatilityRatio: 20, turnoverScore: 1, quantity: 50, zone: "flat", bandLow: 80, bandHigh: 120 }),
+        makeSignal({ itemId: 2, name: "高波动高需求", volatilityRatio: 60, turnoverScore: 4, quantity: 50, zone: "flat", bandLow: 50, bandHigh: 150 })
+      ],
+      undefined,
+      now
+    );
+    expect(candidates.map((c) => c.itemId)).toEqual([2, 1]);
+  });
+});
+
+describe("buildMoverBoard", () => {
+  function makeSignal(overrides: Partial<MarketSignal>): MarketSignal {
+    return {
+      itemId: 0,
+      name: "材料",
+      category: "材料",
+      quality: "common",
+      icon: null,
+      source: "auctionator",
+      price: 100,
+      minPrice: 100,
+      quantity: 10,
+      numAuctions: 0,
+      vendorPrice: 0,
+      med7: 100,
+      med7Samples: 3,
+      med7Distinct: 3,
+      discountPercent: 0,
+      changePercent: 0,
+      latestAt: now,
+      turnoverScore: 0,
+      isVendorItem: false,
+      bandLow: 0,
+      bandHigh: 0,
+      volatilityRatio: 0,
+      zone: "none",
+      ...overrides
+    };
+  }
+
+  it("flags moves >= 20% against the previous daily close", () => {
+    const movers = buildMoverBoard(
+      [
+        makeSignal({ itemId: 1, name: "大涨物品", changePercent: 30 }),
+        makeSignal({ itemId: 2, name: "大跌物品", changePercent: -30 }),
+        makeSignal({ itemId: 3, name: "正常波动", changePercent: 10 })
+      ],
+      undefined,
+      now
+    );
+    expect(movers.map((m) => m.itemId).sort()).toEqual([1, 2]);
+    expect(movers[0].changePercent).toBe(30); // |变动%| 降序
+  });
+
+  it("stays empty when nothing moves enough or nothing is in stock", () => {
+    const movers = buildMoverBoard(
+      [
+        makeSignal({ itemId: 1, changePercent: 5 }),
+        makeSignal({ itemId: 2, changePercent: 30, quantity: 0 })
+      ],
+      undefined,
+      now
+    );
+    expect(movers).toHaveLength(0);
   });
 });

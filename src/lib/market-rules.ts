@@ -62,3 +62,31 @@ export function mergeRadarRules(overrides: unknown): DealRadarRules {
   }
   return merged as DealRadarRules;
 }
+
+// 可做差价榜（buildSpreadCandidates）阈值：起伏大 × 需求广 × 有人在卖。
+export type SpreadRules = {
+  minVolatilityRatio: number; // 7 日带宽 ÷ 参考价（%）：低于此起伏视为无差价空间
+  minTurnover: number;        // 流通分下限：至少被 N 个配方使用（需求广度）
+  minQuantity: number;        // 在售量下限：买得到（至少 N 单在卖）
+  staleWindowMs: number;      // 新鲜度窗口（与雷达一致，手动扫描默认 7 天）
+};
+
+export const spreadRules: SpreadRules = {
+  minVolatilityRatio: 15,
+  minTurnover: 1,
+  minQuantity: 3,
+  staleWindowMs: 7 * 24 * 60 * 60 * 1000
+};
+
+// 异动榜（buildMoverBoard）阈值。
+export type MoverRules = {
+  minMovePercent: number; // |环比%| 下限：低于此视为正常波动
+  minQuantity: number;    // 在售量下限
+  staleWindowMs: number;
+};
+
+export const moverRules: MoverRules = {
+  minMovePercent: 20,
+  minQuantity: 1,
+  staleWindowMs: 7 * 24 * 60 * 60 * 1000
+};
