@@ -1,12 +1,10 @@
-import { Bell, Hammer, RadioTower, ShoppingCart, Star } from "lucide-react";
+import { Hammer, RadioTower, ShoppingCart, Star } from "lucide-react";
 import type { Route } from "next";
 import { buildDealRadar } from "@/lib/analytics";
-import { evaluateAlertRules } from "@/lib/alerts";
 import { buildRecipeFloors, computeRecipeProfits } from "@/lib/recipe-profits";
 import { buildSecondaryMaterialRows } from "@/lib/secondary-materials";
 import { mergeRadarRules } from "@/lib/market-rules";
 import {
-  getAlertRules,
   getItemSellerPrices,
   getItemVendorPrices,
   getLatestRoundItemIds,
@@ -32,7 +30,7 @@ import { MarketTable } from "@/components/market-table";
 import { WatchStar } from "@/components/watch-star";
 import { DealRadarTable } from "@/components/deal-radar-table";
 import { SecondaryMaterialsPanel } from "@/components/secondary-materials-panel";
-import { AddToListButton } from "@/components/add-to-list-button";
+import { CopyListButton } from "@/components/copy-list-button";
 
 import { FavoriteRecipesPanel } from "@/components/favorite-recipes-panel";
 import { InstructionsPanel } from "@/components/instructions-panel";
@@ -43,15 +41,6 @@ import Link from "next/link";
 const DATA_SWITCH_DAY = "2026-10-13";
 
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  // Chinese labels for the alert metrics surfaced on the dashboard; kept in
-  // sync with components/trader-panels.tsx.
-  const alertMetricLabels: Record<string, string> = {
-    price: "最低买入价",
-    minPrice: "最低价",
-    med7: "7日参考",
-    discountPercent: "折扣%",
-    quantity: "在售量"
-  };
   const raw = await searchParams;
   const mode: MarketMode = raw.history === "1" ? "history" : "current";
   const market = raw.market === "neutral" ? "neutral" : "faction";
@@ -60,10 +49,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const historyHref: Route = `/?history=1${marketSuffix}` as Route;
   const marketLabel = market === "neutral" ? "中立" : "联盟";
   const view = parseMarketView(raw);
-  const [{ signals, latestSnapshotAt }, watchedIds, alertRules, latestRound, recipes, vendorPrices, sellerPrices, shoppingLists] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, watchedIds, latestRound, recipes, vendorPrices, sellerPrices, shoppingLists] = await Promise.all([
     getMarketSignals(market, mode),
     getWatchedItemIds(),
-    getAlertRules(),
     // 雷达 universe：该模式最新一轮扫描的在售物品集合。
     getLatestRoundItemIds(mode, market),
     // 关注配方面板展示配方库中被收藏的配方（craft + merchant 全量，
@@ -76,7 +64,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const listOptions = shoppingLists.map((list) => ({ id: list.id, name: list.name }));
   const freshness = describeFreshness(latestSnapshotAt, new Date(), AUCTIONATOR_STALE_MAX_AGE_MS);
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
-  const triggeredAlerts = evaluateAlertRules(alertRules, signals);
   // 雷达阈值：默认常量（market-rules.ts）+ 网页"雷达设置"面板的覆盖
   // （RadarRule 单行，经 /api/radar-rules 读写；mergeRadarRules 合并）。
   const radarRules = mergeRadarRules(await getRadarRules());
@@ -124,7 +111,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <Link href={marketHrefOther} className="flex items-center gap-1 text-terminal-amber hover:underline">{market === "neutral" ? "← 联盟市场" : "中立市场 →"}</Link>
           <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><Hammer size={14} /> 配方库</Link>
           <Link href="/lists" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ShoppingCart size={14} /> 购物清单</Link>
-          <span className="flex items-center gap-1"><Bell size={14} /> 预警就绪</span>
         </div>
       </div>
 
@@ -175,7 +161,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <Panel>
             <PanelHeader title="关注物品" />
             <div className="flex items-center gap-2 border-b border-terminal-border px-3 py-1.5">
-              <AddToListButton items={watchedSignals.map((s) => ({ itemId: s.itemId, name: s.name }))} lists={listOptions} inline />
+              <CopyListButton names={watchedSignals.map((s) => s.name)} listNamePrefix="关注" />
               {watchedSignals.length > 0 && <span className="text-[10px] text-terminal-muted">共 {watchedSignals.length} 项</span>}
             </div>
             <div className="space-y-2 p-3 font-mono text-xs">

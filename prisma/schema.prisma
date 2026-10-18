@@ -29,7 +29,6 @@ model Item {
   snapshots        AuctionSnapshot[]
   dailySummaries   DailySummary[]
   tiers            AuctionTier[]
-  alerts           AlertRule[]
   watchlistEntry   Watchlist?
   createdAt        DateTime          @default(now()) @map("created_at")
   updatedAt        DateTime          @updatedAt @map("updated_at")
@@ -124,19 +123,6 @@ model ShoppingListItem {
 
   @@unique([listId, name])
   @@index([itemId])
-}
-
-model AlertRule {
-  id         String    @id @default(cuid())
-  itemId     Int       @map("item_id")
-  metric     String
-  operator   String
-  threshold  Float
-  enabled    Boolean   @default(true)
-  lastSignal DateTime? @map("last_signal")
-  item       Item      @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
-
-  @@index([enabled])
 }
 
 // Route-2 authority mirror: the in-game options panel owns the deal-radar

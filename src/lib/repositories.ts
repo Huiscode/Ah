@@ -360,11 +360,6 @@ export async function getWatchedItemIds() {
   return new Set(rows.map((row) => row.itemId));
 }
 
-export async function getAlertRules() {
-  return prisma.alertRule.findMany({ orderBy: { itemId: "asc" } });
-}
-
-
 /** 取候选时间戳中最新的一个；剔除 null/undefined（如某市场通道无数据），全空返回 null。 */
 export function pickLatestDate(...candidates: Array<Date | null | undefined>): Date | null {
   const dates = candidates.filter((t): t is Date => t instanceof Date);

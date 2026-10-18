@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { Eye, EyeOff } from "lucide-react";
 import type { SecondaryMaterialRow } from "@/lib/secondary-materials";
@@ -33,6 +34,54 @@ export function SecondaryMaterialsPanel({ rows, prices, floorPrices, turnoverByI
 }) {
   const [open, setOpen] = usePersistedState<boolean>("wah:secondary-materials:open", true);
   const [profession, setProfession] = usePersistedState<string>("wah:secondary-materials:profession", "");
+  // 悬停提示：整行触发（onMouseEnter/Leave）。提示框用 portal 渲染到 body（fixed 定位），
+  // 完全脱离滚动容器——否则提示框溢出容器底部会把内容撑高，7 件也会弹出滚动条。
+  const [hoveredRow, setHoveredRow] = useState<SecondaryMaterialRow | null>(null);
+  const [hoveredRect, setHoveredRect] = useState<DOMRect | null>(null);
+
+  // 提示框内容（制作链路：材料单价/单位成本/税后售价/利润）。固定高度估算用于上下摆放。
+  const TOOLTIP_H = 280;
+  const renderCraftTooltip = (row: SecondaryMaterialRow) => (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-slate-100">制作：{row.craftRecipe.name}</span>
+        <span className="shrink-0 text-terminal-muted">{professionLabel(row.craftRecipe.profession)}</span>
+      </div>
+      {row.producingRecipes > 1 && (
+        <div className="text-[9px] text-terminal-muted">另有 {row.producingRecipes - 1} 个配方可做（按单位成本最低展示）</div>
+      )}
+      {row.craftRecipe.reagents.map((material) => {
+        const unit = prices.get(material.itemId) ?? floorPrices.get(material.itemId);
+        const subtotal = unit === undefined ? undefined : unit * material.quantity;
+        return (
+          <div key={material.itemId} className="flex items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Link href={`/items/${material.itemId}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(material.quality)}`}>{material.name}</Link>
+              <span className="shrink-0 text-terminal-muted">×{material.quantity}</span>
+            </span>
+            <span>
+              {unit === undefined ? "无价" : <><span className="text-terminal-muted">@</span><CopperAmount copper={unit} /></>}
+              {subtotal !== undefined && <span className="ml-1 text-terminal-muted">=<CopperAmount copper={subtotal} />{prices.get(material.itemId) === undefined ? " 保底" : ""}</span>}
+            </span>
+          </div>
+        );
+      })}
+      <div className="my-1 border-t border-terminal-border" />
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-slate-100">单位成本</span>
+        <span><CopperAmount copper={Math.round(row.unitCost)} /></span>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-slate-100">单位售价（税后）</span>
+        <span><CopperAmount copper={Math.round(row.unitPrice * (1 - 0.05))} />{row.priceSource === "vendor" ? " 保底" : ""}</span>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-slate-100">单位利润</span>
+        <span className={row.unitProfit >= 0 ? "text-terminal-green" : "text-terminal-red"}><CopperAmount copper={row.unitProfit} /> {formatPercent(row.marginPercent)}</span>
+      </div>
+      <div className="mt-1 text-[9px] text-terminal-muted">成本按最便宜制作配方摊到 1 单位；售价已含 5% 拍卖税；标"保底"的价格为 NPC 收购价兜底（无实时 AH 价）。</div>
+    </>
+  );
 
   // 按制作配方的专业分组：行已在 lib 里按利润率全局降序，组内保持该顺序；
   // 组间按组内最高利润率从高到低排列。
@@ -102,69 +151,50 @@ export function SecondaryMaterialsPanel({ rows, prices, floorPrices, turnoverByI
             </div>
             <div className="space-y-2 pt-1">
               {groupRows.map((row) => (
-          <div key={row.item.itemId} className="group relative flex items-center justify-between gap-2">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <Link
-                href={`/items/${row.item.itemId}`}
-                target="_blank"
-                data-no-ladder
-                className={`truncate ${qualityColorClassById(row.item.quality)}`}
-              >
-                {row.item.name}
-              </Link>
-              <TurnoverBadge itemId={row.item.itemId} turnoverByItemId={turnoverByItemId} />
-            </span>
-            <span className="flex shrink-0 items-center gap-3">
-              <span className={row.unitProfit >= 0 ? "text-terminal-green" : "text-terminal-red"}><Coins copper={row.unitProfit} /></span>
-              <span className={row.unitProfit >= 0 ? "text-terminal-green" : "text-terminal-red"}>{formatPercent(row.marginPercent)}</span>
-            </span>
-            {/* Hover: cheapest craft chain — per-material cost (AH or floor),
-                unit cost / unit revenue after the AH cut / unit profit */}
-            <div className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-80 whitespace-normal border border-terminal-border bg-terminal-panel p-2 font-mono text-[10px] leading-relaxed text-slate-200 shadow-lg group-hover:block">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">制作：{row.craftRecipe.name}</span>
-                <span className="shrink-0 text-terminal-muted">{professionLabel(row.craftRecipe.profession)}</span>
-              </div>
-              {row.producingRecipes > 1 && (
-                <div className="text-[9px] text-terminal-muted">另有 {row.producingRecipes - 1} 个配方可做（按单位成本最低展示）</div>
-              )}
-              {row.craftRecipe.reagents.map((material) => {
-                const unit = prices.get(material.itemId) ?? floorPrices.get(material.itemId);
-                const subtotal = unit === undefined ? undefined : unit * material.quantity;
-                return (
-                  <div key={material.itemId} className="flex items-center justify-between gap-2">
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <Link href={`/items/${material.itemId}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(material.quality)}`}>{material.name}</Link>
-                      <span className="shrink-0 text-terminal-muted">×{material.quantity}</span>
-                    </span>
-                    <span>
-                      {unit === undefined ? "无价" : <><span className="text-terminal-muted">@</span><CopperAmount copper={unit} /></>}
-                      {subtotal !== undefined && <span className="ml-1 text-terminal-muted">=<CopperAmount copper={subtotal} />{prices.get(material.itemId) === undefined ? " 保底" : ""}</span>}
-                    </span>
-                  </div>
-                );
-              })}
-              <div className="my-1 border-t border-terminal-border" />
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">单位成本</span>
-                <span><CopperAmount copper={Math.round(row.unitCost)} /></span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">单位售价（税后）</span>
-                <span><CopperAmount copper={Math.round(row.unitPrice * (1 - 0.05))} />{row.priceSource === "vendor" ? " 保底" : ""}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-100">单位利润</span>
-                <span className={row.unitProfit >= 0 ? "text-terminal-green" : "text-terminal-red"}><CopperAmount copper={row.unitProfit} /> {formatPercent(row.marginPercent)}</span>
-              </div>
-              <div className="mt-1 text-[9px] text-terminal-muted">成本按最便宜制作配方摊到 1 单位；售价已含 5% 拍卖税；标"保底"的价格为 NPC 收购价兜底（无实时 AH 价）。</div>
-            </div>
-          </div>
+                <div
+                  key={row.item.itemId}
+                  onMouseEnter={(event) => {
+                    setHoveredRow(row);
+                    setHoveredRect(event.currentTarget.getBoundingClientRect());
+                  }}
+                  onMouseLeave={() => setHoveredRow((r) => (r?.item.itemId === row.item.itemId ? null : r))}
+                  className="relative flex w-full items-center justify-between gap-2"
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <Link
+                      href={`/items/${row.item.itemId}`}
+                      target="_blank"
+                      data-no-ladder
+                      className={`truncate ${qualityColorClassById(row.item.quality)}`}
+                    >
+                      {row.item.name}
+                    </Link>
+                    <TurnoverBadge itemId={row.item.itemId} turnoverByItemId={turnoverByItemId} />
+                  </span>
+                  <span className="flex shrink-0 items-center gap-3">
+                    <span className={row.unitProfit >= 0 ? "text-terminal-green" : "text-terminal-red"}><Coins copper={row.unitProfit} /></span>
+                    <span className={row.unitProfit >= 0 ? "text-terminal-green" : "text-terminal-red"}>{formatPercent(row.marginPercent)}</span>
+                  </span>
+                </div>
               ))}
             </div>
           </div>
         ))}
       </div>
+      {hoveredRow && hoveredRect && createPortal(
+        <div
+          className="pointer-events-none fixed z-50 w-80 whitespace-normal border border-terminal-border bg-terminal-panel p-2 font-mono text-[10px] leading-relaxed text-slate-200 shadow-lg"
+          style={{
+            top: hoveredRect.bottom + 4 + TOOLTIP_H > (typeof window !== "undefined" ? window.innerHeight : 900)
+              ? Math.max(8, hoveredRect.top - TOOLTIP_H)
+              : hoveredRect.bottom + 4,
+            left: Math.min(hoveredRect.left, (typeof window !== "undefined" ? window.innerWidth : 1200) - 340),
+          }}
+        >
+          {renderCraftTooltip(hoveredRow)}
+        </div>,
+        document.body
+      )}
     </Panel>
   );
 }

@@ -58,7 +58,10 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
   // 在售量下限：quantity（总在售量）≥ 设置值。
   if (minQuantity > 0) rows = rows.filter((deal) => deal.quantity >= minQuantity);
 
-  // 价格档位差距：市场价 vs 最低价的差距 % ≥ 设置值（近似口径，见 tierGapByItemId）。
+  // 价格档位差距：前五档（不足五档用实际档位）中任意两档的差距 % ≥ 设置值。
+  // tierGapByItemId 只含"≥2 档且有正差距"的物品（getPriceTierGaps 已跳过单档/无档位），
+  // 因此这里：无档位数据或只有一档的物品 gap === undefined → 过滤；档位不足五档时
+  // 用实际档位算（gap = 最高档−最低档 / 最低档）。
   if (minTierGap > 0) {
     rows = rows.filter((deal) => {
       const gap = tierGapByItemId?.get(deal.itemId);
