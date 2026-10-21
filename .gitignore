@@ -49,5 +49,9 @@ scripts/.vendor-forever-fix-progress.json
 scripts/.m1b-progress.json
 scripts/.sync-last.json
 
+# ilvl 回填断点进度 + 日志（backfill-item-level.ts 运行时状态，勿入库）
+scripts/.ilvl-progress.json
+scripts/backfill-item-level.log
+
 # lark-cli 草稿工作区（临时，勿入库）
 draft_*_folder/

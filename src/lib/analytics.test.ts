@@ -10,7 +10,7 @@ const now = new Date("2026-07-24T12:00:00Z");
 // 按当日快照振幅）。med7/环比都从 daily 计算（与生产一致）。
 function history(
   snapshots: Array<{ daysAgo: number; marketPrice: number; minPrice?: number; quantity?: number; numAuctions?: number }>,
-  overrides?: { vendorPrice?: number; itemId?: number; name?: string; sellPrice?: number; turnoverScore?: number; isVendorItem?: boolean }
+  overrides?: { vendorPrice?: number; itemId?: number; name?: string; sellPrice?: number; turnoverScore?: number; isVendorItem?: boolean; itemLevel?: number }
 ) {
   const source = "auctionator";
   return {
@@ -21,6 +21,7 @@ function history(
     subCategory: "采矿",
     vendorPrice: overrides?.vendorPrice ?? 0,
     sellPrice: overrides?.sellPrice ?? 0,
+    itemLevel: overrides?.itemLevel ?? 0,
     icon: null,
     turnoverScore: overrides?.turnoverScore ?? 0,
     isVendorItem: overrides?.isVendorItem ?? false,

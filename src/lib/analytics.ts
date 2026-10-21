@@ -4,13 +4,15 @@
 // source channel — never a blend of the legacy addon P10 and the new
 // auctionator lowest-buy channel.
 import type { MarketHistory, SnapshotSource } from "@/lib/market-data";
-import { dealRadarRules, spreadRules, moverRules, AH_CUT, type DealRadarRules, type SpreadRules, type MoverRules } from "@/lib/market-rules";
+import { dealRadarRules, spreadRules, moverRules, disenchantRules, AH_CUT, type DealRadarRules, type SpreadRules, type MoverRules, type DisenchantRules } from "@/lib/market-rules";
+import { findDisenchantBand, equipKind, DISENCHANT_MAT_NAMES } from "@/lib/disenchant-table";
 import { isStale } from "@/lib/freshness";
 
 export type MarketSignal = {
   itemId: number;
   name: string;
   category: string;
+  subCategory?: string;
   quality: string;
   icon?: string | null; // in-game icon texture name, when known
   source?: SnapshotSource; // channel of the latest snapshot; "auctionator" is produced now
@@ -19,6 +21,7 @@ export type MarketSignal = {
   quantity: number; // latest scan's listed quantity (supply, NOT sales)
   numAuctions: number; // Auctionator 无挂单数 → 恒 0，仅保留字段兼容旧数据
   vendorPrice: number; // NPC sell price, copper; 0 = unsellable
+  itemLevel?: number; // 物品等级（分解分段用）；0/缺省 = 未补抓
   med7: number; // 7-day median of DailySummary closes, SAME source only
   med7Samples: number; // same-source days inside the 7d window backing med7
   med7Distinct: number; // distinct closes in that window; 1 = flat series
@@ -109,6 +112,7 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
       itemId: item.itemId,
       name: item.name,
       category: item.category,
+      subCategory: item.subCategory ?? undefined,
       quality: item.quality,
       icon: item.icon,
       source: "addon",
@@ -117,6 +121,7 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
       quantity: latest.quantity,
       numAuctions: latest.numAuctions,
       vendorPrice: item.vendorPrice,
+      itemLevel: item.itemLevel ?? 0,
       med7,
       med7Samples,
       med7Distinct,
@@ -159,6 +164,7 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
     itemId: item.itemId,
     name: item.name,
     category: item.category,
+    subCategory: item.subCategory ?? undefined,
     quality: item.quality,
     icon: item.icon,
     source,
@@ -167,6 +173,7 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
     quantity: latest.quantity,
     numAuctions: latest.numAuctions,
     vendorPrice: item.vendorPrice,
+    itemLevel: item.itemLevel ?? 0,
     med7,
     med7Samples,
     med7Distinct,
@@ -422,4 +429,134 @@ export function buildWeekdaySeasonality(
       listedShare: totalListed === 0 ? 0 : (bucket.listed / totalListed) * 100,
       sampleCount: bucket.closes.length
     }));
+}
+
+// ---- 分解榜：买绿/蓝装 → 分解 → 材料挂 AH 的套利评估 ----
+
+export type DisenchantMatLine = {
+  matItemId: number;
+  matName: string;
+  chance: number;   // 概率 %
+  qty: number;      // 该概率下数量
+  matPrice: number; // 材料 AH 当前单价（铜），0 = 无价
+  expected: number; // chance/100 × qty × matPrice（铜，毛贡献）
+  priced: boolean;   // 材料是否有 AH 价
+  breakEvenQty: number | null; // 单靠该材料回本需出个数（扣5%手续费，向上取整）；无价=null
+};
+
+export type DisenchantRow = {
+  itemId: number;
+  name: string;
+  quality: string;
+  category: string;
+  subCategory?: string;
+  icon?: string | null;
+  itemLevel: number;
+  bandLabel: string;          // 如 绿·护甲·26-30
+  buyPrice: number;          // 装备当前最低买入价（铜）
+  expectedValue: number;     // 毛期望分解值（扣手续费前，铜）
+  disenchantNet: number;     // 分解到手(×(1−AH_CUT)) − 买入价
+  vendorNet: number;         // 卖店回收 − 买入价（兜底参照，无手续费）
+  bestNet: number;           // max(分解净, 卖店净)
+  quantity: number;
+  hasMissingMatPrice: boolean;
+  mats: DisenchantMatLine[];
+};
+
+const QUALITY_LABEL: Record<string, string> = { uncommon: "绿", rare: "蓝" };
+const EQUIP_LABEL: Record<string, string> = { armor: "护甲", weapon: "武器" };
+
+// materialPrices: 材料最新单价（铜）Map；matNames: 材料名 Map（页面从 universe 构建，
+// 缺名回退内置经典中文名）。材料无价 → 贡献按 0 并标记，不直接剔除（避免漏看高段机会）。
+export function buildDisenchantBoard(
+  signals: MarketSignal[],
+  materialPrices: Map<number, number>,
+  matNames: Map<number, string>,
+  rules: DisenchantRules = disenchantRules,
+  now: Date = new Date()
+): DisenchantRow[] {
+  const out: DisenchantRow[] = [];
+  for (const signal of signals) {
+    if (signal.isVendorItem) continue;
+    if (isStale(signal.latestAt, now, rules.staleWindowMs)) continue;
+    if (signal.price <= 0) continue;
+    if (signal.quantity < rules.minQuantity) continue;
+    if (signal.quality !== "uncommon" && signal.quality !== "rare") continue;
+    const equip = equipKind(signal.category, signal.subCategory);
+    if (!equip) continue;
+    if ((signal.itemLevel ?? 0) <= 0) continue; // 未补抓 ilvl，无法分段，跳过
+    const ilvl = signal.itemLevel ?? 0;
+    const band = findDisenchantBand(signal.quality, equip, ilvl);
+    if (!band) continue; // 超出经典 1-65 表覆盖，跳过
+
+    let expectedValue = 0;
+    let hasMissingMatPrice = false;
+    const mats: DisenchantMatLine[] = band.outcomes.map((o) => {
+      const matPrice = materialPrices.get(o.matItemId) ?? 0;
+      const priced = matPrice > 0;
+      if (!priced) hasMissingMatPrice = true;
+      const expected = (o.chance / 100) * o.qty * matPrice;
+      expectedValue += expected;
+      // 单靠该材料回本需出个数 = 买入价 ÷（材料到手单价 matPrice×(1−AH_CUT)），向上取整；无价=null
+      const breakEvenQty = priced
+        ? Math.ceil(signal.price / (matPrice * (1 - AH_CUT)))
+        : null;
+      return {
+        matItemId: o.matItemId,
+        matName: matNames.get(o.matItemId) ?? DISENCHANT_MAT_NAMES[o.matItemId] ?? `材料#${o.matItemId}`,
+        chance: o.chance,
+        qty: o.qty,
+        matPrice,
+        expected,
+        priced,
+        breakEvenQty
+      };
+    });
+
+    const disenchantGross = expectedValue * (1 - AH_CUT);
+    const disenchantNet = disenchantGross - signal.price;
+    const vendorNet = signal.vendorPrice - signal.price;
+    const bestNet = Math.max(disenchantNet, vendorNet);
+    if (disenchantNet < rules.minNetProfit) continue;
+
+    out.push({
+      itemId: signal.itemId,
+      name: signal.name,
+      quality: signal.quality,
+      category: signal.category,
+      subCategory: signal.subCategory,
+      icon: signal.icon,
+      itemLevel: ilvl,
+      bandLabel: `${QUALITY_LABEL[signal.quality]}·${EQUIP_LABEL[equip]}·${band.ilvlLow}-${band.ilvlHigh}`,
+      buyPrice: signal.price,
+      expectedValue,
+      disenchantNet,
+      vendorNet,
+      bestNet,
+      quantity: signal.quantity,
+      hasMissingMatPrice,
+      mats
+    });
+  }
+  // 净赚高的在前；同分按在售量。卖店兜底更好但分解为负时也列出（bestNet 排序）。
+  return out.sort((left, right) => {
+    if (right.bestNet !== left.bestNet) return right.bestNet - left.bestNet;
+    return right.quantity - left.quantity;
+  });
+}
+
+// 实际分解记账：实填材料数量 × 材料现价 = 毛额；扣 5% 手续费为到手；到手 − 买入价 = 实际净赚。
+export type LedgerMat = { matItemId: number; matPrice: number; priced: boolean };
+export function computeDisenchantLedger(
+  mats: LedgerMat[],
+  qty: Record<number, number>,
+  buyPrice: number
+): { gross: number; afterCut: number; net: number } {
+  let gross = 0;
+  for (const m of mats) {
+    const n = qty[m.matItemId] ?? 0;
+    if (m.priced && Number.isFinite(n) && n > 0) gross += n * m.matPrice;
+  }
+  const afterCut = gross * (1 - AH_CUT);
+  return { gross, afterCut, net: afterCut - buyPrice };
 }

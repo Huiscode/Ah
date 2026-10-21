@@ -90,3 +90,16 @@ export const moverRules: MoverRules = {
   minQuantity: 1,
   staleWindowMs: 7 * 24 * 60 * 60 * 1000
 };
+
+// 分解榜（buildDisenchantBoard）阈值：买绿/蓝装 → 分解 → 材料挂 AH 的套利评估。
+export type DisenchantRules = {
+  minQuantity: number;     // 在售量下限：至少 N 件可买
+  minNetProfit: number;   // 分解净赚下限（铜）；0 = 不过滤，全部列出按净赚降序
+  staleWindowMs: number;  // 新鲜度窗口（与其他榜一致，手动扫描默认 7 天）
+};
+
+export const disenchantRules: DisenchantRules = {
+  minQuantity: 1,
+  minNetProfit: 0,
+  staleWindowMs: 7 * 24 * 60 * 60 * 1000
+};

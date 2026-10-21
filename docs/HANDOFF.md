@@ -1,7 +1,7 @@
 # AH 项目交接文件（HANDOFF・v4.2 精简版）
 
 > **新 AI 接手流程**：先读 `docs/PRODUCT.md`（产品全貌/架构/口径/血泪结论）→ 再读本文件（当前状态/待办/坑/纪律）。
-> 最后更新：2026-10-19（主页机会总览改造落地：三榜页签 + 7 日带区间列，tsc+174 测试通过，已 commit+push）。
+> 最后更新：2026-10-21（机会总览新增第 4 榜「分解」：买绿/蓝装→分解→材料挂 AH 期望套利；tsc 干净 + 180 测试通过；未 commit/push，等用户说推）。
 
 ## 1. 一句话现状
 
@@ -48,6 +48,7 @@
 14. **复制清单唯一名（2026-10-17）**：复制按钮清单名 = `捡漏` + 月日时分（如 `捡漏10161530`，`copy-list-button.tsx uniqueListName()`）——每次复制独立清单名，游戏内导入**不覆盖旧清单**；超 100 条仍截断（无限版解析过多会 Lua 错误风暴）
 15. **购物清单"无结果条目"默认开启（2026-10-17）**：插件 `Config/Main.lua` `SHOPPING_LIST_MISSING_TERMS = true`（用户存档无该键，默认值直接生效）——扫描购物清单时无货物品显示 ×0 占位行，不再静默消失。**草药清单口径**：`草药清单.txt`（根目录）为**游戏内真实数据库** 41 个草药（category=商品 且 subCategory=草药，含经典 26+ 无限新增 15，排除草药袋/草药包）；**Foreverchange 站点"草药"子类仅 17 个**（高等级经典草药如黑莲花/山鼠草/梦叶草等不在站点草药分类——站点数据未揭示/分类差异），**导入用数据库版更全**
 16. **主页机会总览（2026-10-19）**：左列"捡漏雷达"升级为三榜页签（捡漏 / 可做差价 / 异动），共用左列区域；市场监控表加"区间"列（7 日带：买入区/卖出区/均衡），雷达行不加区间徽章（保持对齐）。数据层：`MarketSignal` 新增 `bandLow/bandHigh/volatilityRatio/zone`（`computeBand`，近 7 日同源每日收盘 min/max，7 点近似 P10/P90，样本<2 或平坦 → zone=none）；新增 `buildSpreadCandidates`（起伏比 ≥15% + 流通分 ≥1 + 在售量 ≥3 + 有波动带，综合分=起伏比×(1+流通分)）与 `buildMoverBoard`（|环比%| ≥20% 且 在售量 ≥1，大跌=买点/大涨=卖点），门槛在 `market-rules.ts` `spreadRules/moverRules`（可调）。**流通分 = 下游配方数（turnoverScore）**，项目早已内置，用户口径已拍板采纳。UI：`opportunity-tabs.tsx`（页签 + 复制/设置/计数合一，设置按钮仅捡漏 tab 显示）、`spread-candidates-table.tsx`、`mover-board-table.tsx`、`market-table.tsx` 区间列；扫描建议提示条原为页头整行，用户要求后并入"机会总览"标题旁。tsc 干净 + 174 测试通过（新增 9 个）。**开服初期差价/异动榜为空是预期**（需 2+ 天历史；异动还需前一日数据）
+17. **分解榜（2026-10-21，第 4 个页签，异动右侧）**：买绿(uncommon)/蓝(rare)护甲·武器 → 分解 → 材料挂 AH 的期望套利。`Item` 加 `item_level` 列（`prisma db push`，无 migrations 目录）；`scripts/backfill-item-level.ts` 翻 foreverchanges 列表页 `/zh-cn/items/list/N`（共 21 页，2s/页 + 403 退避 + `.ilvl-progress.json` 断点续跑，环境变量 `ILVL_MAX_PAGES`/`ILVL_INTERVAL_MS`）批量回填 ilvl，幂等。分解表 `src/lib/disenchant-table.ts`（经典 1-65 绿/蓝×护甲/武器固定概率，仅绿蓝；Forever 新装备按同段估算）；`equipKind(category, subCategory)` 兼容 DB 两套写法：聚合类 护甲/武器 + 部位细分（头部/胸部/腿部/手腕/手部/肩部/背部/颈部/饰品/单手/双手/远程/投掷，subCategory 甲种/武器种类兜底），配方/材料/消耗品/背包/弹药/圣物/任务不收；`buildDisenchantBoard`（analytics.ts）：期望分解值=Σ(概率%×数量×材料现价)，分解净赚=期望×(1−AH_CUT 0.05)−买入价，vendorNet=卖店回收−买入价兜底，bestNet 降序；每种材料附"保本 N 个"= 单靠该材料回本需出个数 ceil(买入价/(材料现价×0.95))，无价不显示；行内「记账」（`computeDisenchantLedger`，analytics.ts）：点"记账（填实际产出）"展开，按该分段材料填实际数量，算毛额/扣5%到手/实际净赚(到手−买入价，绿赚红亏)对比买入价；材料无价按 0 标"含缺价材料"，ilvl=0/超段跳过。UI `disenchant-table.tsx`（每行抽 DisenchantRowRow 子组件持记账 state）+ opportunity-tabs 第 4 tab。门槛 `disenchantRules`（minQuantity 1 / minNetProfit 0 / stale 7 天）。tsc 干净 + 184 测试通过（新增 9 个）。**站点不公布逐件分解产出，经典表为估算；站点未收录的旧库占位装备 ilvl=0 自动跳过**
 
 ## 5. 待办 / 未完成
 
@@ -57,7 +58,7 @@
 - **转录全量重扫**（可选）：用户现已走 Auctionator 扫描 + watch 导入，转录（/wahscan）为可选补充
 - **锻造 5 条高级护腕设计图**缺同名 craft 成品配方（军官/哨兵/守望者/督军/裁决者护腕，可后续补抓）
 - **POSTING_HISTORY**：当前为空，`PostingRecord` 表已建、解析口子就绪
-- **公测清空运行时数据**：由用户通知触发（SQLite + SavedVariables + 导入进度；代码/git 保留）
+- **公测清空运行时数据**：由用户通知触发（SQLite + SavedVariables + 导入进度；代码/git 保留）；清空后需重跑 `npx tsx scripts/backfill-item-level.ts` 重建 `item_level`（分解榜依赖），并删 `scripts/.ilvl-progress.json` 从头抓
 
 ## 6. 已知坑 / 机制限制（重点）
 
@@ -68,7 +69,7 @@
 - **taint 纪律**：EventBus 回调链内严禁 AddMessage/ReloadUI；只做纯赋值；操作全在独立 OnUpdate 帧
 - **slash 命令黄字**（/auc、/wahvendor）：无限版对插件 slash 命令的通用警告，不影响功能（`ReloadUI` 移除后自动重载不再产生新黄字）
 - **scriptErrors**：`/console scriptErrors 0` 会话级；游戏内显式执行；Config.wtf 会被游戏覆盖
-- **Prisma DLL 锁**：后台 audit 占用时 build 的 prisma generate EPERM → 先停 audit 再 build
+- **Prisma DLL 锁**：后台 audit / next dev / watch 占用时 `prisma generate` 替换 `query_engine-windows.dll.node` 报 EPERM → 先停占用进程再 generate；`db push` 建列不受影响，TS client 类型通常已刷新，仅二进制 engine 替换失败，运行时不报错
 - **Next 旧 chunk 残留**（单页 500）：删 `.next` 全量重建
 - **foreverchanges.pro 限流**：批量抓 403 → 限速 2.5s+ 退避
 - **fengari 解析**：需 `to_luastring`；`lua_tostring` 返回 Uint8Array（用 `lua_tojsstring`）；字符串 "2589" 与数字 2589 是不同键
@@ -93,6 +94,7 @@ npx tsc --noEmit && npx vitest run   # 类型+测试
 npm run watch                        # 常驻自动导入（唯一同步入口）
 npm run auctionator:import           # 双槽导入（联盟+中立）
 npm run transcript:import / vendor:import
+npx tsx scripts/backfill-item-level.ts   # 回填 Item.item_level（分解榜用；公测清空后重跑，先删 .ilvl-progress.json）
 # 改插件：改 addon-auctionator\ → lua-syntax-check → robocopy /E 同步 → 用户 /reload
 ```
 

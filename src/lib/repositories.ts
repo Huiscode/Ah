@@ -19,6 +19,7 @@ type ItemRaw = {
   icon: string | null;
   vendor_price: number;
   sell_price: number;
+  item_level: number;
   turnover_score: number;
   is_vendor_item: number;
   created_at: number | string | Date;
@@ -284,6 +285,7 @@ export async function getMarketUniverse(market: string = "faction", mode: Market
     icon: i.icon,
     vendorPrice: toNumber(i.vendor_price),
     sellPrice: toNumber(i.sell_price),
+    itemLevel: toNumber(i.item_level),
     turnoverScore: toNumber(i.turnover_score),
     isVendorItem: Boolean(i.is_vendor_item),
     createdAt: toDate(i.created_at),

@@ -1,6 +1,6 @@
 import { Hammer, RadioTower, ShoppingCart, Star } from "lucide-react";
 import type { Route } from "next";
-import { buildDealRadar, buildMoverBoard, buildSpreadCandidates } from "@/lib/analytics";
+import { buildDealRadar, buildMoverBoard, buildSpreadCandidates, buildDisenchantBoard } from "@/lib/analytics";
 import { buildRecipeFloors, computeRecipeProfits } from "@/lib/recipe-profits";
 import { buildSecondaryMaterialRows } from "@/lib/secondary-materials";
 import { mergeRadarRules } from "@/lib/market-rules";
@@ -54,9 +54,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const server = parseServer(raw.server);
   const marketLabel = market === "neutral" ? "中立" : "联盟";
   const serverLabel = SERVER_LABELS[server] ?? server;
-  const marketHrefOther: Route = qs({ market: market === "neutral" ? undefined : "neutral", history: mode === "history" ? "1" : undefined, server: server === "cn" ? "cn" : undefined }) as Route;
-  const historyHref: Route = qs({ history: mode === "history" ? undefined : "1", market: market === "neutral" ? "neutral" : undefined, server: server === "cn" ? "cn" : undefined }) as Route;
-  const serverHrefOther: Route = qs({ server: server === "cn" ? undefined : "cn", market: market === "neutral" ? "neutral" : undefined, history: mode === "history" ? "1" : undefined }) as Route;
+  // 切回默认视图时 qs 会全空（空 href 点击等于刷新当前页，跳不回去）→ 空串回退根路径 "/"。
+  const marketHrefOther: Route = (qs({ market: market === "neutral" ? undefined : "neutral", history: mode === "history" ? "1" : undefined, server: server === "cn" ? "cn" : undefined }) || "/") as Route;
+  const historyHref: Route = (qs({ history: mode === "history" ? undefined : "1", market: market === "neutral" ? "neutral" : undefined, server: server === "cn" ? "cn" : undefined }) || "/") as Route;
+  const serverHrefOther: Route = (qs({ server: server === "cn" ? undefined : "cn", market: market === "neutral" ? "neutral" : undefined, history: mode === "history" ? "1" : undefined }) || "/") as Route;
   const itemServerQ = server === "cn" ? "?server=cn" : "";
   const view = parseMarketView(raw);
   const [{ signals, latestSnapshotAt }, watchedIds, latestRound, recipes, vendorPrices, sellerPrices, shoppingLists] = await Promise.all([
@@ -90,6 +91,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const radarCategories = groupedCategoryOptions(Array.from(new Set(deals.map((deal) => deal.category))));
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
   const turnoverByItemId = new Map(signals.map((signal) => [signal.itemId, signal.turnoverScore]));
+  // 分解榜：买绿/蓝装 → 分解 → 材料挂 AH 的期望套利；材料价取在售信号，缺价按 0 标注。
+  const matNameByItemId = new Map(signals.map((signal) => [signal.itemId, signal.name]));
+  const allDisenchant = buildDisenchantBoard(signals, priceByItemId, matNameByItemId);
+  const disenchant = latestRound === null ? allDisenchant : allDisenchant.filter((row) => latestRound.has(row.itemId));
   // P0-B: full-recipe profit library. Revenue side = live AH price (自扫P10
   // → 网站P50 per signal) or the vendor floor when the market has no listing;
   // cost floor prefers the NPC sell price (Item.sellPrice, in-game merchant
@@ -158,6 +163,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 deals={deals}
                 spreads={spreads}
                 movers={movers}
+                disenchant={disenchant}
                 prices={priceByItemId}
                 radarCategories={radarCategories}
                 watchedItemIds={Array.from(watchedIds)}
