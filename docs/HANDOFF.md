@@ -1,7 +1,7 @@
 # AH 项目交接文件（HANDOFF・v4.2 精简版）
 
 > **新 AI 接手流程**：先读 `docs/PRODUCT.md`（产品全貌/架构/口径/血泪结论）→ 再读本文件（当前状态/待办/坑/纪律）。
-> 最后更新：2026-10-21（机会总览新增第 4 榜「分解」：买绿/蓝装→分解→材料挂 AH 期望套利；tsc 干净 + 180 测试通过；未 commit/push，等用户说推）。
+> 最后更新：2026-10-21（独立「分解计算器」页 `/tools/disenchant-calc`：批量件数×单件、价格统一 g/s/c 输入，同处对比毛额/扣5%到手/总买入/实际净赚；tsc 干净 + 全量测试通过；未 commit/push，等用户说推）。
 
 ## 1. 一句话现状
 
@@ -49,6 +49,10 @@
 15. **购物清单"无结果条目"默认开启（2026-10-17）**：插件 `Config/Main.lua` `SHOPPING_LIST_MISSING_TERMS = true`（用户存档无该键，默认值直接生效）——扫描购物清单时无货物品显示 ×0 占位行，不再静默消失。**草药清单口径**：`草药清单.txt`（根目录）为**游戏内真实数据库** 41 个草药（category=商品 且 subCategory=草药，含经典 26+ 无限新增 15，排除草药袋/草药包）；**Foreverchange 站点"草药"子类仅 17 个**（高等级经典草药如黑莲花/山鼠草/梦叶草等不在站点草药分类——站点数据未揭示/分类差异），**导入用数据库版更全**
 16. **主页机会总览（2026-10-19）**：左列"捡漏雷达"升级为三榜页签（捡漏 / 可做差价 / 异动），共用左列区域；市场监控表加"区间"列（7 日带：买入区/卖出区/均衡），雷达行不加区间徽章（保持对齐）。数据层：`MarketSignal` 新增 `bandLow/bandHigh/volatilityRatio/zone`（`computeBand`，近 7 日同源每日收盘 min/max，7 点近似 P10/P90，样本<2 或平坦 → zone=none）；新增 `buildSpreadCandidates`（起伏比 ≥15% + 流通分 ≥1 + 在售量 ≥3 + 有波动带，综合分=起伏比×(1+流通分)）与 `buildMoverBoard`（|环比%| ≥20% 且 在售量 ≥1，大跌=买点/大涨=卖点），门槛在 `market-rules.ts` `spreadRules/moverRules`（可调）。**流通分 = 下游配方数（turnoverScore）**，项目早已内置，用户口径已拍板采纳。UI：`opportunity-tabs.tsx`（页签 + 复制/设置/计数合一，设置按钮仅捡漏 tab 显示）、`spread-candidates-table.tsx`、`mover-board-table.tsx`、`market-table.tsx` 区间列；扫描建议提示条原为页头整行，用户要求后并入"机会总览"标题旁。tsc 干净 + 174 测试通过（新增 9 个）。**开服初期差价/异动榜为空是预期**（需 2+ 天历史；异动还需前一日数据）
 17. **分解榜（2026-10-21，第 4 个页签，异动右侧）**：买绿(uncommon)/蓝(rare)护甲·武器 → 分解 → 材料挂 AH 的期望套利。`Item` 加 `item_level` 列（`prisma db push`，无 migrations 目录）；`scripts/backfill-item-level.ts` 翻 foreverchanges 列表页 `/zh-cn/items/list/N`（共 21 页，2s/页 + 403 退避 + `.ilvl-progress.json` 断点续跑，环境变量 `ILVL_MAX_PAGES`/`ILVL_INTERVAL_MS`）批量回填 ilvl，幂等。分解表 `src/lib/disenchant-table.ts`（经典 1-65 绿/蓝×护甲/武器固定概率，仅绿蓝；Forever 新装备按同段估算）；`equipKind(category, subCategory)` 兼容 DB 两套写法：聚合类 护甲/武器 + 部位细分（头部/胸部/腿部/手腕/手部/肩部/背部/颈部/饰品/单手/双手/远程/投掷，subCategory 甲种/武器种类兜底），配方/材料/消耗品/背包/弹药/圣物/任务不收；`buildDisenchantBoard`（analytics.ts）：期望分解值=Σ(概率%×数量×材料现价)，分解净赚=期望×(1−AH_CUT 0.05)−买入价，vendorNet=卖店回收−买入价兜底，bestNet 降序；每种材料附"保本 N 个"= 单靠该材料回本需出个数 ceil(买入价/(材料现价×0.95))，无价不显示；行内「记账」（`computeDisenchantLedger`，analytics.ts）：点"记账（填实际产出）"展开，按该分段材料填实际数量，算毛额/扣5%到手/实际净赚(到手−买入价，绿赚红亏)对比买入价；材料无价按 0 标"含缺价材料"，ilvl=0/超段跳过。UI `disenchant-table.tsx`（每行抽 DisenchantRowRow 子组件持记账 state）+ opportunity-tabs 第 4 tab。门槛 `disenchantRules`（minQuantity 1 / minNetProfit 0 / stale 7 天）。tsc 干净 + 184 测试通过（新增 9 个）。**站点不公布逐件分解产出，经典表为估算；站点未收录的旧库占位装备 ilvl=0 自动跳过**
+
+18. **独立分解计算器（2026-10-21，`/tools/disenchant-calc`，主页"分解计算器"链接新开独立页，FlaskConical 图标）**：与第17条分解榜"行内记账"区分——记账绑定某件出榜装备；计算器不绑榜单、自由算账。客户端组件 `src/components/disenchant-calculator.tsx`：材料区下拉选经典 23 种附魔材料（`DISENCHANT_MAT_NAMES`，自动带本服 AH 现价）填实际数量可多行，无价材料 g/s/c 手填参考单价；**买入区批量**：每行「装备名 + 件数 + 单件 g/s/c 价」，同名几十/几百件只填一行，总买入=Σ(件数×单件)，不逐件加；**所有价格输入统一 g/s/c（1金=100银=10000铜，`gscToCopper`），不直接填铜**；四格对比材料毛额/扣5%到手/总买入/实际净赚（到手−总买入，绿赚红亏）。纯函数 `computeCalcSummary(materials, buys)`（analytics.ts，买入行 {count, unit}，AH_CUT=0.05，与记账同口径）。服务端页 `src/app/tools/disenchant-calc/page.tsx`：parseServer + getMarketSignals("faction","current",server) 建 priceByItemId，支持 ?server= 切换，无价/无数据时提示可手填。单测 2 个（`disenchant.test.ts`，含批量件数×单件）。插件端(Lua)技术可做速算但暂不实现，逻辑只在网页。
+
+19. **分解榜主档保本硬门槛（2026-10-21 修订，叠加在第17条之上）**：原仅按期望净赚/`minNetProfit` 入选，会把"主档(约75%)亏本、靠小概率精华/碎片拉高平均"的抽奖型装备选进来。现 `buildDisenchantBoard` 加硬门槛：**主档=同材料合计概率最高的一组**（绿护甲=尘档、绿武器=精华档、蓝装100%单结果），**主档较好结果=该组数量最大一档**；要求 mainBestTake=qty×材料现价×(1−AH_CUT) ≥ signal.price 才入选，否则 `continue` 直接过滤（不折叠、无价主档到手=0 也滤）。第一档（数量较小主档）不强求保本。Row 新增 `mainBestLabel`(材料×qty)/`mainBestTake`/`mainBestNet`，UI `disenchant-table.tsx` 净赚列绿色一行"主档{label}到手"，空态文案改为"只收录主档较好结果到手≥买入，抽奖型直接过滤"。原 `minNetProfit` 期望门槛保留为双保险。`disenchant.test.ts` 3 个旧用例改写（无价被滤、卖店兜底改有价主档通过、无价材料breakEvenQty混入通过件）+ 新增主档门槛用例，共 13 个；全量 187 测试过、tsc 干净、首页 HTTP200。当前 eu/faction 实时价下门槛后仅 1 件入选（山地皮手套4247 主档尘×2到手1708≥买入1500，主档净+208，期望净+1087 含小概率高档）。
 
 ## 5. 待办 / 未完成
 

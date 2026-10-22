@@ -460,6 +460,9 @@ export type DisenchantRow = {
   bestNet: number;           // max(分解净, 卖店净)
   quantity: number;
   hasMissingMatPrice: boolean;
+  mainBestLabel: string;      // 主档较好结果，如 "灵魂之尘×2"（同材料合计概率最高组里数量最大一档）
+  mainBestTake: number;       // 该档到手 = qty×材料现价×(1−AH_CUT)（铜）
+  mainBestNet: number;        // 该档到手 − 买入价（铜）；入选硬门槛 = mainBestTake ≥ 买入价
   mats: DisenchantMatLine[];
 };
 
@@ -513,6 +516,26 @@ export function buildDisenchantBoard(
       };
     });
 
+    // 主档：同材料合计概率最高的一组（绿装即最常见的尘/精华档，合计约75%）；
+    // 主档较好结果 = 该材料下数量最大的一档（如 26-30护甲的 灵魂之尘×2）。
+    // 入选硬门槛：这一档到手 ≥ 买入价（保本有赚）；第一档（数量较小的主档）不强求。
+    // 只靠小概率精华/碎片拉高期望、主档较好结果也不保本的"抽奖型"直接过滤。
+    const chanceSum = new Map<number, number>();
+    for (const o of band.outcomes) chanceSum.set(o.matItemId, (chanceSum.get(o.matItemId) ?? 0) + o.chance);
+    let mainMatId = -1;
+    let mainChance = -1;
+    for (const [id, c] of chanceSum) {
+      if (c > mainChance) { mainChance = c; mainMatId = id; }
+    }
+    let mainBestQty = 0;
+    for (const o of band.outcomes) {
+      if (o.matItemId === mainMatId && o.qty > mainBestQty) mainBestQty = o.qty;
+    }
+    const mainMatPrice = materialPrices.get(mainMatId) ?? 0;
+    const mainBestTake = mainBestQty * mainMatPrice * (1 - AH_CUT);
+    const mainBestNet = mainBestTake - signal.price;
+    if (mainBestTake < signal.price) continue; // 主档较好结果都不保本 → 直接过滤
+
     const disenchantGross = expectedValue * (1 - AH_CUT);
     const disenchantNet = disenchantGross - signal.price;
     const vendorNet = signal.vendorPrice - signal.price;
@@ -535,6 +558,9 @@ export function buildDisenchantBoard(
       bestNet,
       quantity: signal.quantity,
       hasMissingMatPrice,
+      mainBestLabel: `${matNames.get(mainMatId) ?? DISENCHANT_MAT_NAMES[mainMatId] ?? `材料#${mainMatId}`}×${mainBestQty}`,
+      mainBestTake,
+      mainBestNet,
       mats
     });
   }
@@ -559,4 +585,25 @@ export function computeDisenchantLedger(
   }
   const afterCut = gross * (1 - AH_CUT);
   return { gross, afterCut, net: afterCut - buyPrice };
+}
+
+// 独立分解计算器汇总：材料行带最终单价（AH现价优先，无价用手填参考价）；
+// 买入行带件数×单件价，可一次批量录多件同名装备。gross=材料毛额，
+// afterCut=扣5%到手，totalBuy=Σ(件数×单件)，net=到手−总买入。
+export type CalcMaterialLine = { qty: number; unit: number };
+export type CalcBuyLine = { count: number; unit: number };
+export type CalcSummary = { gross: number; afterCut: number; totalBuy: number; net: number };
+
+export function computeCalcSummary(materials: CalcMaterialLine[], buys: CalcBuyLine[]): CalcSummary {
+  const gross = materials.reduce(
+    (sum, m) => sum + (Number.isFinite(m.qty) && m.qty > 0 && m.unit > 0 ? m.qty * m.unit : 0),
+    0
+  );
+  const afterCut = gross * (1 - AH_CUT);
+  const totalBuy = buys.reduce(
+    (sum, b) =>
+      sum + (Number.isFinite(b.count) && b.count > 0 && b.unit > 0 ? b.count * b.unit : 0),
+    0
+  );
+  return { gross, afterCut, totalBuy, net: afterCut - totalBuy };
 }

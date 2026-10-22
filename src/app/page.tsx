@@ -1,4 +1,4 @@
-import { Hammer, RadioTower, ShoppingCart, Star } from "lucide-react";
+import { FlaskConical, Hammer, RadioTower, ShoppingCart, Star } from "lucide-react";
 import type { Route } from "next";
 import { buildDealRadar, buildMoverBoard, buildSpreadCandidates, buildDisenchantBoard } from "@/lib/analytics";
 import { buildRecipeFloors, computeRecipeProfits } from "@/lib/recipe-profits";
@@ -132,6 +132,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <Link href={marketHrefOther} className="flex items-center gap-1 text-terminal-amber hover:underline">{market === "neutral" ? "← 联盟市场" : "中立市场 →"}</Link>
           <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><Hammer size={14} /> 配方库</Link>
           <Link href="/lists" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ShoppingCart size={14} /> 购物清单</Link>
+          <Link href="/tools/disenchant-calc" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><FlaskConical size={14} /> 分解计算器</Link>
         </div>
       </div>
 

@@ -72,6 +72,9 @@ function DisenchantRowRow({ row, prices, watched, server }: {
         <td className="px-3 py-2 text-right text-slate-300"><Coins copper={row.expectedValue} /></td>
         <td className="px-3 py-2 text-right">
           <span className={netClass}><Coins copper={row.disenchantNet} /></span>
+          <div className="text-[10px] text-terminal-green" title="最可能主档（约75%概率）较好结果到手；已要求它≥买入才入选，第一档不强求">
+            主档{row.mainBestLabel}到手 <Coins copper={row.mainBestTake} />
+          </div>
           {row.vendorNet > row.disenchantNet && (
             <div className="text-[10px] text-terminal-muted" title="直接卖 NPC 的回收（无手续费）">卖店 <Coins copper={row.vendorNet} /></div>
           )}
@@ -156,7 +159,7 @@ export function DisenchantTable({ rows, prices, watchedItemIds, productItemIds, 
   if (rows.length === 0) {
     return (
       <div className="p-6 font-mono text-xs text-terminal-muted">
-        暂无分解机会：在售的绿/蓝护甲、武器（已补物品等级、能匹配经典分解段）按期望净赚排序后会出现在这里；开服初期或材料缺价时可能为空。
+        暂无分解机会：只收录"最可能主档（约75%概率）较好结果到手也≥买入价"的绿/蓝护甲、武器；靠小概率精华/碎片拉高期望、主档亏本的抽奖型已直接过滤。开服初期或材料缺价时可能为空。
       </div>
     );
   }

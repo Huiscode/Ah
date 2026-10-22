@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDisenchantBoard, computeDisenchantLedger, type MarketSignal } from "@/lib/analytics";
+import { buildDisenchantBoard, computeDisenchantLedger, computeCalcSummary, type MarketSignal } from "@/lib/analytics";
 import { findDisenchantBand, equipKind } from "@/lib/disenchant-table";
 
 const now = new Date("2026-07-24T12:00:00Z");
@@ -101,17 +101,16 @@ describe("buildDisenchantBoard", () => {
     expect(row.disenchantNet).toBeCloseTo(95 - 80, 5);
   });
 
-  it("材料无价按 0 计并标记缺价，不剔除", () => {
-    // 武器绿 6-15 用到 10940/10938（有价），这里把材料价清空 → 全部无价
-    const row = buildDisenchantBoard(
+  it("材料无价、主档无法保本 → 直接过滤，不靠期望或卖店保留", () => {
+    // 武器绿 6-15 材料全部无价 → 主档到手=0 < 买入价，应被主档保本门槛滤掉
+    const rows = buildDisenchantBoard(
       [sig({ itemId: 3, quality: "uncommon", category: "武器", itemLevel: 10, price: 50 })],
       new Map(),
       matNames,
       LOOSE,
       now
-    )[0]!;
-    expect(row.expectedValue).toBe(0);
-    expect(row.hasMissingMatPrice).toBe(true);
+    );
+    expect(rows).toHaveLength(0);
   });
 
   it("过滤：ilvl=0、非绿蓝、非护甲武器、过期、无在售量均不落榜", () => {
@@ -126,18 +125,38 @@ describe("buildDisenchantBoard", () => {
     expect(rows).toHaveLength(0);
   });
 
-  it("卖店兜底优于分解时，vendorNet 单独给出，bestNet 取高", () => {
-    // 买入 100，分解期望很低（无价材料→0），但卖店回收 150 → vendorNet=50
+  it("主档保本门槛：期望为正但主档(约75%)亏本的抽奖型被过滤；主档保本才入选", () => {
+    // 26-30绿护甲：主档灵魂之尘11083(75%)便宜，精华11082/碎片11084贵。
+    const priceMap = new Map<number, number>([[11083, 100], [11082, 2000], [11084, 1500]]);
+    // 买入300：主档尘×2到手=2×100×0.95=190 <300，虽期望靠小概率精华为正，仍过滤
+    const dropped = buildDisenchantBoard(
+      [sig({ itemId: 40, quality: "uncommon", category: "护甲", itemLevel: 29, price: 300, quantity: 1 })],
+      priceMap, matNames, LOOSE, now
+    );
+    expect(dropped).toHaveLength(0);
+    // 买入150：主档尘×2到手190≥150 保本 → 入选，主档净=40
+    const kept = buildDisenchantBoard(
+      [sig({ itemId: 41, quality: "uncommon", category: "护甲", itemLevel: 29, price: 150, quantity: 1 })],
+      priceMap, matNames, LOOSE, now
+    )[0]!;
+    expect(kept.mainBestLabel).toBe("灵魂之尘×2");
+    expect(kept.mainBestTake).toBeCloseTo(190, 5);
+    expect(kept.mainBestNet).toBeCloseTo(40, 5);
+  });
+
+  it("卖店回收高于分解时，vendorNet 单独给出，bestNet 取高（主档需先保本）", () => {
+    // 蓝武器 ilvl20（11-25段 100%×1 小块微光碎片10978）：材料100c、买入80，主档到手95≥80 通过；
+    // 卖店回收150 → vendorNet=70 高于分解净15，bestNet 取卖店。
     const row = buildDisenchantBoard(
-      [sig({ itemId: 20, quality: "rare", category: "武器", itemLevel: 20, price: 100, vendorPrice: 150, quantity: 1 })],
-      new Map(),
+      [sig({ itemId: 20, quality: "rare", category: "武器", itemLevel: 20, price: 80, vendorPrice: 150, quantity: 1 })],
+      new Map([[10978, 100]]),
       matNames,
       LOOSE,
       now
     )[0]!;
-    expect(row.disenchantNet).toBeCloseTo(-100, 5);
-    expect(row.vendorNet).toBeCloseTo(50, 5);
-    expect(row.bestNet).toBeCloseTo(50, 5);
+    expect(row.disenchantNet).toBeCloseTo(95 - 80, 5);
+    expect(row.vendorNet).toBeCloseTo(70, 5);
+    expect(row.bestNet).toBeCloseTo(70, 5);
   });
 
   it("保本个数：单靠该材料回本需出个数 = ceil(买入价/(材料价×0.95))，无价为 null", () => {
@@ -152,15 +171,15 @@ describe("buildDisenchantBoard", () => {
     const be = (id: number) => row.mats.find((m) => m.matItemId === id)?.breakEvenQty;
     expect(be(10940)).toBe(2);
     expect(be(10938)).toBe(1);
-    // 无价材料 breakEvenQty=null
-    const noPrice = buildDisenchantBoard(
-      [sig({ itemId: 31, quality: "uncommon", category: "武器", itemLevel: 10, price: 50, quantity: 1 })],
-      new Map(),
+    // 同一件里未报价的材料 breakEvenQty=null（主档10940有价、主档保本仍入选）
+    const mixed = buildDisenchantBoard(
+      [sig({ itemId: 31, quality: "uncommon", category: "护甲", itemLevel: 10, price: 100, quantity: 1 })],
+      new Map([[10940, 60]]),
       matNames,
       LOOSE,
       now
     )[0]!;
-    expect(noPrice.mats.every((m) => m.breakEvenQty === null)).toBe(true);
+    expect(mixed.mats.find((m) => m.matItemId === 10938)?.breakEvenQty).toBeNull();
   });
 });
 
@@ -182,5 +201,27 @@ describe("computeDisenchantLedger 实际分解记账", () => {
     expect(r.gross).toBe(0);
     expect(r.afterCut).toBe(0);
     expect(r.net).toBe(-7500);
+  });
+});
+
+describe("computeCalcSummary 独立分解计算器", () => {
+  it("毛额=Σ数量×单价，到手=毛额×0.95，总买入=Σ件数×单件，净赚=到手−总买入", () => {
+    // 材料：灵魂之尘×3@550，强效星界精华×1@800 → 毛额=1650+800=2450
+    // 买入：50件山地披风@18，30件劣质裤腿@20 → 总买入=900+600=1500
+    const r = computeCalcSummary(
+      [{ qty: 3, unit: 550 }, { qty: 1, unit: 800 }],
+      [{ count: 50, unit: 18 }, { count: 30, unit: 20 }]
+    );
+    expect(r.gross).toBeCloseTo(2450, 5);
+    expect(r.afterCut).toBeCloseTo(2450 * 0.95, 5);
+    expect(r.totalBuy).toBe(1500);
+    expect(r.net).toBeCloseTo(2450 * 0.95 - 1500, 5);
+  });
+  it("零数量/零单价/零件数不计入，空买入净赚=到手", () => {
+    const r = computeCalcSummary([{ qty: 0, unit: 550 }, { qty: 2, unit: 0 }], [{ count: 0, unit: 100 }]);
+    expect(r.gross).toBe(0);
+    expect(r.afterCut).toBe(0);
+    expect(r.totalBuy).toBe(0);
+    expect(r.net).toBe(0);
   });
 });
