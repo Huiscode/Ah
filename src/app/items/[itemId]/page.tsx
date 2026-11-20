@@ -4,6 +4,7 @@ import type { Route } from "next";
 import { buildMarketSignal, buildWeekdaySeasonality } from "@/lib/analytics";
 import {
   getItemDetail,
+  getItemNames,
   getItemPriceTiers,
   getItemSellerPricesByIds,
   getItemVendorPricesByIds,
@@ -14,6 +15,7 @@ import {
 } from "@/lib/repositories";
 import { buildRecipeFloors, computeRecipeProfits, professionLabel } from "@/lib/recipe-profits";
 import { FOOD_EFFECTS } from "@/data/food-effects";
+import { FOOD_EFFECTS_EN } from "@/data/food-effects-en";
 import { formatPercent } from "@/lib/utils";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import { Coins } from "@/components/coins";
@@ -26,7 +28,11 @@ import { CloseTabButton } from "@/components/close-tab-button";
 import { markBaitDays } from "@/lib/bait-filter";
 import { splitCopper } from "@/lib/wow-money";
 import { Panel, PanelHeader } from "@/components/ui/panel";
-import { parseServer, SERVER_LABELS } from "@/lib/servers";
+import { parseServer, serverLabel } from "@/lib/servers";
+import { L, displayName } from "@/lib/i18n";
+import { getLang } from "@/lib/i18n-server";
+import { LangToggle } from "@/components/lang-toggle";
+import { buildItemNameIndex, localizeRecipeProfitRow } from "@/lib/recipe-i18n";
 
 // 档位价格：统一金/银/铜三列（各自固定宽右对齐），保证各档位货币单位按位对齐
 // （金对金、银对银、铜对铜）。没有的货币位只保留透明占宽，不显示数字与图标。
@@ -67,27 +73,18 @@ function TierPrice({ copper }: { copper: number }) {
 export default async function ItemDetail({ params, searchParams }: { params: Promise<{ itemId: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { itemId } = await params;
   const raw = await searchParams;
-  const mode: MarketMode = raw.history === "1" ? "history" : "current";
+  // beta 历史数据已随公测清库、老插件通道已退役——历史模式 UI 于 2026-11-08
+  // 移除（?history=1 不再生效，始终当前口径）。
+  const mode: MarketMode = "current";
   const market = raw.market === "neutral" ? "neutral" : "faction";
   const server = parseServer(raw.server);
+  const lang = await getLang();
   const numericItemId = Number(itemId);
-  const marketLabel = market === "neutral" ? "中立" : "联盟";
-  const serverLabel = SERVER_LABELS[server] ?? server;
+  const marketLabel = market === "neutral" ? L(lang, "Neutral", "中立") : L(lang, "Alliance", "联盟");
+  const serverLabelText = serverLabel(server, lang);
   const itemPath = `/items/${numericItemId}`;
   const marketHrefOther: Route = `${itemPath}${qs({
-    market: market === "neutral" ? undefined : "neutral",
-    history: mode === "history" ? "1" : undefined,
-    server: server === "cn" ? "cn" : undefined
-  })}` as Route;
-  const historyHref: Route = `${itemPath}${qs({
-    history: mode === "history" ? undefined : "1",
-    market: market === "neutral" ? "neutral" : undefined,
-    server: server === "cn" ? "cn" : undefined
-  })}` as Route;
-  const serverHrefOther: Route = `${itemPath}${qs({
-    server: server === "cn" ? undefined : "cn",
-    market: market === "neutral" ? "neutral" : undefined,
-    history: mode === "history" ? "1" : undefined
+    market: market === "neutral" ? undefined : "neutral"
   })}` as Route;
   const item = await getItemDetail(numericItemId, mode, market, server);
   if (!item) notFound();
@@ -95,11 +92,13 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
   // 制作配方面板按需取数：只查产出此物品的配方，以及这些配方涉及的
   // 物品的最新市场价 / NPC 保底价——不做全量市场信号扫描（单品页加载
   // 快的关键：med7 在 getItemDetail 里也只算当前物品）。
-  const [watchedIds, producingRecipes, priceTiers] = await Promise.all([
+  const [watchedIds, producingRecipes, priceTiers, itemNames] = await Promise.all([
     getWatchedItemIds(),
     getRecipesProducing(numericItemId),
-    getItemPriceTiers(numericItemId, market, server)
+    getItemPriceTiers(numericItemId, market, server),
+    getItemNames()
   ]);
+  const nameIndex = buildItemNameIndex(itemNames);
   const involvedItemIds = new Set<number>([numericItemId]);
   for (const recipe of producingRecipes) {
     for (const material of recipe.reagents) involvedItemIds.add(material.itemId);
@@ -111,20 +110,26 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
     getItemSellerPricesByIds(Array.from(involvedItemIds))
   ]);
   const floors = buildRecipeFloors(producingRecipes, vendorPrices, sellerPrices);
-  const recipeRows = computeRecipeProfits(producingRecipes, priceByItemId, floors.costFloor, floors.revenueFloor);
+  const recipeRows = computeRecipeProfits(producingRecipes, priceByItemId, floors.costFloor, floors.revenueFloor)
+    .map((row) => localizeRecipeProfitRow(row, nameIndex, lang));
   // 食物产出物：字典命中即食物（由 foreverchanges.pro 详情页 tooltip 生成）。
-  const foodEffect = FOOD_EFFECTS[numericItemId];
+  // EN 模式用英文效果文案（缺失回退中文）。
+  const foodEffect = lang === "zh"
+    ? FOOD_EFFECTS[numericItemId]
+    : (FOOD_EFFECTS_EN[numericItemId] ?? FOOD_EFFECTS[numericItemId]);
   const now = new Date();
   const hasSnapshots = item.snapshots.length > 0;
   const signal = hasSnapshots ? buildMarketSignal(item, now, mode) : null;
   const latestSnapshot = item.snapshots[item.snapshots.length - 1];
-  const freshness = describeFreshness(latestSnapshot?.timestamp ?? null, now, AUCTIONATOR_STALE_MAX_AGE_MS);
+  const freshness = describeFreshness(latestSnapshot?.timestamp ?? null, now, AUCTIONATOR_STALE_MAX_AGE_MS, lang);
   // Daily candles and seasonality follow the active mode's channel — legacy
   // addon rows never blend with auctionator rows inside one view.
-  const modeSource = mode === "history" ? "addon" : "auctionator";
+  const modeSource = "auctionator";
   const sameSourceSummaries = item.dailySummaries.filter((summary) => (summary.source ?? "auctionator") === modeSource);
   const seasonality = buildWeekdaySeasonality(sameSourceSummaries);
-  const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+  const weekdayNames = lang === "zh"
+    ? ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+    : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const candleData = sameSourceSummaries.map((summary) => ({
     label: summary.date.toLocaleString("en-CA", { timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit", day: "2-digit" }).slice(5, 10),
     open: summary.openPrice,
@@ -136,7 +141,7 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
   // 近 7 日走势线：Auctionator 每日一轮收盘（high≈low=当日代表价），当前模式
   // 用单线表达收盘，并剔除相对自身历史的钓单日（极少挂单/极低价格，bait-filter）；
   // 历史模式（旧插件多次扫描）保留当日最高/最低双线振幅。
-  const baitTs = mode === "history" ? null : markBaitDays(sameSourceSummaries.map((s) => ({ ts: s.date.getTime(), close: s.closePrice, volume: s.volume })));
+  const baitTs = markBaitDays(sameSourceSummaries.map((s) => ({ ts: s.date.getTime(), close: s.closePrice, volume: s.volume })));
   const rangeByTs = new Map<number, { low: number; high: number; close?: number; volume?: number }>();
   for (const summary of sameSourceSummaries) {
     const ts = summary.date.getTime();
@@ -150,12 +155,7 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
   const rangeData = Array.from(rangeByTs.entries())
     .sort(([left], [right]) => left - right)
     .map(([ts, entry]) => ({ ts, ...entry }));
-  const rangeSeries = mode === "history"
-    ? [
-        { key: "high" as const, color: "#ff5c7a", name: "当日最高" },
-        { key: "low" as const, color: "#39d98a", name: "当日最低" }
-      ]
-    : [{ key: "close" as const, color: "#39d98a", name: "每日收盘" }];
+  const rangeSeries = [{ key: "close" as const, color: "#39d98a", name: L(lang, "Daily close", "每日收盘") }];
   // 价格档位（真档位，转录补档）：前 5 个不同价位 + 档位跨度（第5 vs 第1）。
   // 与雷达"价格档位差距"筛选项同口径；无档位数据时面板整体不渲染。
   const tierTop5 = [...new Set(priceTiers.map((t) => t.price))].sort((a, b) => a - b).slice(0, 5);
@@ -167,9 +167,9 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
     <main className="terminal-grid min-h-screen bg-terminal-bg p-3 text-slate-200">
       <div className="mb-3 flex items-center justify-between border border-terminal-border bg-terminal-panel px-4 py-3">
         <div>
-          <div className="font-mono text-xs uppercase text-terminal-muted">商品终端</div>
+          <div className="font-mono text-xs uppercase text-terminal-muted">{L(lang, "Item Terminal", "商品终端")}</div>
           <h1 className={`flex items-center gap-2 font-mono text-2xl font-semibold ${qualityColorClass(item.quality)}`}>
-            <ItemIcon itemId={item.itemId} icon={item.icon} size={28} />{item.name}
+            <ItemIcon itemId={item.itemId} icon={item.icon} size={28} />{displayName(item.name, item.nameEn, lang)}
             {item.turnoverScore >= 50
               ? <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-xs font-normal text-green-400">{item.turnoverScore}</span>
               : item.turnoverScore >= 15
@@ -179,53 +179,43 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
                   : null}
           </h1>
           <div className={freshness.stale ? "font-mono text-xs text-terminal-red" : "font-mono text-xs text-terminal-green"}>
-            {serverLabel}·{marketLabel}·数据更新于 {freshness.label}
+            {serverLabelText}·{marketLabel}·{L(lang, "updated", "数据更新于")} {freshness.label}
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Link href={serverHrefOther} className="font-mono text-xs text-terminal-amber underline">{server === "cn" ? "← 欧服" : "中国服 →"}</Link>
-          <Link href={marketHrefOther} className="font-mono text-xs text-terminal-amber underline">{market === "neutral" ? "← 联盟市场" : "中立市场 →"}</Link>
+          <Link href={marketHrefOther} className="font-mono text-xs text-terminal-amber underline">{market === "neutral" ? L(lang, "← Alliance market", "← 联盟市场") : L(lang, "Neutral market →", "中立市场 →")}</Link>
           <span className="text-xl"><WatchStar itemId={item.itemId} watched={watchedIds.has(item.itemId)} /></span>
+          <LangToggle lang={lang} />
           <CloseTabButton />
         </div>
       </div>
-      {mode === "history" ? (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-amber/50 bg-amber-500/10 px-4 py-2 font-mono text-xs">
-          <span className="text-terminal-amber">历史模式 · Beta 删档数据 · P10 口径（2026-10-13 前自研插件）——仅供参考</span>
-          <Link href={historyHref} className="text-terminal-amber underline">← 返回当前数据（Auctionator 最低价）</Link>
-        </div>
-      ) : (
-        <div className="mb-3 flex items-center justify-between gap-3 border border-terminal-border bg-terminal-panel2 px-4 py-2 font-mono text-xs text-terminal-muted">
-          <span>数据口径自 2026-10-13 起为 Auctionator 最低买入价</span>
-          <Link href={`${itemPath}${qs({ history: "1", market: market === "neutral" ? "neutral" : undefined, server: server === "cn" ? "cn" : undefined })}` as Route} className="text-terminal-amber underline">查看 Beta 历史 P10 →</Link>
-        </div>
-      )}
+      <div className="mb-3 flex items-center justify-between gap-3 border border-terminal-border bg-terminal-panel2 px-4 py-2 font-mono text-xs text-terminal-muted">
+        <span>{L(lang, "Price basis: Auctionator lowest buyout since 2026-10-13", "数据口径自 2026-10-13 起为 Auctionator 最低买入价")}</span>
+      </div>
       <div className="grid gap-3 xl:grid-cols-[1fr_420px]">
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title={mode === "history" ? "近7日最低/最高走势 (日线)" : "近7日收盘走势 (日线)"} />
+            <PanelHeader title={L(lang, "7-Day Close Trend (daily)", "近7日收盘走势 (日线)")} />
             <div className="p-3">
               {rangeData.length >= 2
                 ? <TimeSeriesChart data={rangeData} series={rangeSeries} />
                 : <div className="p-4 font-mono text-xs text-terminal-muted">
-                    {mode === "history"
-                      ? "历史 addon 数据中没有可用的日线"
-                      : baitTs && baitTs.size > 0
-                        ? `不足 2 天有效数据（已剔除 ${baitTs.size} 天疑似钓单：极少挂单的极高价格）`
-                        : "收盘走势需要至少 2 天的 Auctionator 扫描数据——每次进入拍卖行后保持全量扫描积累"}
+                    {baitTs && baitTs.size > 0
+                      ? L(lang, `Fewer than 2 valid days (${baitTs.size} suspected bait-listing days removed: very few listings at extreme prices)`, `不足 2 天有效数据（已剔除 ${baitTs.size} 天疑似钓单：极少挂单的极高价格）`)
+                      : L(lang, "The close trend needs at least 2 days of Auctionator scans — keep running full scans every time you visit the AH.", "收盘走势需要至少 2 天的 Auctionator 扫描数据——每次进入拍卖行后保持全量扫描积累")}
                   </div>}
             </div>
           </Panel>
           <Panel>
-            <PanelHeader title="K线 (日线 OHLC)" />
+            <PanelHeader title={L(lang, "Candles (daily OHLC)", "K线 (日线 OHLC)")} />
             <div className="p-3">
               {candleData.length >= 2
                 ? <CandlestickChart data={candleData} />
-                : <div className="p-4 font-mono text-xs text-terminal-muted">K 线需要至少 2 天的扫描数据</div>}
+                : <div className="p-4 font-mono text-xs text-terminal-muted">{L(lang, "Candles need at least 2 days of scan data", "K 线需要至少 2 天的扫描数据")}</div>}
             </div>
           </Panel>
           <Panel>
-            <PanelHeader title="星期几季节性 (收盘 · 相对全部天数中位数的偏差)" />
+            <PanelHeader title={L(lang, "Weekday Seasonality (close · deviation vs all-days median)", "星期几季节性 (收盘 · 相对全部天数中位数的偏差)")} />
             <div className="grid grid-cols-7 gap-px bg-terminal-border font-mono text-xs">
               {seasonality.map((day) => (
                 <div key={day.weekday} className="bg-terminal-panel px-2 py-3 text-center">
@@ -233,32 +223,32 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
                   <div className={"mt-1 " + trendTextClass(day.priceDeviation)}>
                     {formatTrendPercent(day.priceDeviation, 1)}
                   </div>
-                  <div className="mt-1 text-[10px] text-terminal-muted">在售 {day.listedShare.toFixed(0)}% · n={day.sampleCount}</div>
+                  <div className="mt-1 text-[10px] text-terminal-muted">{L(lang, "listed", "在售")} {day.listedShare.toFixed(0)}% · n={day.sampleCount}</div>
                 </div>
               ))}
               {seasonality.length === 0 && (
-                <div className="col-span-7 bg-terminal-panel px-3 py-3 text-terminal-muted">数据不足，需要跨越至少一周的扫描积累</div>
+                <div className="col-span-7 bg-terminal-panel px-3 py-3 text-terminal-muted">{L(lang, "Not enough data — needs scans spanning at least one week", "数据不足，需要跨越至少一周的扫描积累")}</div>
               )}
             </div>
           </Panel>
         </div>
         <div className="space-y-3">
           <Panel>
-            <PanelHeader title="行情概要" />
+            <PanelHeader title={L(lang, "Market Summary", "行情概要")} />
             <div className="space-y-3 p-4 font-mono text-sm">
-              {!signal && <div className="text-xs text-terminal-muted">尚无扫描数据</div>}
+              {!signal && <div className="text-xs text-terminal-muted">{L(lang, "No scan data yet", "尚无扫描数据")}</div>}
               {signal && (
                 <>
                   <div>
-                    <div className="text-xs uppercase text-terminal-muted">{mode === "history" ? "市场价 · P10" : "最低买入价"}</div>
+                    <div className="text-xs uppercase text-terminal-muted">{L(lang, "Lowest buyout", "最低买入价")}</div>
                     <div className="text-2xl"><Coins copper={signal.price} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div><div className="text-terminal-muted">最低价</div><div><Coins copper={signal.minPrice} /></div></div>
-                    <div><div className="text-terminal-muted">7日参考（{mode === "history" ? "P10" : "最低价均值"}）</div><div><Coins copper={signal.med7} /></div></div>
-                    <div><div className="text-terminal-muted">折扣</div><div className={signal.discountPercent >= 15 ? "text-terminal-green" : ""}>{signal.discountPercent.toFixed(0)}%</div></div>
-                    <div><div className="text-terminal-muted">{mode === "history" ? "环比上次" : "环比昨日"}</div><div className={trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</div></div>
-                    <div><div className="text-terminal-muted">在售量</div><div>{signal.quantity.toLocaleString("en-US")}</div></div>
+                    <div><div className="text-terminal-muted">{L(lang, "Min price", "最低价")}</div><div><Coins copper={signal.minPrice} /></div></div>
+                    <div><div className="text-terminal-muted">{L(lang, "7d ref (median of daily mins)", "7日参考（最低价均值）")}</div><div><Coins copper={signal.med7} /></div></div>
+                    <div><div className="text-terminal-muted">{L(lang, "Discount", "折扣")}</div><div className={signal.discountPercent >= 15 ? "text-terminal-green" : ""}>{signal.discountPercent.toFixed(0)}%</div></div>
+                    <div><div className="text-terminal-muted">{L(lang, "vs yesterday", "环比昨日")}</div><div className={trendTextClass(signal.changePercent)}>{formatTrendPercent(signal.changePercent)}</div></div>
+                    <div><div className="text-terminal-muted">{L(lang, "Listed qty", "在售量")}</div><div>{signal.quantity.toLocaleString("en-US")}</div></div>
                   </div>
                 </>
               )}
@@ -266,7 +256,7 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
           </Panel>
           {tierTop5.length >= 2 && (
             <Panel>
-              <PanelHeader title="价格档位（前5档）" />
+              <PanelHeader title={L(lang, "Price Tiers (top 5)", "价格档位（前5档）")} />
               <div className="space-y-1.5 p-4 font-mono text-sm">
                 {priceTiers
                   .filter((tier) => tierTop5.includes(tier.price))
@@ -274,14 +264,14 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
                   .slice(0, 5)
                   .map((tier, index) => (
                     <div key={tier.price} className="flex items-center gap-3 text-xs">
-                      <span className="text-terminal-muted">档{index + 1}</span>
+                      <span className="text-terminal-muted">{L(lang, `T${index + 1}`, `档${index + 1}`)}</span>
                       <span className="ml-auto"><TierPrice copper={tier.price} /></span>
                       <span className="w-16 text-right text-terminal-muted">×{tier.qty.toLocaleString("en-US")}</span>
                     </div>
                   ))}
                 {tierGapPercent > 0 && (
                   <div className="mt-2 flex items-center justify-between border-t border-terminal-border pt-2 text-xs">
-                    <span className="text-terminal-muted">档位差距（第5 vs 第1）</span>
+                    <span className="text-terminal-muted">{L(lang, "Tier gap (T5 vs T1)", "档位差距（第5 vs 第1）")}</span>
                     <span className="text-terminal-green">{tierGapPercent.toFixed(1)}%</span>
                   </div>
                 )}
@@ -289,40 +279,40 @@ export default async function ItemDetail({ params, searchParams }: { params: Pro
             </Panel>
           )}
           <Panel>
-            <PanelHeader title="制作配方" />
+            <PanelHeader title={L(lang, "Crafting Recipes", "制作配方")} />
             <div className="space-y-2 p-3 font-mono text-xs">
               {foodEffect && recipeRows.length > 0 && (
                 <div className="rounded border border-terminal-border bg-terminal-panel2 p-2 text-[12px] leading-relaxed text-slate-300">
-                  <span className="font-semibold text-terminal-amber">使用：</span>
-                  {foodEffect.replace(/^使用：\s*/, "")}
+                  <span className="font-semibold text-terminal-amber">{L(lang, "Use:", "使用：")}</span>
+                  {foodEffect.replace(/^(使用：|Use:)\s*/i, "")}
                 </div>
               )}
               {recipeRows.length === 0 && (
-                <div className="text-terminal-muted">配方库中没有配方产出这个物品</div>
+                <div className="text-terminal-muted">{L(lang, "No recipe in the library produces this item", "配方库中没有配方产出这个物品")}</div>
               )}
               {recipeRows.map((row) => (
                 <div key={`${row.recipe.category ?? "craft"}|${row.recipe.profession}|${row.recipe.name}`} className="rounded border border-terminal-border bg-terminal-panel2 p-2">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-slate-200">{professionLabel(row.recipe.profession)} · {row.recipe.name}</span>
+                    <span className="truncate text-slate-200">{professionLabel(row.recipe.profession, lang)} · {row.recipe.displayName ?? row.recipe.name}</span>
                     {row.status === "ok" ? (
                       <span className={"shrink-0 " + (row.profit >= 0 ? "text-terminal-green" : "text-terminal-red")}>
                         {row.profit >= 0 ? "+" : ""}{formatPercent(row.marginPercent)}
-                        <span className="text-terminal-muted">{row.profit >= 0 ? " 盈利 " : " 亏损 "}</span>
+                        <span className="text-terminal-muted">{row.profit >= 0 ? L(lang, " profit ", " 盈利 ") : L(lang, " loss ", " 亏损 ")}</span>
                         <Coins copper={Math.abs(row.profit)} />
                       </span>
                     ) : row.status === "cost-only" ? (
-                      <span className="shrink-0 text-terminal-muted">附魔 · 成本 <Coins copper={row.cost} /></span>
+                      <span className="shrink-0 text-terminal-muted">{L(lang, "Enchant · cost", "附魔 · 成本")} <Coins copper={row.cost} /></span>
                     ) : (
-                      <span className="shrink-0 text-terminal-red">缺货</span>
+                      <span className="shrink-0 text-terminal-red">{L(lang, "No stock", "缺货")}</span>
                     )}
                   </div>
                   <div className="mt-1 flex flex-wrap gap-x-1.5 gap-y-0.5 leading-relaxed text-terminal-muted">
                     {row.status !== "missing" ? (
                       row.materials.map((material) => (
-                        <span key={material.name}>材料 {material.name}×{material.quantity}（<span className="text-slate-200"><Coins copper={material.price} /></span>）</span>
+                        <span key={material.name}>{L(lang, "mat", "材料")} {material.name}×{material.quantity}（<span className="text-slate-200"><Coins copper={material.price} /></span>）</span>
                       ))
                     ) : (
-                      row.missing.map((name) => <span key={name}>缺货：{name}</span>)
+                      row.missing.map((name) => <span key={name}>{L(lang, "missing:", "缺货：")}{name}</span>)
                     )}
                   </div>
                 </div>

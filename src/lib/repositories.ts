@@ -13,6 +13,7 @@ type ItemRaw = {
   id: string;
   item_id: number;
   name: string;
+  name_en?: string | null;
   quality: string;
   category: string;
   sub_category: string;
@@ -230,6 +231,39 @@ export async function getItemPriceTiers(itemId: number, market: string = "factio
     .filter((t) => t.price > 0 && t.qty > 0);
 }
 
+// 批量版单品价格档位：一次查询多个物品各自的最新转录轮档位（中间材料面板
+// 悬停展示用，避免逐物品 N 次查询）。返回 itemId → 档位数组（单价升序）。
+export async function getItemPriceTiersByItemIds(itemIds: number[], market: string = "faction", server: string = DEFAULT_SERVER): Promise<Map<number, Array<{ price: number; qty: number }>>> {
+  const out = new Map<number, Array<{ price: number; qty: number }>>();
+  if (itemIds.length === 0) return out;
+  const rows = await prisma.$queryRaw<Array<{ itemId: number | bigint; price: number | bigint; qty: number | bigint }>>(
+    Prisma.sql`
+    WITH latest AS (
+      SELECT "item_id", MAX("ts") AS "ts"
+      FROM "AuctionTier"
+      WHERE "source" = 'transcript' AND "market" = ${market} AND "server" = ${server}
+        AND "item_id" IN (${Prisma.join(itemIds)})
+      GROUP BY "item_id"
+    )
+    SELECT t."item_id" AS "itemId", t."price" AS "price", t."qty" AS "qty"
+    FROM "AuctionTier" t
+    JOIN latest l ON l."item_id" = t."item_id" AND l."ts" = t."ts"
+    WHERE t."source" = 'transcript' AND t."market" = ${market} AND t."server" = ${server}
+    ORDER BY t."item_id", t."price" ASC
+    `
+  );
+  for (const r of rows) {
+    const id = Number(r.itemId);
+    const price = Number(r.price);
+    const qty = Number(r.qty);
+    if (price <= 0 || qty <= 0) continue;
+    const list = out.get(id);
+    if (list) list.push({ price, qty });
+    else out.set(id, [{ price, qty }]);
+  }
+  return out;
+}
+
 export async function getMarketUniverse(market: string = "faction", mode: MarketMode = "current", server: string = DEFAULT_SERVER): Promise<MarketHistory[]> {
   // current 模式排除 addon（旧 Beta 删档数据不得进入当前口径的任意查询层）；
   // history 模式只看 addon。双服并存时全部按 server 过滤，严禁混查。
@@ -279,6 +313,7 @@ export async function getMarketUniverse(market: string = "faction", mode: Market
     id: i.id,
     itemId: Number(i.item_id),
     name: i.name,
+    nameEn: i.name_en,
     quality: i.quality,
     category: i.category,
     subCategory: i.sub_category,
@@ -595,6 +630,13 @@ export async function getRecipes(category?: "craft" | "merchant"): Promise<DbRec
     orderBy: { name: "asc" }
   });
   return rows.map(mapRecipeRow);
+}
+
+// 全量物品名索引（itemId/name/nameEn）：配方数据显示层本地化用
+// （recipe-i18n.ts 按itemId/中文名映射英文）。~9800 行轻查询。
+export async function getItemNames(): Promise<Array<{ itemId: number; name: string; nameEn: string | null }>> {
+  const rows = await prisma.item.findMany({ select: { itemId: true, name: true, nameEn: true }, orderBy: { itemId: "asc" } });
+  return rows;
 }
 
 // 产出指定物品的配方：outputs JSON 数组含该 itemId（商品终端"制作配方"

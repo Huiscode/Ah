@@ -35,6 +35,7 @@ const p = new PrismaClient();
 const PROFESSIONS: Array<{ url: string; name: string }> = [
   { url: "alchemy", name: "Alchemy" },
   { url: "blacksmithing", name: "Blacksmithing" },
+  { url: "mining", name: "Mining" },
   { url: "enchanting", name: "Enchanting" },
   { url: "engineering", name: "Engineering" },
   { url: "leatherworking", name: "Leatherworking" },
@@ -95,12 +96,13 @@ function parseRecipes(html: string): ParsedRecipe[] {
   let liMatch;
   while ((liMatch = liRegex.exec(html)) !== null) {
     const block = liMatch[1];
-    const outMatch = block.match(/<a href="\/zh-cn\/item\/(\d+)" class="cr-made">[\s\S]*?<span class="cr-name[^"]*">([^<]+)<\/span>/);
+    // 2026-11 站点改版：href 数字后多了英文 slug 后缀（/zh-cn/item/{id}/{slug}）
+    const outMatch = block.match(/<a href="\/zh-cn\/item\/(\d+)(?:\/[^"]*)?" class="cr-made">[\s\S]*?<span class="cr-name[^"]*">([^<]+)<\/span>/);
     if (!outMatch) continue;
     const outputId = parseInt(outMatch[1], 10);
     const outputName = outMatch[2];
     const mats: ParsedRecipe["materials"] = [];
-    const matRegex = /<a href="\/zh-cn\/item\/(\d+)" class="cr-mat" aria-label="([^"]*)">/g;
+    const matRegex = /<a href="\/zh-cn\/item\/(\d+)(?:\/[^"]*)?" class="cr-mat" aria-label="([^"]*)">/g;
     let matMatch;
     while ((matMatch = matRegex.exec(block)) !== null) {
       const matId = parseInt(matMatch[1], 10);
@@ -153,11 +155,11 @@ type ParsedItem = {
 };
 
 function parseItem(html: string): ParsedItem | null {
-  const nameM = html.match(/<h1 class="q\d+">([^<]+)<\/h1>/);
+  // 2026-11 站点改版：物品名 <h1 class="q1">名</h1> → <h1><span class="q1">名</span>…
+  const nameM = html.match(/<h1[^>]*><span class="q(\d+)"[^>]*>([^<]+)<\/span>/);
   if (!nameM) return null;
-  const name = nameM[1].trim();
-  const qM = html.match(/<h1 class="q(\d)">/);
-  const quality = qM ? (QUALITY_Q_TO_EN[parseInt(qM[1], 10)] ?? null) : null;
+  const quality = QUALITY_Q_TO_EN[parseInt(nameM[1], 10)] ?? null;
+  const name = nameM[2].trim();
   // <p class="it-sub">普通，商品，布料，物品等级5，物品 2589。</p>
   const subM = html.match(/<p class="it-sub">([\s\S]*?)<\/p>/);
   let category: string | null = null;

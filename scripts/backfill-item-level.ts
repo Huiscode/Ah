@@ -4,8 +4,12 @@
 // 需要每件装备的 ilvl。站点物品页不直接给全量对照，但列表页每条 small 文本带
 // "物品等级X"，且无 URL 筛选参数，故逐页翻全量列表建 itemId→ilvl 映射再回写。
 //
+// 2026-11 公测清场扩展：beta 期的物品名库来自 docs/archive 归档 HTML（已清理），
+// 列表页每条同时带 名称/品质/分类 —— 顺手一并回填（已存在的名字不覆盖，
+// 仅补占位 "Item N" 与缺失行），21 页即可恢复全量物品名库。
+//
 // 限速 2.5s/页 + 403 退避 15s×3 + 断点续跑（scripts/.ilvl-progress.json）。
-// 幂等：只更新库里存在且 ilvl>0 的物品；公测清空后重跑一次即可。
+// 幂等：ilvl 始终刷新；名字只补缺失/占位；公测清空后重跑一次即可。
 //
 // 跑法：npx tsx scripts/backfill-item-level.ts
 import { PrismaClient } from "@prisma/client";
@@ -54,15 +58,30 @@ async function fetchText(url: string, retries = 3): Promise<string | null> {
   return null;
 }
 
-// <a class="q1" href="/zh-cn/item/6292">名</a><small>普通，副手物品，物品等级15</small>
-function parseListPage(html: string): Map<number, number> {
-  const out = new Map<number, number>();
-  const re = /<a class="q\d" href="\/zh-cn\/item\/(\d+)">[^<]+<\/a><small>[^<]*物品等级(\d+)[^<]*<\/small>/g;
+// <a class="q1" href="/zh-cn/item/6292/10-pound-mud-snapper">名</a><small>普通，副手物品，物品等级15</small>
+// （2026-11 站点改版：href 数字后多了英文 slug 后缀）
+type ListEntry = { name: string; quality: string; category: string | null; ilvl: number };
+const QUALITY_OF_Q: Record<number, string> = {
+  0: "poor", 1: "common", 2: "uncommon", 3: "rare", 4: "epic", 5: "legendary", 6: "artifact", 7: "heirloom",
+};
+function parseListPage(html: string): Map<number, ListEntry> {
+  const out = new Map<number, ListEntry>();
+  const re = /<a class="q(\d)" href="\/zh-cn\/item\/(\d+)(?:\/[^"]*)?">([^<]+)<\/a><small>([^<]*)<\/small>/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) {
-    const itemId = Number(m[1]);
-    const ilvl = Number(m[2]);
-    if (itemId > 0 && ilvl > 0) out.set(itemId, ilvl);
+    const itemId = Number(m[2]);
+    if (itemId <= 0) continue;
+    const ilvlM = m[4].match(/物品等级(\d+)/);
+    const parts = m[4].replace(/<!--[\s\S]*?-->/g, "").split("，").map((s) => s.trim()).filter(Boolean);
+    // 两段式 small 文本（如"普通，物品等级55"）没有中间分类段——parts[1] 会是
+    // "物品等级55"，不能当品类写入（否则品类下拉出现"物品等级15"这类怪选项）。
+    const categoryPart = parts.length >= 2 && !/^物品等级/.test(parts[1]) ? parts[1] : null;
+    out.set(itemId, {
+      name: m[3].trim(),
+      quality: QUALITY_OF_Q[Number(m[1])] ?? "unknown",
+      category: categoryPart,
+      ilvl: ilvlM ? Number(ilvlM[1]) : 0,
+    });
   }
   return out;
 }
@@ -79,26 +98,37 @@ function maxPageOf(html: string): number | null {
   return max > 0 ? max : null;
 }
 
-async function updateRows(mapping: Map<number, number>): Promise<number> {
-  if (mapping.size === 0) return 0;
+async function updateRows(mapping: Map<number, ListEntry>): Promise<{ touched: number; named: number; created: number }> {
+  if (mapping.size === 0) return { touched: 0, named: 0, created: 0 };
   const ids = [...mapping.keys()];
-  // 只更新库里存在的物品（raw SQL 绕过 client 类型，列已 db push）。
-  const existing = await p.$queryRawUnsafe<{ item_id: number }[]>(
-    `SELECT item_id FROM "Item" WHERE item_id IN (${ids.map(() => "?").join(",")})`,
-    ...ids
-  );
-  let updated = 0;
-  for (const row of existing) {
-    const ilvl = mapping.get(Number(row.item_id));
-    if (!ilvl) continue;
-    await p.$executeRawUnsafe(
-      `UPDATE "Item" SET item_level = ? WHERE item_id = ?`,
-      ilvl,
-      Number(row.item_id)
-    );
-    updated++;
+  // 现有行一次性取回（含占位名判定），避免逐条 findUnique。
+  const existing = await p.item.findMany({ where: { itemId: { in: ids } }, select: { itemId: true, name: true } });
+  const nameById = new Map(existing.map((r) => [r.itemId, r.name]));
+  let touched = 0, named = 0, created = 0;
+  for (const [itemId, e] of mapping) {
+    const cur = nameById.get(itemId);
+    if (cur !== undefined) {
+      const patch: { itemLevel?: number; name?: string; quality?: string; category?: string } = {};
+      if (e.ilvl > 0) patch.itemLevel = e.ilvl;
+      // 名字只补缺失/占位 "Item N"，不覆盖 m1b 物品页等更权威来源已填的名字。
+      if (!cur || /^Item \d+$/.test(cur)) {
+        patch.name = e.name;
+        patch.quality = e.quality;
+        if (e.category) patch.category = e.category;
+        named++;
+      }
+      if (Object.keys(patch).length > 0) {
+        await p.item.update({ where: { itemId }, data: patch });
+        touched++;
+      }
+    } else {
+      await p.item.create({
+        data: { itemId, name: e.name, quality: e.quality, category: e.category ?? "unknown", subCategory: "unknown", itemLevel: e.ilvl },
+      });
+      created++;
+    }
   }
-  return updated;
+  return { touched, named, created };
 }
 
 async function main() {
@@ -109,7 +139,7 @@ async function main() {
   const totalPages = maxPageOf(first) ?? Infinity;
   log(`总页数探测为 ${totalPages === Infinity ? "未知（跑到空页为止）" : totalPages}`);
 
-  let updated = 0;
+  let touched = 0, named = 0, created = 0;
   let page = 1;
   const pageLimit = MAX_PAGES > 0 ? MAX_PAGES : totalPages;
   while (page <= pageLimit) {
@@ -131,14 +161,15 @@ async function main() {
       log(`第 ${page} 页无标准条目，判定到末页，停止。`);
       break;
     }
-    updated += await updateRows(mapping);
+    const r = await updateRows(mapping);
+    touched += r.touched; named += r.named; created += r.created;
     done.add(page);
     writeFileSync(PROGRESS_FILE, JSON.stringify([...done]));
-    log(`第 ${page}/${totalPages === Infinity ? "?" : totalPages} 页：解析 ${mapping.size} 件，本次累计更新 ${updated}`);
+    log(`第 ${page}/${totalPages === Infinity ? "?" : totalPages} 页：解析 ${mapping.size} 件，累计 更新${touched}/补名${named}/新建${created}`);
     page++;
     await new Promise((r) => setTimeout(r, INTERVAL_MS));
   }
-  log(`完成：共更新 ${updated} 件物品的 item_level。`);
+  log(`完成：共 更新${touched}/补名${named}/新建${created} 件物品。`);
   await p.$disconnect();
 }
 

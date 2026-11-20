@@ -22,9 +22,14 @@
 -- 用法：/wahscan start [fresh] | stop | resume | status
 
 local frame = CreateFrame("Frame")
-local MIN_QUERY_GAP = 0.6     -- 两次查询之间的最小间隔（秒）
+-- 查询间隔 0.6→0.25→0.2（2026-11-16/19 两次提速）：无限服对拍卖行查询频率宽容
+-- （Auctionator 自己的增量扫描就高频逐页查询无恙）。
+local MIN_QUERY_GAP = 0.2     -- 两次查询之间的最小间隔（秒）
 local QUERY_TIMEOUT = 8       -- 单物品查询超时（秒），超时跳过重发
 local PROGRESS_EVERY = 25     -- 每完成 N 个物品报一次进度
+-- 档位新鲜度门槛：TTL 内已采过档位的候选跳过（每次扫描只补增量，
+-- 不再全量重搜——2026-11-16 之前每轮都全量 ~800 个 × 0.6s 太慢）。
+local TIER_TTL = 4 * 3600     -- 4 小时
 
 WAHTranscribeDB = WAHTranscribeDB or { version = 1, scans = {} }
 WAHTranscribeState = WAHTranscribeState or { queue = {}, pos = 1, done = 0, running = false }
@@ -91,10 +96,17 @@ local function flattenTiers(tierMap)
 end
 
 local function saveItemTiers(itemId, tierMap)
+  -- 只保留最便宜的前 5 档（2026-11-19 用户拍板）：网页端全部用途（档位面板/
+  -- 差距筛选/钓单过滤）都只消费前 5 档，多余的档位不落盘。flattenTiers 已按
+  -- 单价升序返回，直接截取前 5。
+  local tiers = flattenTiers(tierMap)
+  while #tiers > 5 do
+    table.remove(tiers)
+  end
   WAHTranscribeDB.scans[tostring(itemId)] = {
     t = now(),
     market = Auctionator.Forever and Auctionator.Forever.CurrentScanMarket or "faction",
-    tiers = flattenTiers(tierMap),
+    tiers = tiers,
   }
 end
 
@@ -169,25 +181,54 @@ local function collectCandidates()
   local db = AUCTIONATOR_PRICE_DATABASE
   local slotData = (type(db) == "table") and db[slot]
   if type(slotData) ~= "table" then return candidates end
+  local cutoff = now() - TIER_TTL
+
+  -- 优先用网页端下发的精确清单（TierList.lua：中间材料全部 + 雷达池利润前 N，
+  -- 每轮导入后由 watch 自动刷新）。清单 ∩ 当前在售 ∩ 新鲜度门槛——目标
+  -- ~200 个 × 0.2s ≈ 1 分钟内完成（2026-11-19 用户拍板）。
+  if type(WAH_TIER_LIST) == "table" then
+    for id in pairs(WAH_TIER_LIST) do
+      local block = slotData[tostring(id)] or slotData[id]
+      if type(block) == "table" and block.m and block.m > 0 then
+        local last = WAHTranscribeDB.scans[tostring(id)]
+        if not (last and last.t and last.t >= cutoff) then
+          candidates[#candidates + 1] = id
+        end
+      end
+    end
+    table.sort(candidates)
+    return candidates
+  end
+
+  -- 兜底（清单缺失时）：按价格历史粗略近似雷达候选。
   for k, block in pairs(slotData) do
     local id = tonumber(k)
     if id and type(block) == "table" and block.m and block.m > 0 then
-      local vendor = WAHVendorDB and WAHVendorDB.scans and WAHVendorDB.scans[tostring(id)]
-      if vendor and vendor.p and vendor.p > block.m then
-        candidates[#candidates + 1] = id
+      -- 新鲜度门槛：TTL 内采过档位的直接跳过（增量补档，不重复搜索）
+      local last = WAHTranscribeDB.scans[tostring(id)]
+      if last and last.t and last.t >= cutoff then
+        -- skip：档位仍然新鲜
       else
-        local days = {}
-        for day, l in pairs(block.l or {}) do
-          if type(day) == "number" and l and l > 0 then days[#days + 1] = day end
-        end
-        table.sort(days)
-        local n = #days
-        local lows = {}
-        for i = math.max(1, n - 6), n do lows[#lows + 1] = block.l[days[i]] end
-        if #lows > 0 then
-          table.sort(lows)
-          local med = lows[math.ceil(#lows / 2)]
-          if med and med * 0.95 - block.m >= 50 then candidates[#candidates + 1] = id end
+        local vendor = WAHVendorDB and WAHVendorDB.scans and WAHVendorDB.scans[tostring(id)]
+        if vendor and vendor.p and vendor.p > block.m then
+          candidates[#candidates + 1] = id
+        else
+          -- Auctionator 写入 l/h/a 的天数键是 tostring(GetScanDay())——字符串（"2511"），
+          -- 旧版只认 type(day)=="number" 导致捡漏候选恒为 0（自动补档从未生效过，
+          -- 2026-11-15 修复）。这里数字/字符串键都收，且直接取值，避免再按键重索引。
+          local dayList = {}
+          for day, low in pairs(block.l or {}) do
+            local d = tonumber(day)
+            if d and low and low > 0 then dayList[#dayList + 1] = { d = d, v = low } end
+          end
+          table.sort(dayList, function(a, b) return a.d < b.d end)
+          local lows = {}
+          for i = math.max(1, #dayList - 6), #dayList do lows[#lows + 1] = dayList[i].v end
+          if #lows > 0 then
+            table.sort(lows)
+            local med = lows[math.ceil(#lows / 2)]
+            if med and med * 0.95 - block.m >= 50 then candidates[#candidates + 1] = id end
+          end
         end
       end
     end

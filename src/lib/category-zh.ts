@@ -1,6 +1,8 @@
 // Classic WoW item-class names as rendered by the zhCN client. Filtering
 // keeps the English value (DB + API stay English); only the visible text
-// is translated.
+// is translated per language via categoryLabel(cat, lang).
+import { L, type Lang } from "@/lib/i18n";
+
 export const CATEGORY_ZH: Record<string, string> = {
   Armor: "护甲",
   Weapon: "武器",
@@ -20,13 +22,15 @@ export const CATEGORY_ZH: Record<string, string> = {
 };
 
 // 装备：护甲 + 武器 + 箭袋 + 弹药合并为一个筛选项。
-export const EQUIPMENT_GROUP = "装备";
+// 分组令牌固定用英文（作为下拉 option 的 value 存进 URL/localStorage，
+// 显示名经 categoryLabel 按语言翻译；旧中文值由 market-filter 兼容映射）。
+export const EQUIPMENT_GROUP = "Equipment";
 export const EQUIPMENT_CATEGORIES = new Set(["Armor", "Weapon", "Quiver", "Projectile"]);
 
 // 材料：矿石/锭、草药、布匹、皮革、宝石、石头、试剂等制造原料。
 // 布皮草矿（Gathering，客户端返回的少量材料 itemType）并入材料分组，
 // 不再作为独立类目出现在下拉框。
-export const MATERIALS_GROUP = "材料";
+export const MATERIALS_GROUP = "Materials";
 export const MATERIALS_CATEGORIES = new Set(["Trade Goods", "Reagent", "Gathering"]);
 
 // These categories are not shown in the dropdown (items are grouped elsewhere
@@ -36,6 +40,8 @@ const HIDDEN_CATEGORIES = new Set(["Key", "unknown"]);
 // zhCN client returns Chinese category names in scan payloads; normalize them
 // to the English canonical keys used by CATEGORY_ZH / grouping rules so the
 // dropdown and matching work regardless of which locale wrote the row.
+// 装备部位名（foreverchanges 物品库把部位当 category 写入：头部/胸部/单手/双手…）
+// 一律归入 Armor/Weapon 两大组——下拉里合并为一个"装备"筛选项。
 const ZH_TO_EN: Record<string, string> = {
   "护甲": "Armor",
   "武器": "Weapon",
@@ -52,15 +58,31 @@ const ZH_TO_EN: Record<string, string> = {
   "箭袋": "Quiver",
   "弹药": "Projectile",
   "附魔": "Enchanting",
-  "布皮草矿": "Gathering"
+  "布皮草矿": "Gathering",
+  // 护甲部位（含盾牌/饰品/手指/副手）：
+  "头部": "Armor", "肩部": "Armor", "胸部": "Armor", "背部": "Armor",
+  "手腕": "Armor", "护腕": "Armor", "手部": "Armor", "手": "Armor",
+  "腰部": "Armor", "腿部": "Armor", "脚": "Armor", "脚部": "Armor",
+  "颈部": "Armor", "饰品": "Armor", "手指": "Armor",
+  "副手物品": "Armor", "副手": "Armor", "盾牌": "Armor",
+  "布甲": "Armor", "皮甲": "Armor", "锁甲": "Armor", "板甲": "Armor",
+  // 武器部位：
+  "单手": "Weapon", "主手": "Weapon", "双手": "Weapon",
+  "远程": "Weapon", "投掷": "Weapon", "魔杖": "Weapon",
+  // 站点把背包类写成"背包"：
+  "背包": "Container", "包": "Container"
 };
 
 export function normalizeCategory(raw: string): string {
   return ZH_TO_EN[raw] ?? raw;
 }
 
-export function categoryLabel(category: string): string {
-  return CATEGORY_ZH[normalizeCategory(category)] ?? category;
+export function categoryLabel(category: string, lang: Lang = "en"): string {
+  const cat = normalizeCategory(category);
+  if (cat === EQUIPMENT_GROUP) return L(lang, "Equipment", "装备");
+  if (cat === MATERIALS_GROUP) return L(lang, "Materials", "材料");
+  if (lang === "zh") return CATEGORY_ZH[cat] ?? category;
+  return cat; // 英文：canonical key 本身即显示名（Armor / Trade Goods / …）
 }
 
 // 给定数据库里实际出现的原始分类列表，返回下拉框应显示的选项：

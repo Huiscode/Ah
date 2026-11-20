@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatWowMoney } from "@/lib/wow-money";
+import { useLL } from "@/components/lang-provider";
 
 const formatGold = (copper: number) => formatWowMoney(copper, { compact: true });
 // Hover values must stay readable at sub-silver prices: compact mode folds
@@ -37,6 +38,7 @@ export function TimeSeriesChart({ data, series, height = 280 }: {
   series: Array<{ key: string; color: string; name: string }>;
   height?: number;
 }) {
+  const tr = useLL();
   return (
     <div>
       <div className="mb-1 flex flex-wrap items-center gap-3 font-mono text-[10px] text-terminal-muted">
@@ -48,7 +50,7 @@ export function TimeSeriesChart({ data, series, height = 280 }: {
         ))}
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#3f6aa8" }} />
-          在售量
+          {tr("Listed qty", "在售量")}
         </span>
       </div>
       <ResponsiveContainer width="100%" height={height}>
@@ -72,7 +74,7 @@ export function TimeSeriesChart({ data, series, height = 280 }: {
             formatter={(value, name) => {
               const seriesEntry = series.find((s) => s.key === name);
               if (seriesEntry) return [formatHover(Number(value)), seriesEntry.name];
-              if (name === "volume") return [String(value), "在售量"];
+              if (name === "volume") return [String(value), tr("Listed qty", "在售量")];
               return [formatHover(Number(value)), String(name)];
             }}
           />
@@ -147,6 +149,7 @@ function CandleShape(props: CandleShapeProps) {
 // row (high value first), the up/flat candle reads 低-高; below it the panel
 // adds the day's open and close — the close being the LAST scan of the day.
 function CandleTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload?: CandlePoint }> }) {
+  const tr = useLL();
   if (!active || !payload || payload.length === 0) return null;
   const point = payload[0].payload;
   if (!point) return null;
@@ -161,9 +164,9 @@ function CandleTooltip({ active, payload }: { active?: boolean; payload?: Array<
         {change !== null && change !== 0 ? `  ${change > 0 ? "+" : ""}${change.toFixed(1)}%` : ""}
       </div>
       <div>
-        {down ? "高-低" : "低-高"}：{formatHover(down ? point.high : point.low)} - {formatHover(down ? point.low : point.high)}
+        {down ? tr("High-Low", "高-低") : tr("Low-High", "低-高")}: {formatHover(down ? point.high : point.low)} - {formatHover(down ? point.low : point.high)}
       </div>
-      <div>开盘 {formatHover(point.open)}　收盘 {formatHover(point.close)}</div>
+      <div>{tr("Open", "开盘")} {formatHover(point.open)}　{tr("Close", "收盘")} {formatHover(point.close)}</div>
     </div>
   );
 }

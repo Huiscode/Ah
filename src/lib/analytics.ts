@@ -11,6 +11,7 @@ import { isStale } from "@/lib/freshness";
 export type MarketSignal = {
   itemId: number;
   name: string;
+  nameEn?: string | null; // 英文名（Item.name_en 回填）；EN 模式优先，缺失回退 name
   category: string;
   subCategory?: string;
   quality: string;
@@ -111,6 +112,7 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
     return {
       itemId: item.itemId,
       name: item.name,
+      nameEn: item.nameEn,
       category: item.category,
       subCategory: item.subCategory ?? undefined,
       quality: item.quality,
@@ -163,6 +165,7 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
   return {
     itemId: item.itemId,
     name: item.name,
+    nameEn: item.nameEn,
     category: item.category,
     subCategory: item.subCategory ?? undefined,
     quality: item.quality,
@@ -189,6 +192,7 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
 export type DealRadarRow = {
   itemId: number;
   name: string;
+  nameEn?: string | null;
   quality: string;
   category: string;
   icon?: string | null; // in-game icon texture name, when known
@@ -237,6 +241,7 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
       deals.push({
         itemId: signal.itemId,
         name: signal.name,
+        nameEn: signal.nameEn,
         quality: signal.quality,
         category: signal.category,
         icon: signal.icon,
@@ -263,6 +268,7 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
       deals.push({
         itemId: signal.itemId,
         name: signal.name,
+        nameEn: signal.nameEn,
         quality: signal.quality,
         category: signal.category,
         icon: signal.icon,
@@ -292,6 +298,7 @@ export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = 
 export type SpreadCandidateRow = {
   itemId: number;
   name: string;
+  nameEn?: string | null;
   quality: string;
   category: string;
   icon?: string | null;
@@ -328,6 +335,7 @@ export function buildSpreadCandidates(
     out.push({
       itemId: signal.itemId,
       name: signal.name,
+      nameEn: signal.nameEn,
       quality: signal.quality,
       category: signal.category,
       icon: signal.icon,
@@ -355,6 +363,7 @@ export function buildSpreadCandidates(
 export type MoverRow = {
   itemId: number;
   name: string;
+  nameEn?: string | null;
   quality: string;
   category: string;
   icon?: string | null;
@@ -384,6 +393,7 @@ export function buildMoverBoard(
     out.push({
       itemId: signal.itemId,
       name: signal.name,
+      nameEn: signal.nameEn,
       quality: signal.quality,
       category: signal.category,
       icon: signal.icon,
@@ -447,6 +457,7 @@ export type DisenchantMatLine = {
 export type DisenchantRow = {
   itemId: number;
   name: string;
+  nameEn?: string | null;
   quality: string;
   category: string;
   subCategory?: string;

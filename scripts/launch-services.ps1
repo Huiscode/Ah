@@ -19,7 +19,15 @@ $logDir = Join-Path $root 'logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
 # Use the node on PATH (the .bat launches this from a normal user shell).
-$node = (Get-Command node -ErrorAction Stop).Source
+# Fallback to the canonical winget/MSI install location — shells launched
+# before a Node (re)install keep a stale PATH without it (2026-11-14 incident:
+# profile migration wiped Node; the launcher died at Get-Command).
+$node = try { (Get-Command node -ErrorAction Stop).Source } catch { $null }
+if (-not $node) {
+  $fallback = 'C:\Program Files\nodejs\node.exe'
+  if (Test-Path $fallback) { $node = $fallback }
+}
+if (-not $node) { throw 'node.exe not found on PATH or in C:\Program Files\nodejs — install Node.js LTS first.' }
 
 # A node process is "running" if a node.exe with a matching token exists.
 function Test-NodeRunning($token) {

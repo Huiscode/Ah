@@ -1,5 +1,5 @@
 import type { MarketSignal } from "@/lib/analytics";
-import { categoryMatches, MATERIALS_GROUP } from "@/lib/category-zh";
+import { categoryMatches, EQUIPMENT_GROUP, MATERIALS_GROUP } from "@/lib/category-zh";
 
 export type SignalSortKey = "turnoverScore" | "price" | "minPrice" | "med7" | "discountPercent" | "changePercent" | "quantity";
 
@@ -17,8 +17,16 @@ export function parseMarketView(params: Record<string, string | string[] | undef
   const page = Number.parseInt(first(params.page), 10);
   // 布皮草矿已并入材料分组；旧 URL / localStorage 里残留的
   // "Gathering"/"布皮草矿" 筛选值映射到材料分组，避免刷新后列表只剩 6 项。
+  // 分组令牌 2026-11-14 起固定英文（"Materials"/"Equipment"）——中文旧值
+  // 一并映射，避免刷新后筛选失效。
+  const LEGACY_GROUPS: Record<string, string> = {
+    Gathering: MATERIALS_GROUP,
+    "布皮草矿": MATERIALS_GROUP,
+    "材料": MATERIALS_GROUP,
+    "装备": EQUIPMENT_GROUP
+  };
   const rawCategory = first(params.cat);
-  const category = rawCategory === "Gathering" || rawCategory === "布皮草矿" ? MATERIALS_GROUP : rawCategory;
+  const category = LEGACY_GROUPS[rawCategory] ?? rawCategory;
   return {
     query: first(params.q),
     category,
@@ -37,7 +45,15 @@ export function filterSortSignals(
 ): MarketSignal[] {
   const query = (view.query ?? "").trim().toLowerCase();
   let rows = signals;
-  if (query) rows = rows.filter((signal) => signal.name.toLowerCase().includes(query));
+  // 搜索匹配中文名与英文名（name_en 回填后 EN 客户端用户直接搜英文，
+  // 如 "raptor egg" ↔ 迅猛龙蛋；2026-11-16 修复只匹配中文导致"搜不到"）。
+  if (query) {
+    rows = rows.filter(
+      (signal) =>
+        signal.name.toLowerCase().includes(query) ||
+        (signal.nameEn ?? "").toLowerCase().includes(query)
+    );
+  }
   if (view.category) {
     const cat = view.category;
     rows = rows.filter((signal) => categoryMatches(signal.category, cat));

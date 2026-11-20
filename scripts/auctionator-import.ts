@@ -164,8 +164,11 @@ async function main() {
   const parsedFaction = readAuctionatorSavedVars(SV_PATH, REALM_SLOT);
   const factionEntries = Object.entries(parsedFaction.priceDatabase);
   if (factionEntries.length === 0) {
-    console.error("价格数据库为空——请先在游戏内用 Auctionator 扫描（全量扫描按钮），登出后重试。");
-    process.exit(1);
+    // 空库是正常态（刚装插件/开服还没扫过；watch 双服下另一服存档可能长期为空）：
+    // 优雅退出而非 exit(1)——watch 里 execSync 非零退出会抛错，saveState 不执行，
+    // 每 2 秒无限重试。留待下次扫描落盘后再导入。
+    console.log("价格数据库为空（还没扫描过），本次跳过导入，继续监视。");
+    return;
   }
 
   // 中立槽缺失（还没扫过中立市场）时跳过中立导入，联盟照常。

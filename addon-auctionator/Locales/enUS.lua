@@ -208,9 +208,8 @@ AUCTIONATOR_LOCALES.enUS = function()
   L["IS_TOP_COLUMN"] = "Top?"
   L["YOU_COLUMN"] = "You?"
 
-  L["FULL_SCAN_BUTTON"] = "Scan Alliance AH"
-  L["FULL_SCAN_NEUTRAL_BUTTON"] = "Scan Neutral AH"
-  L["FULL_SCAN_NEUTRAL_TOOLTIP_TEXT"] = "Scan the full listing of the neutral auction house (Elwynn Forest / Redridge Mountains trade camp)."
+  L["FULL_SCAN_BUTTON"] = "Scan Auction House"
+  L["FULL_SCAN_TOOLTIP_TEXT"] = "Scan the full listing of this auction house. The market is detected by location: Alliance capitals = Alliance market; Elwynn Forest / Redridge camp = Neutral market."
   L["SCAN_BUTTON_WRONG_AH"] = "The auction house currently open is not the market of this scan button."
   L["SCAN_BUTTON_UNKNOWN_AH"] = "Unable to identify the current auction house type. Open the auction house in an Alliance capital or at the neutral trade camp."
 

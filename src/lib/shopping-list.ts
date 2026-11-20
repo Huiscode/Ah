@@ -10,10 +10,12 @@ export type ParsedImportList = {
   names: string[]; // 搜索词（物品名）
 };
 
-// 随机前缀剥离：WoW 经典随机前缀掉落名形如"孤狼之轻身法杖"，同 itemId 的
-// 全部前缀变体在 AH 按同一 id 挂单，Auctionator 用基础名搜索一次命中全部。
-// 取"之"后部分；无"之"或"之"在首尾时保留原名（"河爪之斧"这类固定名会退化
-// 为基础词，属已知取舍）。
+// 随机前缀剥离：WoW 经典随机前缀掉落名形如"孤狼之轻身法杖"（英文则带
+// "of the X" 后缀，如 "Brawler Gloves of the Bear"），同 itemId 的全部前缀
+// 变体在 AH 按同一 id 挂单，Auctionator 用基础名搜索一次命中全部。
+// 中文取"之"后部分；英文剥 " of the …" / " of …" 后缀；都不命中时保留原名
+// （"河爪之斧"这类固定名会退化为基础词，属已知取舍）。
+const EN_OF_SUFFIX = /\s+of\s+(?:the\s+)?\S.*$/i;
 export function baseNameOf(name: string): string {
   const trimmed = (name ?? "").trim();
   if (!trimmed) return trimmed;
@@ -21,6 +23,8 @@ export function baseNameOf(name: string): string {
   if (i > 0 && i < trimmed.length - 1) {
     return trimmed.slice(i + 1).trim() || trimmed;
   }
+  const stripped = trimmed.replace(EN_OF_SUFFIX, "").trim();
+  if (stripped && stripped !== trimmed) return stripped;
   return trimmed;
 }
 

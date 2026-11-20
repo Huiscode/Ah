@@ -12,6 +12,8 @@ import { Coins } from "@/components/coins";
 import { WatchStar } from "@/components/watch-star";
 import { ItemIcon } from "@/components/item-icon";
 import { qualityColorClass } from "@/lib/quality";
+import { useLang, useLL } from "@/components/lang-provider";
+import { displayName } from "@/lib/i18n";
 
 type UniqueMat = { matItemId: number; matName: string; matPrice: number; priced: boolean };
 
@@ -21,6 +23,8 @@ function DisenchantRowRow({ row, prices, watched, server }: {
   watched: boolean;
   server?: string;
 }) {
+  const lang = useLang();
+  const tr = useLL();
   const [open, setOpen] = useState(false);
   const [qty, setQty] = useState<Record<number, string>>({});
 
@@ -57,12 +61,12 @@ function DisenchantRowRow({ row, prices, watched, server }: {
       <tr className="border-b border-terminal-border/70 hover:bg-slate-800/35">
         <td className="px-2 py-2 text-center"><WatchStar itemId={row.itemId} watched={watched} /></td>
         <td className="px-3 py-2 text-left">
-          <Link href={`/items/${row.itemId}${server === "cn" ? "?server=cn" : ""}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(row.quality)}`}>
+          <Link href={`/items/${row.itemId}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(row.quality)}`}>
             <ItemIcon itemId={row.itemId} icon={row.icon} />
-            <span className="truncate">{row.name}</span>
+            <span className="truncate">{displayName(row.name, row.nameEn, lang)}</span>
           </Link>
           <div className="mt-0.5 pl-6 text-[10px] text-terminal-muted">
-            {row.subCategory ?? row.category} · 等级{row.itemLevel}
+            {row.subCategory ?? row.category} · {tr("ilvl", "等级")}{row.itemLevel}
           </div>
         </td>
         <td className="px-3 py-2 text-left">
@@ -72,18 +76,18 @@ function DisenchantRowRow({ row, prices, watched, server }: {
         <td className="px-3 py-2 text-right text-slate-300"><Coins copper={row.expectedValue} /></td>
         <td className="px-3 py-2 text-right">
           <span className={netClass}><Coins copper={row.disenchantNet} /></span>
-          <div className="text-[10px] text-terminal-green" title="最可能主档（约75%概率）较好结果到手；已要求它≥买入才入选，第一档不强求">
-            主档{row.mainBestLabel}到手 <Coins copper={row.mainBestTake} />
+          <div className="text-[10px] text-terminal-green" title={tr("Take-home of the most likely main band's (~75%) best result; it must cover the buy price to be listed — the smaller first tier is not required to", "最可能主档（约75%概率）较好结果到手；已要求它≥买入才入选，第一档不强求")}>
+            {tr("Main", "主档")}{row.mainBestLabel}{tr(" take", "到手")} <Coins copper={row.mainBestTake} />
           </div>
           {row.vendorNet > row.disenchantNet && (
-            <div className="text-[10px] text-terminal-muted" title="直接卖 NPC 的回收（无手续费）">卖店 <Coins copper={row.vendorNet} /></div>
+            <div className="text-[10px] text-terminal-muted" title={tr("Vendor sell-back recovery (no AH cut)", "直接卖 NPC 的回收（无手续费）")}>{tr("Vendor", "卖店")} <Coins copper={row.vendorNet} /></div>
           )}
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
             className="mt-0.5 block text-[10px] text-terminal-muted underline-offset-2 hover:text-slate-200 hover:underline"
           >
-            {open ? "收起记账" : "记账（填实际产出）"}
+            {open ? tr("Hide ledger", "收起记账") : tr("Ledger (fill actual drops)", "记账（填实际产出）")}
           </button>
         </td>
         <td className="px-3 py-2 text-left">
@@ -97,14 +101,14 @@ function DisenchantRowRow({ row, prices, watched, server }: {
                   ? (
                     <>
                       <span className="text-terminal-muted">@<Coins copper={mat.matPrice} /></span>
-                      <span className="text-terminal-muted">保本{mat.breakEvenQty}个</span>
+                      <span className="text-terminal-muted">{tr(`BE ${mat.breakEvenQty}`, `保本${mat.breakEvenQty}个`)}</span>
                     </>
                   )
-                  : <span className="text-terminal-muted">无价</span>}
+                  : <span className="text-terminal-muted">{tr("no price", "无价")}</span>}
               </div>
             ))}
           </div>
-          {row.hasMissingMatPrice && <div className="mt-0.5 text-[9px] text-terminal-muted">含缺价材料，期望偏低</div>}
+          {row.hasMissingMatPrice && <div className="mt-0.5 text-[9px] text-terminal-muted">{tr("Includes unpriced materials — expected value biased low", "含缺价材料，期望偏低")}</div>}
         </td>
         <td className="px-3 py-2 text-right text-slate-300">{row.quantity.toLocaleString("en-US")}</td>
       </tr>
@@ -112,19 +116,19 @@ function DisenchantRowRow({ row, prices, watched, server }: {
         <tr className="border-b border-terminal-border/70 bg-slate-900/40">
           <td colSpan={8} className="px-4 py-3">
             <div className="space-y-2">
-              <div className="text-[10px] uppercase text-terminal-muted">实际分解记账（按材料现价 × 实填数量，扣 5% 手续费后对比买入价）</div>
+              <div className="text-[10px] uppercase text-terminal-muted">{tr("Actual disenchant ledger (material price × filled quantity, after the 5% cut, vs buy price)", "实际分解记账（按材料现价 × 实填数量，扣 5% 手续费后对比买入价）")}</div>
               {mats.map((m) => (
                 <div key={m.matItemId} className="flex items-center gap-2 text-xs">
                   <span className={`w-32 truncate ${m.priced ? "text-slate-300" : "text-terminal-muted line-through"}`}>{m.matName}</span>
                   <span className="w-20 text-terminal-muted">
-                    {m.priced ? <>@<Coins copper={m.matPrice} /></> : "无价"}
+                    {m.priced ? <>@<Coins copper={m.matPrice} /></> : tr("no price", "无价")}
                   </span>
                   <input
                     type="number"
                     min={0}
                     step={1}
                     inputMode="numeric"
-                    placeholder="数量"
+                    placeholder={tr("Qty", "数量")}
                     value={qty[m.matItemId] ?? ""}
                     onChange={(e) => setQty((prev) => ({ ...prev, [m.matItemId]: e.target.value }))}
                     className="w-20 rounded border border-terminal-border bg-terminal-panel2 px-2 py-1 text-xs text-slate-200 outline-none focus:border-slate-500"
@@ -135,10 +139,10 @@ function DisenchantRowRow({ row, prices, watched, server }: {
                 </div>
               ))}
               <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-terminal-border pt-2 text-xs">
-                <span className="text-terminal-muted">材料毛额 <Coins copper={ledger.gross} /></span>
-                <span className="text-terminal-muted">到手(扣5%) <Coins copper={ledger.afterCut} /></span>
-                <span className="text-terminal-muted">买入价 <Coins copper={row.buyPrice} /></span>
-                <span className={actualNetClass}>实际净赚 <Coins copper={ledger.net} /></span>
+                <span className="text-terminal-muted">{tr("Materials gross", "材料毛额")} <Coins copper={ledger.gross} /></span>
+                <span className="text-terminal-muted">{tr("Take-home (-5%)", "到手(扣5%)")} <Coins copper={ledger.afterCut} /></span>
+                <span className="text-terminal-muted">{tr("Buy price", "买入价")} <Coins copper={row.buyPrice} /></span>
+                <span className={actualNetClass}>{tr("Actual net", "实际净赚")} <Coins copper={ledger.net} /></span>
               </div>
             </div>
           </td>
@@ -155,11 +159,12 @@ export function DisenchantTable({ rows, prices, watchedItemIds, productItemIds, 
   productItemIds: Set<number>;
   server?: string;
 }) {
+  const tr = useLL();
   const watched = new Set(watchedItemIds);
   if (rows.length === 0) {
     return (
       <div className="p-6 font-mono text-xs text-terminal-muted">
-        暂无分解机会：只收录"最可能主档（约75%概率）较好结果到手也≥买入价"的绿/蓝护甲、武器；靠小概率精华/碎片拉高期望、主档亏本的抽奖型已直接过滤。开服初期或材料缺价时可能为空。
+        {tr("No disenchant opportunities: only green/blue armor & weapons whose most-likely main band (~75%) best-result take-home still covers the buy price are listed; lottery items propped up by rare essences/shards with a losing main band are filtered out. Early on, or when materials lack prices, empty is expected.", "暂无分解机会：只收录\"最可能主档（约75%概率）较好结果到手也≥买入价\"的绿/蓝护甲、武器；靠小概率精华/碎片拉高期望、主档亏本的抽奖型已直接过滤。开服初期或材料缺价时可能为空。")}
       </div>
     );
   }
@@ -180,13 +185,13 @@ export function DisenchantTable({ rows, prices, watchedItemIds, productItemIds, 
           <thead className="sticky top-0 z-10 bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
             <tr>
               <th className="border-b border-terminal-border px-2 py-2 text-center">★</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-left">装备（部位·等级）</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-left">分解段</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">买入价</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">期望分解值</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">分解净赚</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-left">分解明细（概率×数量 @材料价）</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">在售量</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-left">{tr("Gear (slot·ilvl)", "装备（部位·等级）")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-left">{tr("DE band", "分解段")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Buy price", "买入价")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Expected DE value", "期望分解值")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("DE net", "分解净赚")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-left">{tr("Breakdown (chance×qty @mat price)", "分解明细（概率×数量 @材料价）")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Qty", "在售量")}</th>
             </tr>
           </thead>
           <tbody>

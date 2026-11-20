@@ -4,17 +4,13 @@
 // 同一处对比材料毛额 / 扣5%到手 / 总买入 / 实际净赚（到手−总买入，绿赚红亏）。
 // 价格一律 g/s/c（金/银/铜）输入：1金=100银=10000铜。不绑定榜单。
 import { useMemo, useState } from "react";
-import { DISENCHANT_MAT_NAMES } from "@/lib/disenchant-table";
+import { DISENCHANT_MAT_NAMES, disenchantMatName } from "@/lib/disenchant-table";
 import { computeCalcSummary } from "@/lib/analytics";
 import { Coins } from "@/components/coins";
+import { useLang, useLL } from "@/components/lang-provider";
 
 type MaterialRow = { matItemId: number | ""; qty: string; g: string; s: string; c: string };
 type BuyRow = { note: string; count: string; g: string; s: string; c: string };
-
-const MAT_OPTIONS = Object.entries(DISENCHANT_MAT_NAMES).map(([id, name]) => ({
-  id: Number(id),
-  name
-}));
 
 const emptyMaterial = (): MaterialRow => ({ matItemId: "", qty: "", g: "", s: "", c: "" });
 const emptyBuy = (): BuyRow => ({ note: "", count: "", g: "", s: "", c: "" });
@@ -56,6 +52,12 @@ function GscFields({
 }
 
 export function DisenchantCalculator({ prices }: { prices: Map<number, number> }) {
+  const lang = useLang();
+  const tr = useLL();
+  const matOptions = useMemo(
+    () => Object.keys(DISENCHANT_MAT_NAMES).map((id) => ({ id: Number(id), name: disenchantMatName(Number(id), lang) })),
+    [lang]
+  );
   const [materials, setMaterials] = useState<MaterialRow[]>([emptyMaterial()]);
   const [buys, setBuys] = useState<BuyRow[]>([emptyBuy()]);
 
@@ -84,13 +86,13 @@ export function DisenchantCalculator({ prices }: { prices: Map<number, number> }
       {/* 材料区 */}
       <section className="border border-terminal-border bg-terminal-panel/92">
         <div className="flex h-9 items-center justify-between border-b border-terminal-border px-3 text-[11px] uppercase tracking-wide text-terminal-muted">
-          <span>分解得到的材料（填实际出了几个）</span>
+          <span>{tr("Materials you disenchanted into (fill actual drops)", "分解得到的材料（填实际出了几个）")}</span>
           <button
             type="button"
             onClick={() => setMaterials((r) => [...r, emptyMaterial()])}
             className="text-terminal-amber hover:underline"
           >
-            + 添加材料
+            {tr("+ Add material", "+ 添加材料")}
           </button>
         </div>
         <div className="space-y-2 p-3">
@@ -104,32 +106,32 @@ export function DisenchantCalculator({ prices }: { prices: Map<number, number> }
                   onChange={(e) => setMaterial(idx, { matItemId: e.target.value === "" ? "" : Number(e.target.value) })}
                   className={`${inputCls} w-48`}
                 >
-                  <option value="">选择材料…</option>
-                  {MAT_OPTIONS.map((m) => (
+                  <option value="">{tr("Pick a material…", "选择材料…")}</option>
+                  {matOptions.map((m) => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
                 <input
-                  type="number" min={0} step={1} inputMode="numeric" placeholder="数量"
+                  type="number" min={0} step={1} inputMode="numeric" placeholder={tr("Qty", "数量")}
                   value={row.qty}
                   onChange={(e) => setMaterial(idx, { qty: e.target.value })}
                   className={`${inputCls} w-16 text-center`}
                 />
                 {live > 0 ? (
-                  <span className="w-36 text-terminal-muted">现价 <Coins copper={live} /></span>
+                  <span className="w-36 text-terminal-muted">{tr("Live", "现价")} <Coins copper={live} /></span>
                 ) : (
                   <GscFields
                     g={row.g} s={row.s} c={row.c}
                     on={(p) => setMaterial(idx, p)}
                   />
                 )}
-                <span className="w-28 text-terminal-muted">小计 <Coins copper={subtotal} /></span>
+                <span className="w-28 text-terminal-muted">{tr("Subtotal", "小计")} <Coins copper={subtotal} /></span>
                 <button
                   type="button"
                   onClick={() => setMaterials((r) => r.filter((_, i) => i !== idx))}
                   className="text-terminal-red/80 hover:underline"
                 >
-                  删除
+                  {tr("Remove", "删除")}
                 </button>
               </div>
             );
@@ -140,13 +142,13 @@ export function DisenchantCalculator({ prices }: { prices: Map<number, number> }
       {/* 买入区：批量，装备名 + 件数 + 单件 g/s/c */}
       <section className="border border-terminal-border bg-terminal-panel/92">
         <div className="flex h-9 items-center justify-between border-b border-terminal-border px-3 text-[11px] uppercase tracking-wide text-terminal-muted">
-          <span>买入装备花费（同名可一次填件数，自动乘单件价）</span>
+          <span>{tr("Gear buy cost (same-name stacks fill count × unit price)", "买入装备花费（同名可一次填件数，自动乘单件价）")}</span>
           <button
             type="button"
             onClick={() => setBuys((r) => [...r, emptyBuy()])}
             className="text-terminal-amber hover:underline"
           >
-            + 添加一种装备
+            {tr("+ Add a gear type", "+ 添加一种装备")}
           </button>
         </div>
         <div className="space-y-2 p-3">
@@ -156,13 +158,13 @@ export function DisenchantCalculator({ prices }: { prices: Map<number, number> }
             return (
               <div key={idx} className="flex flex-wrap items-center gap-2">
                 <input
-                  type="text" placeholder="装备名（如：山地披风）"
+                  type="text" placeholder={tr("Gear name (e.g. Hillman's Cloak)", "装备名（如：山地披风）")}
                   value={row.note}
                   onChange={(e) => setBuy(idx, { note: e.target.value })}
                   className={`${inputCls} min-w-40 flex-1`}
                 />
                 <input
-                  type="number" min={0} step={1} inputMode="numeric" placeholder="件数"
+                  type="number" min={0} step={1} inputMode="numeric" placeholder={tr("Count", "件数")}
                   value={row.count}
                   onChange={(e) => setBuy(idx, { count: e.target.value })}
                   className={`${inputCls} w-16 text-center`}
@@ -171,13 +173,13 @@ export function DisenchantCalculator({ prices }: { prices: Map<number, number> }
                   g={row.g} s={row.s} c={row.c}
                   on={(p) => setBuy(idx, p)}
                 />
-                <span className="w-28 text-terminal-muted">小计 <Coins copper={subtotal} /></span>
+                <span className="w-28 text-terminal-muted">{tr("Subtotal", "小计")} <Coins copper={subtotal} /></span>
                 <button
                   type="button"
                   onClick={() => setBuys((r) => r.filter((_, i) => i !== idx))}
                   className="text-terminal-red/80 hover:underline"
                 >
-                  删除
+                  {tr("Remove", "删除")}
                 </button>
               </div>
             );
@@ -188,19 +190,19 @@ export function DisenchantCalculator({ prices }: { prices: Map<number, number> }
       {/* 对比汇总 */}
       <section className="grid gap-2 sm:grid-cols-4">
         <div className="border border-terminal-border bg-terminal-panel2 p-3">
-          <div className="text-[10px] uppercase text-terminal-muted">材料毛额</div>
+          <div className="text-[10px] uppercase text-terminal-muted">{tr("Materials gross", "材料毛额")}</div>
           <div className="mt-1 text-sm"><Coins copper={summary.gross} /></div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel2 p-3">
-          <div className="text-[10px] uppercase text-terminal-muted">到手（扣5%税）</div>
+          <div className="text-[10px] uppercase text-terminal-muted">{tr("Take-home (-5% cut)", "到手（扣5%税）")}</div>
           <div className="mt-1 text-sm"><Coins copper={summary.afterCut} /></div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel2 p-3">
-          <div className="text-[10px] uppercase text-terminal-muted">总买入</div>
+          <div className="text-[10px] uppercase text-terminal-muted">{tr("Total buy", "总买入")}</div>
           <div className="mt-1 text-sm"><Coins copper={summary.totalBuy} /></div>
         </div>
         <div className="border border-terminal-border bg-terminal-panel2 p-3">
-          <div className="text-[10px] uppercase text-terminal-muted">实际净赚</div>
+          <div className="text-[10px] uppercase text-terminal-muted">{tr("Actual net", "实际净赚")}</div>
           <div className={`mt-1 text-sm font-bold ${netClass}`}><Coins copper={summary.net} /></div>
         </div>
       </section>

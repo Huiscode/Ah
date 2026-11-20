@@ -90,8 +90,9 @@ async function main() {
   try {
     source = readFileSync(SV_PATH, "utf8");
   } catch {
-    console.error(`找不到存档 ${SV_PATH}——请先在游戏内 /wahscan start 扫描并正常登出。`);
-    process.exit(1);
+    // 存档尚未生成（新装客户端/还没登录落盘）是正常态：优雅退出防 watch 死循环。
+    console.log(`找不到存档 ${SV_PATH}（还没落盘），本次跳过转录导入。`);
+    return;
   }
 
   const L = lauxlib.luaL_newstate();
@@ -108,15 +109,18 @@ async function main() {
   lua.lua_getglobal(L, to_luastring("WAHTranscribeDB"));
   const db = luaToJs(L, -1) as { version?: number; scans?: Record<string, RawScan> } | null;
   lua.lua_close(L);
+  // 无 WAHTranscribeDB / scans 为空均为正常态（该存档可能来自未装转录模块的客户端，
+  // 如欧服目录现为 FalconAH 版只写 FAL* 全局；或本轮扫描无补档候选）：
+  // 优雅退出而非 exit(1)——watch 里非零退出会抛错导致每 2 秒无限重试。
   if (!db || typeof db !== "object" || !db.scans) {
-    console.error("存档里没有 WAHTranscribeDB.scans——请先扫描。");
-    process.exit(1);
+    console.log("存档里没有 WAHTranscribeDB.scans，本次跳过转录导入。");
+    return;
   }
 
   const scans = Object.entries(db.scans);
   if (scans.length === 0) {
-    console.error("WAHTranscribeDB.scans 为空——请先在游戏内 /wahscan start 扫描。");
-    process.exit(1);
+    console.log("WAHTranscribeDB.scans 为空（本轮无补档候选），本次跳过转录导入。");
+    return;
   }
 
   const tiers: Array<{ itemId: number; ts: Date; server: string; faction: string; market: string; source: string; price: bigint; qty: number }> = [];

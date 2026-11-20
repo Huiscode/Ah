@@ -52,6 +52,41 @@ export const DISENCHANT_MAT_NAMES: Record<number, string> = {
   20725: "连结水晶"
 };
 
+// 经典旧世 23 种附魔分解材料的标准英文名（EN 界面/计算器下拉用）。
+export const DISENCHANT_MAT_NAMES_EN: Record<number, string> = {
+  10940: "Strange Dust",
+  10938: "Lesser Magic Essence",
+  10939: "Greater Magic Essence",
+  10978: "Small Glimmering Shard",
+  11083: "Soul Dust",
+  11082: "Greater Astral Essence",
+  11084: "Large Glimmering Shard",
+  10998: "Lesser Astral Essence",
+  11134: "Lesser Mystic Essence",
+  11138: "Small Radiant Shard",
+  11137: "Vision Dust",
+  11135: "Greater Mystic Essence",
+  11139: "Large Radiant Shard",
+  11174: "Lesser Nether Essence",
+  11177: "Small Brilliant Shard",
+  11176: "Dream Dust",
+  11175: "Greater Nether Essence",
+  11178: "Large Brilliant Shard",
+  16202: "Lesser Eternal Essence",
+  14343: "Small Prismatic Shard",
+  16204: "Illusion Dust",
+  16203: "Greater Eternal Essence",
+  14344: "Large Prismatic Shard",
+  20725: "Nexus Crystal"
+};
+
+/** 分解材料名（双语）：EN 模式用标准英文名，ZH 用中文名。 */
+export function disenchantMatName(matItemId: number, lang: "en" | "zh"): string {
+  return lang === "en"
+    ? (DISENCHANT_MAT_NAMES_EN[matItemId] ?? DISENCHANT_MAT_NAMES[matItemId] ?? String(matItemId))
+    : (DISENCHANT_MAT_NAMES[matItemId] ?? String(matItemId));
+}
+
 // 绿装·护甲
 const GREEN_ARMOR: DisenchantBand[] = [
   { ilvlLow: 5, ilvlHigh: 15, outcomes: [

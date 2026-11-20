@@ -28,6 +28,9 @@ export type RecipeMaterial = {
 
 export type DbRecipe = {
   name: string;
+  // 显示语言名（recipe-i18n 渲染前填充；EN=英文名，缺省回退 name）。name 本身
+  // 保留中文——收藏键 / 图纸前缀匹配 / DB unique 都以它为稳定标识。
+  displayName?: string;
   profession: string;
   skillLevel: number;
   reagents: RecipeMaterial[];
@@ -92,7 +95,9 @@ export const stripRecipePrefix = (name: string): string => name.replace(PATTERN_
 
 // Canonical English profession names (stored value) → client-locale display
 // labels. Data keeps the English keys (import layer / /wahrecipes normalize to
-// these); the UI renders Chinese via professionLabel().
+// these); the UI renders per language via professionLabel(prof, lang).
+import { L, type Lang } from "@/lib/i18n";
+
 export const PROFESSION_EN_TO_ZH: Record<string, string> = {
   Alchemy: "炼金术",
   Blacksmithing: "锻造",
@@ -109,8 +114,8 @@ export const PROFESSION_EN_TO_ZH: Record<string, string> = {
   General: "贸易通用"
 };
 
-export const professionLabel = (profession: string): string =>
-  PROFESSION_EN_TO_ZH[profession] ?? profession;
+export const professionLabel = (profession: string, lang: Lang = "en"): string =>
+  lang === "zh" ? (PROFESSION_EN_TO_ZH[profession] ?? profession) : profession;
 
 // 个别分类名漏了中译，在这里补显示层映射。
 const CATEGORY_EN_TO_ZH: Record<string, string> = {
@@ -118,8 +123,8 @@ const CATEGORY_EN_TO_ZH: Record<string, string> = {
   "Armor Food": "护甲食物"
 };
 
-export const categoryLabel = (category: string): string =>
-  CATEGORY_EN_TO_ZH[category] ?? category;
+export const categoryLabel = (category: string, lang: Lang = "en"): string =>
+  lang === "zh" ? (CATEGORY_EN_TO_ZH[category] ?? category) : category;
 
 export type RecipeFloors = {
   /** 材料成本兜底：NPC 卖价（Item.sellPrice，游戏内商人卖出单价）> 收购价 > 字典。 */

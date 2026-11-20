@@ -110,12 +110,28 @@ function importServer(sw: ServerWatch): void {
     AQ_AUCTIONATOR_SV_PATH: sw.auctionatorSv,
     AQ_TRANSCRIPT_SV_PATH: sw.transcriptSv
   };
-  execSync("npm run auctionator:import", { cwd: ROOT, shell: SHELL, stdio: "inherit", env });
-  execSync("npm run transcript:import", { cwd: ROOT, shell: SHELL, stdio: "inherit", env });
+  // 单步失败不中断整批：否则 saveState() 不执行 → diff 永远判"有更新"→ 每 2 秒
+  // 无限重试同一次导入。失败只记日志，状态照常保存，等下一次真实扫描自愈。
+  const steps: Array<[string, string]> = [
+    ["auctionator:import", "npm run auctionator:import"],
+    ["transcript:import", "npm run transcript:import"]
+  ];
   if (loadVendorGamePrices(sw.transcriptSv)) {
-    execSync("npm run vendor:import", { cwd: ROOT, shell: SHELL, stdio: "inherit", env });
+    steps.push(["vendor:import", "npm run vendor:import"]);
   } else {
     console.log("（游戏内商人价暂无数据，跳过 vendor:import——打开商人窗口后会自动记录）");
+  }
+  // 每轮导入后刷新补档目标清单（TierList.lua → 游戏目录）：中间材料 + 雷达前 N，
+  // 插件端扫描后只搜这份名单（~200 个 ≈ 1 分钟内）。仅主服刷新。
+  if (sw.key === (process.env.AQ_SERVER_KEY ?? "eu")) {
+    steps.push(["gen:tierlist", "npm run gen:tierlist"]);
+  }
+  for (const [name, cmd] of steps) {
+    try {
+      execSync(cmd, { cwd: ROOT, shell: SHELL, stdio: "inherit", env });
+    } catch (e) {
+      console.error(`【${sw.key}】${name} 失败（本批其余步骤继续）：${(e as Error).message.slice(0, 120)}`);
+    }
   }
 }
 

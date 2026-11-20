@@ -10,9 +10,11 @@ import { ProductBadge } from "@/components/product-badge";
 import { qualityColorClass } from "@/lib/quality";
 import { turnoverBadgeClass } from "@/lib/turnover";
 import { formatPercent } from "@/lib/utils";
-import { categoryMatches } from "@/lib/category-zh";
 import type { DealRadarRow } from "@/lib/analytics";
 import { usePersistedState } from "@/lib/use-persisted-state";
+import { useLang, useLL } from "@/components/lang-provider";
+import { displayName } from "@/lib/i18n";
+import { filterRadarRows } from "@/lib/radar-filters";
 
 type SortKey = "name" | "price" | "minPrice" | "reference" | "discountPercent" | "changePercent" | "quantity";
 
@@ -38,35 +40,21 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
   const [onlyVendor, setOnlyVendor] = usePersistedState<boolean>("wah:deal-radar:onlyVendor", false);
   const [minQuantity, setMinQuantity] = usePersistedState<number>("wah:deal-radar:minQuantity", 0);
   const [minTierGap, setMinTierGap] = usePersistedState<number>("wah:deal-radar:minTierGap", 0);
+  const lang = useLang();
+  const tr = useLL();
   const watched = new Set(watchedItemIds);
 
   useEffect(() => {
     if (category && !categories.includes(category)) setCategory("");
   }, [categories, category, setCategory]);
 
-  let rows = category
-    ? deals.filter((deal) => categoryMatches(deal.category, category))
-    : [...deals];
-
-  // 仅限高流通：只保留有流通分的商品（turnoverScore > 0）。
-  if (onlyLiquid) rows = rows.filter((deal) => deal.turnoverScore > 0);
-
-  // 必赚：只保留 NPC 倒卖行（vendor === true）。
-  if (onlyVendor) rows = rows.filter((deal) => deal.vendor);
-
-  // 在售量下限：quantity（总在售量）≥ 设置值。
-  if (minQuantity > 0) rows = rows.filter((deal) => deal.quantity >= minQuantity);
-
-  // 价格档位差距：前五档（不足五档用实际档位）中任意两档的差距 % ≥ 设置值。
-  // tierGapByItemId 只含"≥2 档且有正差距"的物品（getPriceTierGaps 已跳过单档/无档位），
-  // 因此这里：无档位数据或只有一档的物品 gap === undefined → 过滤；档位不足五档时
-  // 用实际档位算（gap = 最高档−最低档 / 最低档）。
-  if (minTierGap > 0) {
-    rows = rows.filter((deal) => {
-      const gap = tierGapByItemId?.get(deal.itemId);
-      return gap !== undefined && gap >= minTierGap;
-    });
-  }
+  // 筛选谓词与 OpportunityTabs 的计数/复制名单共用（radar-filters.ts），
+  // 保证"筛选后 N / 总数"与表格行数、复制内容一致。
+  let rows = filterRadarRows(
+    deals,
+    { category, onlyLiquid, onlyVendor, minQuantity, minTierGap },
+    tierGapByItemId
+  );
 
   if (sortKey) {
     rows.sort((left, right) => {
@@ -116,13 +104,13 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
         <thead className="sticky top-0 z-10 bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
           <tr>
             <th className="border-b border-terminal-border px-2 py-2 text-center">★</th>
-            <th onClick={() => toggle("name")} className={`${thClass} text-left`}>物品{mark("name")}</th>
-            <th onClick={() => toggle("minPrice")} className={`${thClass} text-right`}>最低价{mark("minPrice")}</th>
-            <th onClick={() => toggle("price")} className={`${thClass} text-right`}>最低买入{mark("price")}</th>
-            <th onClick={() => toggle("reference")} className={`${thClass} text-right`}>7日参考{mark("reference")}</th>
-            <th onClick={() => toggle("discountPercent")} className={`${thClass} text-right`}>折扣%{mark("discountPercent")}</th>
-            <th onClick={() => toggle("changePercent")} className={`${thClass} text-right`}>环比%{mark("changePercent")}</th>
-            <th onClick={() => toggle("quantity")} className={`${thClass} text-right`}>在售量{mark("quantity")}</th>
+            <th onClick={() => toggle("name")} className={`${thClass} text-left`}>{tr("Item", "物品")}{mark("name")}</th>
+            <th onClick={() => toggle("minPrice")} className={`${thClass} text-right`}>{tr("Min", "最低价")}{mark("minPrice")}</th>
+            <th onClick={() => toggle("price")} className={`${thClass} text-right`}>{tr("Min Buyout", "最低买入")}{mark("price")}</th>
+            <th onClick={() => toggle("reference")} className={`${thClass} text-right`}>{tr("7d Ref", "7日参考")}{mark("reference")}</th>
+            <th onClick={() => toggle("discountPercent")} className={`${thClass} text-right`}>{tr("Disc%", "折扣%")}{mark("discountPercent")}</th>
+            <th onClick={() => toggle("changePercent")} className={`${thClass} text-right`}>{tr("Chg%", "环比%")}{mark("changePercent")}</th>
+            <th onClick={() => toggle("quantity")} className={`${thClass} text-right`}>{tr("Qty", "在售量")}{mark("quantity")}</th>
           </tr>
         </thead>
         <tbody>
@@ -130,20 +118,20 @@ export function DealRadarTable({ deals, prices, categories, watchedItemIds, prod
             <tr key={deal.itemId} className="border-b border-terminal-border/70 hover:bg-slate-800/35">
               <td className="px-2 py-2 text-center"><WatchStar itemId={deal.itemId} watched={watched.has(deal.itemId)} /></td>
               <td className="px-3 py-2 text-left">
-                <Link href={`/items/${deal.itemId}${server === "cn" ? "?server=cn" : ""}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(deal.quality)}`}>
+                <Link href={`/items/${deal.itemId}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(deal.quality)}`}>
                   <ItemIcon itemId={deal.itemId} icon={deal.icon} />
-                  <span className="truncate">{deal.name}</span>
+                  <span className="truncate">{displayName(deal.name, deal.nameEn, lang)}</span>
                 </Link>
                 {productItemIds.has(deal.itemId) && <ProductBadge itemId={deal.itemId} />}
                 {turnoverBadgeClass(deal.turnoverScore) !== null && (
-                  <span className={`ml-1.5 rounded px-1 py-0.5 align-middle text-[9px] ${turnoverBadgeClass(deal.turnoverScore)}`} title="被 N 个配方使用">{deal.turnoverScore}</span>
+                  <span className={`ml-1.5 rounded px-1 py-0.5 align-middle text-[9px] ${turnoverBadgeClass(deal.turnoverScore)}`} title={tr("Used by N recipes", "被 N 个配方使用")}>{deal.turnoverScore}</span>
                 )}
               </td>
               <td className="px-3 py-2 text-right"><Coins copper={deal.minPrice} /></td>
               <td className="px-3 py-2 text-right"><Coins copper={prices.get(deal.itemId) ?? 0} /></td>
               <td className="px-3 py-2 text-right text-terminal-muted"><Coins copper={deal.reference} /></td>
               {deal.vendor
-                ? <td className="whitespace-nowrap px-3 py-2 text-right text-terminal-amber">必赚 +<Coins copper={deal.profit} /></td>
+                ? <td className="whitespace-nowrap px-3 py-2 text-right text-terminal-amber">{tr("Vendor", "必赚")} +<Coins copper={deal.profit} /></td>
                 : <td className={`whitespace-nowrap px-3 py-2 text-right ${deal.discountPercent > 0 ? "text-terminal-green" : deal.discountPercent < 0 ? "text-terminal-red" : "text-slate-100"}`}>{deal.discountPercent.toFixed(0)}%</td>}
               <td className={"px-3 py-2 text-right " + trendTextClass(deal.changePercent)}>{formatTrendPercent(deal.changePercent)}</td>
               <td className="px-3 py-2 text-right text-slate-300">{deal.quantity.toLocaleString("en-US")}</td>

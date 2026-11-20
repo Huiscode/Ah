@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { dealRadarRules, mergeRadarRules } from "@/lib/market-rules";
 import { getRadarRules } from "@/lib/repositories";
 import { prisma } from "@/lib/prisma";
+import { L } from "@/lib/i18n";
+import { getLang } from "@/lib/i18n-server";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -22,26 +24,27 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const lang = await getLang();
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "请求体不是合法 JSON" }, { status: 400 });
+    return NextResponse.json({ error: L(lang, "Request body is not valid JSON", "请求体不是合法 JSON") }, { status: 400 });
   }
   if (typeof body !== "object" || body === null) {
-    return NextResponse.json({ error: "请求体必须是对象" }, { status: 400 });
+    return NextResponse.json({ error: L(lang, "Request body must be an object", "请求体必须是对象") }, { status: 400 });
   }
   const source = body as Record<string, unknown>;
   const merged: Record<string, number> = { ...dealRadarRules };
   for (const field of NUMERIC_FIELDS) {
     const value = source[field];
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) merged[field] = value;
-    else if (value !== undefined) return NextResponse.json({ error: `字段 ${field} 必须是 ≥0 的数字` }, { status: 400 });
+    else if (value !== undefined) return NextResponse.json({ error: L(lang, `Field ${field} must be a number ≥ 0`, `字段 ${field} 必须是 ≥0 的数字`) }, { status: 400 });
   }
   if (source.staleWindowDays !== undefined) {
     const days = source.staleWindowDays;
     if (typeof days !== "number" || !Number.isFinite(days) || days < 0) {
-      return NextResponse.json({ error: "字段 staleWindowDays 必须是 ≥0 的数字（天）" }, { status: 400 });
+      return NextResponse.json({ error: L(lang, "Field staleWindowDays must be a number ≥ 0 (days)", "字段 staleWindowDays 必须是 ≥0 的数字（天）") }, { status: 400 });
     }
     merged.staleWindowMs = Math.round(days * DAY_MS);
   }

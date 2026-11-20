@@ -12,6 +12,8 @@ import { qualityColorClass } from "@/lib/quality";
 import { turnoverBadgeClass } from "@/lib/turnover";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import { zoneBadge } from "@/lib/utils";
+import { useLang, useLL } from "@/components/lang-provider";
+import { displayName } from "@/lib/i18n";
 
 export function SpreadCandidatesTable({ rows, prices, watchedItemIds, productItemIds, server }: {
   rows: SpreadCandidateRow[];
@@ -20,11 +22,13 @@ export function SpreadCandidatesTable({ rows, prices, watchedItemIds, productIte
   productItemIds: Set<number>;
   server?: string;
 }) {
+  const lang = useLang();
+  const tr = useLL();
   const watched = new Set(watchedItemIds);
   if (rows.length === 0) {
     return (
       <div className="p-6 font-mono text-xs text-terminal-muted">
-        暂无标的：数据满 7 天后，起伏 ≥ 15%、被 2+ 配方使用、有人在售的物品会出现在这里（开服初期正常为空）。
+        {tr("No candidates yet: once 7 days of data accumulate, items with ≥15% volatility, 2+ downstream recipes, and live listings appear here (empty early on is expected).", "暂无标的：数据满 7 天后，起伏 ≥ 15%、被 2+ 配方使用、有人在售的物品会出现在这里（开服初期正常为空）。")}
       </div>
     );
   }
@@ -45,29 +49,29 @@ export function SpreadCandidatesTable({ rows, prices, watchedItemIds, productIte
           <thead className="sticky top-0 z-10 bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
             <tr>
               <th className="border-b border-terminal-border px-2 py-2 text-center">★</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-left">物品</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">最低买入</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">7日参考</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">区间</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">起伏%</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">在售量</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">环比%</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-left">{tr("Item", "物品")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Min Buyout", "最低买入")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("7d Ref", "7日参考")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Band", "区间")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Vol%", "起伏%")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Qty", "在售量")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Chg%", "环比%")}</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => {
-              const zone = zoneBadge(row.zone);
+              const zone = zoneBadge(row.zone, lang);
               return (
                 <tr key={row.itemId} className="border-b border-terminal-border/70 hover:bg-slate-800/35">
                   <td className="px-2 py-2 text-center"><WatchStar itemId={row.itemId} watched={watched.has(row.itemId)} /></td>
                   <td className="px-3 py-2 text-left">
-                    <Link href={`/items/${row.itemId}${server === "cn" ? "?server=cn" : ""}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(row.quality)}`}>
+                    <Link href={`/items/${row.itemId}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(row.quality)}`}>
                       <ItemIcon itemId={row.itemId} icon={row.icon} />
-                      <span className="truncate">{row.name}</span>
+                      <span className="truncate">{displayName(row.name, row.nameEn, lang)}</span>
                     </Link>
                     {productItemIds.has(row.itemId) && <ProductBadge itemId={row.itemId} />}
                     {turnoverBadgeClass(row.turnoverScore) !== null && (
-                      <span className={`ml-1.5 rounded px-1 py-0.5 align-middle text-[9px] ${turnoverBadgeClass(row.turnoverScore)}`} title="被 N 个配方使用">{row.turnoverScore}</span>
+                      <span className={`ml-1.5 rounded px-1 py-0.5 align-middle text-[9px] ${turnoverBadgeClass(row.turnoverScore)}`} title={tr("Used by N recipes", "被 N 个配方使用")}>{row.turnoverScore}</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right"><Coins copper={prices.get(row.itemId) ?? row.price} /></td>

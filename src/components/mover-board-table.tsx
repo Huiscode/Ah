@@ -12,11 +12,13 @@ import { ProductBadge } from "@/components/product-badge";
 import { qualityColorClass } from "@/lib/quality";
 import { turnoverBadgeClass } from "@/lib/turnover";
 import { formatTrendPercent } from "@/lib/trend";
+import { useLang, useLL } from "@/components/lang-provider";
+import { displayName, type Lang } from "@/lib/i18n";
 
-function directionBadge(changePercent: number): { label: string; className: string } {
+function directionBadge(changePercent: number, lang: Lang): { label: string; className: string } {
   return changePercent < 0
-    ? { label: "大跌·买点", className: "text-terminal-green" }
-    : { label: "大涨·卖点", className: "text-terminal-red" };
+    ? { label: lang === "zh" ? "大跌·买点" : "DROP·Buy", className: "text-terminal-green" }
+    : { label: lang === "zh" ? "大涨·卖点" : "SURGE·Sell", className: "text-terminal-red" };
 }
 
 export function MoverBoardTable({ rows, prices, watchedItemIds, productItemIds, server }: {
@@ -26,11 +28,13 @@ export function MoverBoardTable({ rows, prices, watchedItemIds, productItemIds, 
   productItemIds: Set<number>;
   server?: string;
 }) {
+  const lang = useLang();
+  const tr = useLL();
   const watched = new Set(watchedItemIds);
   if (rows.length === 0) {
     return (
       <div className="p-6 font-mono text-xs text-terminal-muted">
-        暂无异动：两次扫描之间价格变动 ≥ 20% 且有人在售的物品会出现在这里（开服初期数据不足，正常为空）。
+        {tr("No movers yet: items whose price moved ≥20% between scans with live listings appear here (not enough data early on — empty is expected).", "暂无异动：两次扫描之间价格变动 ≥ 20% 且有人在售的物品会出现在这里（开服初期数据不足，正常为空）。")}
       </div>
     );
   }
@@ -51,29 +55,29 @@ export function MoverBoardTable({ rows, prices, watchedItemIds, productItemIds, 
           <thead className="sticky top-0 z-10 bg-terminal-panel2 text-[10px] uppercase text-terminal-muted">
             <tr>
               <th className="border-b border-terminal-border px-2 py-2 text-center">★</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-left">物品</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">最低买入</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">7日参考</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">变动%</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">方向</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">在售量</th>
-              <th className="border-b border-terminal-border px-3 py-2 text-right">流通</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-left">{tr("Item", "物品")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Min Buyout", "最低买入")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("7d Ref", "7日参考")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Move%", "变动%")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Direction", "方向")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Qty", "在售量")}</th>
+              <th className="border-b border-terminal-border px-3 py-2 text-right">{tr("Turnover", "流通")}</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => {
-              const direction = directionBadge(row.changePercent);
+              const direction = directionBadge(row.changePercent, lang);
               return (
                 <tr key={row.itemId} className="border-b border-terminal-border/70 hover:bg-slate-800/35">
                   <td className="px-2 py-2 text-center"><WatchStar itemId={row.itemId} watched={watched.has(row.itemId)} /></td>
                   <td className="px-3 py-2 text-left">
-                    <Link href={`/items/${row.itemId}${server === "cn" ? "?server=cn" : ""}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(row.quality)}`}>
+                    <Link href={`/items/${row.itemId}`} target="_blank" className={`inline-flex items-center gap-2 ${qualityColorClass(row.quality)}`}>
                       <ItemIcon itemId={row.itemId} icon={row.icon} />
-                      <span className="truncate">{row.name}</span>
+                      <span className="truncate">{displayName(row.name, row.nameEn, lang)}</span>
                     </Link>
                     {productItemIds.has(row.itemId) && <ProductBadge itemId={row.itemId} />}
                     {turnoverBadgeClass(row.turnoverScore) !== null && (
-                      <span className={`ml-1.5 rounded px-1 py-0.5 align-middle text-[9px] ${turnoverBadgeClass(row.turnoverScore)}`} title="被 N 个配方使用">{row.turnoverScore}</span>
+                      <span className={`ml-1.5 rounded px-1 py-0.5 align-middle text-[9px] ${turnoverBadgeClass(row.turnoverScore)}`} title={tr("Used by N recipes", "被 N 个配方使用")}>{row.turnoverScore}</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right"><Coins copper={prices.get(row.itemId) ?? row.price} /></td>

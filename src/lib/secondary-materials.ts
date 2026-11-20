@@ -25,13 +25,23 @@ export type SecondaryMaterialRow = {
   marginPercent: number; // 利润率（%）
 };
 
+// 面板排除的专业（用户 2026-11-07 拍板）：
+//   - First Aid：绷带只被急救自己的后续配方（急救包/营地物品链）消耗，
+//     是自产自耗的末端消耗品而非供应链中间产物；
+//   - Mining：熔炼无加工利润口径（锭＝矿石直接转化），面板行无意义。
+// 它们的产物仍正常作为材料计入其它配方的成本/流通分，只是不作为
+// "做出来卖"的中间材料行展示。
+const EXCLUDED_PROFESSIONS = new Set(["First Aid", "Mining"]);
+
 export function buildSecondaryMaterialRows(
   recipes: DbRecipe[],
   priceByItemId: Map<number, number>,
   costFloor: Map<number, number>,
   revenueFloor: Map<number, number>
 ): SecondaryMaterialRow[] {
-  const craftRecipes = recipes.filter((recipe) => recipe.category !== "merchant");
+  const craftRecipes = recipes.filter(
+    (recipe) => recipe.category !== "merchant" && !EXCLUDED_PROFESSIONS.has(recipe.profession)
+  );
 
   // 被使用次数：任何配方（含商人兑换）消耗该物品即计入。
   const usageCount = new Map<number, number>();
@@ -108,8 +118,11 @@ export function buildSecondaryMaterialRows(
     });
   }
 
+  // 只保留当前有利润的行（用户 2026-11-09 拍板：亏损项不显示——面板是
+  // "现在做什么赚"的决策面板，不是全量行情表；价格变动后行会自动进出）。
+  const profitable = rows.filter((row) => row.unitProfit > 0);
   // 默认按利润率从高到低（赚钱的在前），同利润率按单位利润降序。
-  return rows.sort(
+  return profitable.sort(
     (left, right) => right.marginPercent - left.marginPercent || right.unitProfit - left.unitProfit
   );
 }

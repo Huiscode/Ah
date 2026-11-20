@@ -1,6 +1,8 @@
 ﻿// Data freshness label for scan timestamps. The terminal must make
 // "how old is this data" visible everywhere prices render.
 
+import { L, type Lang } from "@/lib/i18n";
+
 export type Freshness = { label: string; stale: boolean };
 
 const STALE_MINUTES = 2 * 60;
@@ -17,12 +19,12 @@ export function isStale(latest: Date | null, now: Date, maxAgeMs: number = STALE
   return now.getTime() - latest.getTime() > maxAgeMs;
 }
 
-export function describeFreshness(latest: Date | null, now: Date, maxAgeMs: number = STALE_MAX_AGE_MS): Freshness {
-  if (!latest) return { label: "无数据", stale: true };
+export function describeFreshness(latest: Date | null, now: Date, maxAgeMs: number = STALE_MAX_AGE_MS, lang: Lang = "en"): Freshness {
+  if (!latest) return { label: L(lang, "no data", "无数据"), stale: true };
   const minutes = Math.floor((now.getTime() - latest.getTime()) / 60_000);
-  if (minutes < 1) return { label: "刚刚", stale: false };
-  if (minutes < 60) return { label: `${minutes} 分钟前`, stale: minutes * 60_000 > maxAgeMs };
+  if (minutes < 1) return { label: L(lang, "just now", "刚刚"), stale: false };
+  if (minutes < 60) return { label: L(lang, `${minutes}m ago`, `${minutes} 分钟前`), stale: minutes * 60_000 > maxAgeMs };
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return { label: `${hours} 小时前`, stale: minutes * 60_000 > maxAgeMs };
-  return { label: `${Math.floor(hours / 24)} 天前`, stale: minutes * 60_000 > maxAgeMs };
+  if (hours < 24) return { label: L(lang, `${hours}h ago`, `${hours} 小时前`), stale: minutes * 60_000 > maxAgeMs };
+  return { label: L(lang, `${Math.floor(hours / 24)}d ago`, `${Math.floor(hours / 24)} 天前`), stale: minutes * 60_000 > maxAgeMs };
 }

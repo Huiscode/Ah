@@ -12,6 +12,7 @@ import { CopperAmount } from "@/components/copper-amount";
 import { ProductBadge } from "@/components/product-badge";
 import { AddToListButton } from "@/components/add-to-list-button";
 import { usePersistedState } from "@/lib/use-persisted-state";
+import { useLL } from "@/components/lang-provider";
 
 // 关注配方：配方库页收藏的配方（localStorage 共享同一 key），这里只读过滤。
 // 收藏身份 =（分类|专业|名称），与 Recipe 表的唯一键一致。
@@ -39,6 +40,7 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists, server 
   lists: Array<{ id: string; name: string }>;
   server?: string; // 当前服务器视图（"eu"/"cn"），物品链接保持同服跳转
 }) {
+  const tr = useLL();
   const [favorites, setFavorites] = usePersistedState<FavoriteKey[]>(FAVORITES_KEY, []);
   const [open, setOpen] = useState(true);
 
@@ -59,7 +61,7 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists, server 
         onClick={() => setOpen(true)}
         className="flex h-9 w-full items-center justify-between border border-terminal-border bg-terminal-panel px-3 font-mono text-[11px] uppercase tracking-wide text-terminal-muted hover:text-terminal-amber"
       >
-        <span>关注配方</span>
+        <span>{tr("Favorite Recipes", "关注配方")}</span>
         <Eye size={13} />
       </button>
     );
@@ -68,64 +70,64 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists, server 
   return (
     <Panel>
       <PanelHeader
-        title="关注配方"
+        title={tr("Favorite Recipes", "关注配方")}
         action={
           <span className="flex items-center gap-2">
             <Star size={13} className="text-terminal-amber" />
-            <button onClick={() => setOpen(false)} aria-label="收起" className="text-terminal-muted hover:text-terminal-amber"><EyeOff size={13} /></button>
+            <button onClick={() => setOpen(false)} aria-label={tr("Collapse", "收起")} className="text-terminal-muted hover:text-terminal-amber"><EyeOff size={13} /></button>
           </span>
         }
       />
       <div className="space-y-2 p-3 font-mono text-xs">
         {favRows.length === 0 && (
           <div className="text-terminal-muted">
-            还没有关注配方。到 <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="text-terminal-amber hover:underline">配方库</Link> 点 ☆ 收藏配方，会显示在这里。
+            {tr("No favorite recipes yet. Star ☆ recipes in the ", "还没有关注配方。到 ")}<Link href="/recipes" target="_blank" rel="noopener noreferrer" className="text-terminal-amber hover:underline">{tr("Recipes", "配方库")}</Link>{tr(" page and they will show up here.", " 点 ☆ 收藏配方，会显示在这里。")}
           </div>
         )}
         {favRows.map((row) => (
           <div key={`${row.recipe.category}|${row.recipe.profession}|${row.recipe.name}`} className="group relative flex items-center justify-between gap-2">
             <span className="flex min-w-0 items-center gap-2">
-              <AddToListButton items={row.recipe.reagents.map((m) => ({ itemId: m.itemId, name: m.name, quantity: m.quantity }))} lists={lists} label="原料入清单" />
+              <AddToListButton items={row.recipe.reagents.map((m) => ({ itemId: m.itemId, name: m.name, quantity: m.quantity }))} lists={lists} label={tr("Add reagents", "原料入清单")} />
               <button
                 onClick={() => toggleFavorite(row)}
-                title="取消收藏"
+                title={tr("Unstar", "取消收藏")}
                 className="shrink-0 text-terminal-amber hover:text-slate-300"
               >
                 ★
               </button>
               <span className="flex min-w-0 flex-wrap items-center gap-x-1.5">
-              {row.recipe.outputs.length === 0 ? (
-                <span className="truncate text-slate-100">{row.recipe.name}<span className="ml-1 text-[9px] text-terminal-muted">附魔</span></span>
-              ) : (
-                row.recipe.outputs.map((output, i) => (
-                <span key={i} className="inline-flex items-center gap-1">
-                  {i > 0 && <span className="text-terminal-muted">+</span>}
-                  <Link
-                    href={`/items/${output.itemId}${server === "cn" ? "?server=cn" : ""}`}
-                    target="_blank"
-                    data-no-ladder
-                    className={`inline-flex items-center gap-1 truncate ${qualityColorClassById(output.quality)}`}
-                  >
-                    {output.name}×{output.quantity}
-                  </Link>
-                  <ProductBadge itemId={output.itemId} />
-                </span>
-                ))
-              )}
+                {row.recipe.outputs.length === 0 ? (
+                  <span className="truncate text-slate-100">{row.recipe.displayName ?? row.recipe.name}<span className="ml-1 text-[9px] text-terminal-muted">{tr("enchant", "附魔")}</span></span>
+                ) : (
+                  row.recipe.outputs.map((output, i) => (
+                  <span key={i} className="inline-flex items-center gap-1">
+                    {i > 0 && <span className="text-terminal-muted">+</span>}
+                    <Link
+                      href={`/items/${output.itemId}`}
+                      target="_blank"
+                      data-no-ladder
+                      className={`inline-flex items-center gap-1 truncate ${qualityColorClassById(output.quality)}`}
+                    >
+                      {output.name}×{output.quantity}
+                    </Link>
+                    <ProductBadge itemId={output.itemId} />
+                  </span>
+                  ))
+                )}
               </span>
             </span>
             <span className="flex shrink-0 items-center gap-3">
               {row.recipe.category === "merchant" ? (
-                <span className="text-terminal-amber">{(row.recipe.favorCost ?? 0) > 0 ? <>青睐 ×{row.recipe.favorCost}</> : "青睐：暂无数据"}</span>
+                <span className="text-terminal-amber">{(row.recipe.favorCost ?? 0) > 0 ? <>{tr("Favor", "青睐")} ×{row.recipe.favorCost}</> : tr("Favor: no data", "青睐：暂无数据")}</span>
               ) : row.status === "ok" ? (
                 <>
                   <span className={row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}><Coins copper={row.profit} /></span>
                   <span className={row.marginPercent >= 0 ? "text-terminal-green" : "text-terminal-red"}>{formatPercent(row.marginPercent)}{row.revenueFromFloor ? <span className="text-[9px]"> NPC</span> : ""}</span>
                 </>
               ) : row.status === "cost-only" ? (
-                <span className="text-slate-200">成本 <CopperAmount copper={row.cost} /></span>
+                <span className="text-slate-200">{tr("Cost", "成本")} <CopperAmount copper={row.cost} /></span>
               ) : (
-                <span className="truncate text-[10px] text-terminal-muted">缺货 · 缺 {row.missing.join("、")}</span>
+                <span className="truncate text-[10px] text-terminal-muted">{tr("No stock", "缺货")} · {tr("missing", "缺")} {row.missing.join("、")}</span>
               )}
             </span>
             {/* Hover: full craft chain — per-material cost (AH or floor),
@@ -133,9 +135,9 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists, server 
             <div className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-80 whitespace-normal border border-terminal-border bg-terminal-panel p-2 font-mono text-[10px] leading-relaxed text-slate-200 shadow-lg group-hover:block">
               {row.recipe.category !== "merchant" && row.scrollItemId !== undefined && row.scrollItemId !== null && (
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-slate-100">图纸</span>
+                  <span className="text-slate-100">{tr("Scroll", "图纸")}</span>
                   <span className="text-terminal-amber">
-                    {row.scrollPrice !== undefined ? <><CopperAmount copper={row.scrollPrice} /> <span className="text-terminal-muted">AH</span></> : "暂无挂单"}
+                    {row.scrollPrice !== undefined ? <><CopperAmount copper={row.scrollPrice} /> <span className="text-terminal-muted">AH</span></> : tr("No listing", "暂无挂单")}
                   </span>
                 </div>
               )}
@@ -145,12 +147,12 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists, server 
                 return (
                   <div key={material.itemId} className="flex items-center justify-between gap-2">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <Link href={`/items/${material.itemId}${server === "cn" ? "?server=cn" : ""}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(material.quality)}`}>{material.name}</Link>
+                      <Link href={`/items/${material.itemId}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(material.quality)}`}>{material.name}</Link>
                       <span className="shrink-0 text-terminal-muted">×{material.quantity}</span>
                     </span>
                     <span>
-                      {unit === undefined ? "无价" : <><span className="text-terminal-muted">@</span><CopperAmount copper={unit} /></>}
-                      {subtotal !== undefined && <span className="ml-1 text-terminal-muted">=<CopperAmount copper={subtotal} />{prices.get(material.itemId) === undefined ? " 保底" : ""}</span>}
+                      {unit === undefined ? tr("no price", "无价") : <><span className="text-terminal-muted">@</span><CopperAmount copper={unit} /></>}
+                      {subtotal !== undefined && <span className="ml-1 text-terminal-muted">=<CopperAmount copper={subtotal} />{prices.get(material.itemId) === undefined ? tr(" floor", " 保底") : ""}</span>}
                     </span>
                   </div>
                 );
@@ -162,12 +164,12 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists, server 
                 return (
                   <div key={output.itemId} className="flex items-center justify-between gap-2">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <Link href={`/items/${output.itemId}${server === "cn" ? "?server=cn" : ""}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(output.quality)}`}>{output.name}</Link>
+                      <Link href={`/items/${output.itemId}`} target="_blank" data-no-ladder className={`pointer-events-auto inline-flex items-center gap-1 truncate ${qualityColorClassById(output.quality)}`}>{output.name}</Link>
                       <span className="shrink-0 text-terminal-muted">×{output.quantity}</span>
                       <ProductBadge itemId={output.itemId} />
                     </span>
                     <span>
-                      {unit === undefined ? "无价" : <><span className="text-terminal-muted">@</span><CopperAmount copper={unit} /></>}
+                      {unit === undefined ? tr("no price", "无价") : <><span className="text-terminal-muted">@</span><CopperAmount copper={unit} /></>}
                       {subtotal !== undefined && <span className="ml-1 text-terminal-muted">=<CopperAmount copper={subtotal} /></span>}
                     </span>
                   </div>
@@ -176,26 +178,26 @@ export function FavoriteRecipesPanel({ rows, prices, floorPrices, lists, server 
               <div className="flex items-center justify-between gap-2">
                 {row.recipe.category === "merchant" ? (
                   <>
-                    <span className="text-slate-100">图纸</span>
+                    <span className="text-slate-100">{tr("Scroll", "图纸")}</span>
                     <span className="text-terminal-amber">
-                      青睐 ×{(row.recipe.favorCost ?? 0) > 0 ? row.recipe.favorCost : "暂无"}
-                      {" · "}制造成本 <CopperAmount copper={row.cost} />
-                      {row.linkedCraft ? <> · 成品利润 <CopperAmount copper={row.linkedCraft.profit} /> ({formatPercent(row.linkedCraft.marginPercent)}{row.linkedCraft.revenueFromFloor ? " NPC" : ""})</> : ""}
+                      {tr("Favor", "青睐")} ×{(row.recipe.favorCost ?? 0) > 0 ? row.recipe.favorCost : tr("n/a", "暂无")}
+                      {" · "}{tr("Craft cost", "制造成本")} <CopperAmount copper={row.cost} />
+                      {row.linkedCraft ? <> · {tr("Product profit", "成品利润")} <CopperAmount copper={row.linkedCraft.profit} /> ({formatPercent(row.linkedCraft.marginPercent)}{row.linkedCraft.revenueFromFloor ? " NPC" : ""})</> : ""}
                     </span>
                   </>
                 ) : row.status === "cost-only" ? (
                   <>
-                    <span className="text-slate-100">成本</span>
+                    <span className="text-slate-100">{tr("Cost", "成本")}</span>
                     <span className="text-slate-200"><CopperAmount copper={row.cost} /></span>
                   </>
                 ) : (
                   <>
-                    <span className="text-slate-100">利润</span>
+                    <span className="text-slate-100">{tr("Profit", "利润")}</span>
                     <span className={row.profit >= 0 ? "text-terminal-green" : "text-terminal-red"}><CopperAmount copper={row.profit} /> {formatPercent(row.marginPercent)}{row.revenueFromFloor ? <span className="text-[9px]"> NPC</span> : ""}</span>
                   </>
                 )}
               </div>
-              <div className="mt-1 text-[9px] text-terminal-muted">产出价已含 5% 拍卖税；标"保底"的价格为 NPC 收购价兜底（无实时 AH 价）。</div>
+              <div className="mt-1 text-[9px] text-terminal-muted">{tr("Output prices include the 5% AH cut; \"floor\" marks NPC-buy fallback prices (no live AH price).", "产出价已含 5% 拍卖税；标\"保底\"的价格为 NPC 收购价兜底（无实时 AH 价）。")}</div>
             </div>
           </div>
         ))}

@@ -12,10 +12,13 @@ export type ItemWithHistory = Item & {
   dailySummaries: DailySummary[];
 };
 
-export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt"> & {
+export type MarketHistory = Omit<Item, "id" | "createdAt" | "updatedAt" | "nameEn"> & {
   id?: string;
   createdAt?: Date;
   updatedAt?: Date;
+  // 英文名（Item.name_en 回填后存在）。允许缺省：手搭 fixture / 旧查询路径
+  // 没有该列时 EN 显示回退中文名。
+  nameEn?: string | null;
   // 7d median info computed at the repository layer over ALL same-source
   // snapshots inside the 7-day window (SQL aggregate). The snapshots array
   // below is truncated for chart/list rendering, so computing med7 from it

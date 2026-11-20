@@ -1,13 +1,11 @@
--- WoWderhoiAH Forever 模块：拍卖行市场识别 + 扫描按钮路由（2026-10-15）
+-- WoWderhoiAH Forever 模块：拍卖行市场识别 + 扫描按钮路由（2026-10-15 建，2026-11-16 改单按钮）
 --
--- 职责：
---   1) DetectMarket()         纯地点判定：当前打开的拍卖行属于哪个市场。
---       联盟（主城）：暴风城 / 铁炉堡 / 达纳苏斯
---       中立（艾尔文森林/赤脊山交界贸易营地）：艾尔文森林 / 赤脊山
---       未知区域 → nil（不依赖挂单量回退，宁可不扫也不误判，用户拍板）
---   2) ScanButtonOnClick()    两个扫描按钮的共用入口：校验市场一致后启动全量扫描
---   3) UpdateScanButtons()    按检测结果 Enable/Disable 两个扫描按钮
---   4) CurrentScanMarket      本次扫描归属市场（供 FullScan EndProcessing 分槽路由）
+-- 单按钮设计（2026-11-16 用户拍板）：只有一个「扫描拍卖行」按钮，点击时按地点
+-- 自动判定本次扫描归属市场，数据按判定结果分槽——
+--   * 联盟（主城）：暴风城 / 铁炉堡 / 达纳苏斯     → faction → 主库 "PvP"
+--   * 中立（贸易营地）：艾尔文森林 / 赤脊山         → neutral → 中立库 "PvP_N"
+--   * 未知区域 → nil（不依赖挂单量回退，宁可不扫也不误判，用户拍板）
+-- 网页端双市场对比/差价功能不受影响（分槽口径不变，只是按钮合一）。
 
 Auctionator.Forever = Auctionator.Forever or {}
 
@@ -41,14 +39,14 @@ function Auctionator.Forever.DetectMarket()
   return nil
 end
 
--- 扫描按钮点击入口（AuctionatorScanButtonMixin / AuctionatorNeutralScanButtonMixin 共用）
+-- 扫描按钮点击入口：market 参数可省——省略时按当前地点自动判定（单按钮设计）。
 function Auctionator.Forever.ScanButtonOnClick(_, market)
-  local detected = Auctionator.Forever.DetectMarket()
-  if detected ~= market then
-    Auctionator.Utilities.Message(AUCTIONATOR_L_SCAN_BUTTON_WRONG_AH)
+  local detected = market or Auctionator.Forever.DetectMarket()
+  if detected == nil then
+    Auctionator.Utilities.Message(AUCTIONATOR_L_SCAN_BUTTON_UNKNOWN_AH)
     return
   end
-  Auctionator.Forever.CurrentScanMarket = market
+  Auctionator.Forever.CurrentScanMarket = detected
   -- 优先用增量扫描（SendBrowseQuery 逐页浏览：无 15 分钟冷却、进度平滑、
   -- 中立拍卖行同样可用）；增量帧不可用时回退全量复制扫描。
   local inc = Auctionator.State and Auctionator.State.IncrementalScanFrameRef
@@ -59,13 +57,12 @@ function Auctionator.Forever.ScanButtonOnClick(_, market)
   end
 end
 
--- 打开拍卖行后刷新两个扫描按钮的可用状态。
--- AuctionatorConfigFrame 由 AuctionatorAHFrame:OnShow 创建（AUCTION_HOUSE_SHOW 广播顺序在
--- Auctionator 内部帧之后），按钮尚未创建时重试（上限 50 次 × 0.1s ≈ 5s）。
+-- 打开拍卖行后刷新扫描按钮可用状态：已知市场（联盟主城/中立营地）才可点，
+-- 未知区域禁用（宁可不扫不误判）。旧版的第二个按钮若残留（部分同步时）直接隐藏。
 local updateAttempts = 0
 local function UpdateScanButtons()
   local configFrame = _G["AuctionatorConfigFrame"]
-  if configFrame == nil or configFrame.ScanButton == nil or configFrame.NeutralScanButton == nil then
+  if configFrame == nil or configFrame.ScanButton == nil then
     updateAttempts = updateAttempts + 1
     if updateAttempts < 50 then
       C_Timer.After(0.1, UpdateScanButtons)
@@ -74,17 +71,16 @@ local function UpdateScanButtons()
   end
   updateAttempts = 0
 
+  if configFrame.NeutralScanButton then
+    configFrame.NeutralScanButton:Hide()
+  end
+
   local market = Auctionator.Forever.DetectMarket()
-  if market == "faction" then
-    configFrame.ScanButton:Enable()
-    configFrame.NeutralScanButton:Disable()
-  elseif market == "neutral" then
+  if market == nil then
     configFrame.ScanButton:Disable()
-    configFrame.NeutralScanButton:Enable()
-  else
-    configFrame.ScanButton:Disable()
-    configFrame.NeutralScanButton:Disable()
     Auctionator.Utilities.Message(AUCTIONATOR_L_SCAN_BUTTON_UNKNOWN_AH)
+  else
+    configFrame.ScanButton:Enable()
   end
 end
 Auctionator.Forever.UpdateScanButtons = UpdateScanButtons

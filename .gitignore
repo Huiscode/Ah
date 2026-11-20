@@ -53,5 +53,10 @@ scripts/.sync-last.json
 scripts/.ilvl-progress.json
 scripts/backfill-item-level.log
 
+# 英文名回填断点进度 + 日志（backfill-item-names-en.ts 运行时状态，勿入库）
+scripts/.names-en-progress.json
+scripts/.names-en-progress*.json
+scripts/backfill-item-names-en.log
+
 # lark-cli 草稿工作区（临时，勿入库）
 draft_*_folder/

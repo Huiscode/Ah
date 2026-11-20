@@ -4,9 +4,12 @@ import { buildDealRadar, buildMoverBoard, buildSpreadCandidates, buildDisenchant
 import { buildRecipeFloors, computeRecipeProfits } from "@/lib/recipe-profits";
 import { buildSecondaryMaterialRows } from "@/lib/secondary-materials";
 import { mergeRadarRules } from "@/lib/market-rules";
+import { buildItemNameIndex, localizeRecipeProfitRow, localizeSecondaryRow } from "@/lib/recipe-i18n";
 import {
   getItemSellerPrices,
   getItemVendorPrices,
+  getItemNames,
+  getItemPriceTiersByItemIds,
   getLatestRoundItemIds,
   getLatestSnapshotTime,
   getPriceTierGaps,
@@ -21,6 +24,8 @@ import { getMarketSignals } from "@/lib/market-signals";
 import { AUCTIONATOR_STALE_MAX_AGE_MS, describeFreshness } from "@/lib/freshness";
 import { filterSortSignals, MARKET_PAGE_SIZE, paginate, parseMarketView } from "@/lib/market-filter";
 import { groupedCategoryOptions } from "@/lib/category-zh";
+import { L, displayName } from "@/lib/i18n";
+import { getLang } from "@/lib/i18n-server";
 import { formatTrendPercent, trendTextClass } from "@/lib/trend";
 import { Coins } from "@/components/coins";
 import { qualityColorClass } from "@/lib/quality";
@@ -35,7 +40,8 @@ import { CopyListButton } from "@/components/copy-list-button";
 import { FavoriteRecipesPanel } from "@/components/favorite-recipes-panel";
 import { InstructionsPanel } from "@/components/instructions-panel";
 import { Panel, PanelHeader } from "@/components/ui/panel";
-import { parseServer, SERVER_LABELS } from "@/lib/servers";
+import { parseServer, serverLabel } from "@/lib/servers";
+import { LangToggle } from "@/components/lang-toggle";
 import Link from "next/link";
 
 // 数据口径断点：2026-10-13 起为 Auctionator 最低价；此前为自研插件 Beta P10。
@@ -49,18 +55,18 @@ function qs(params: Record<string, string | undefined>): string {
 
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const raw = await searchParams;
-  const mode: MarketMode = raw.history === "1" ? "history" : "current";
+  // beta 历史数据已随公测清库、老插件通道已退役——历史模式 UI 于 2026-11-08
+  // 移除（?history=1 不再生效，始终当前口径）。
+  const mode: MarketMode = "current";
   const market = raw.market === "neutral" ? "neutral" : "faction";
   const server = parseServer(raw.server);
-  const marketLabel = market === "neutral" ? "中立" : "联盟";
-  const serverLabel = SERVER_LABELS[server] ?? server;
+  const lang = await getLang();
+  const marketLabel = market === "neutral" ? L(lang, "Neutral", "中立") : L(lang, "Alliance", "联盟");
+  const serverLabelText = serverLabel(server, lang);
   // 切回默认视图时 qs 会全空（空 href 点击等于刷新当前页，跳不回去）→ 空串回退根路径 "/"。
-  const marketHrefOther: Route = (qs({ market: market === "neutral" ? undefined : "neutral", history: mode === "history" ? "1" : undefined, server: server === "cn" ? "cn" : undefined }) || "/") as Route;
-  const historyHref: Route = (qs({ history: mode === "history" ? undefined : "1", market: market === "neutral" ? "neutral" : undefined, server: server === "cn" ? "cn" : undefined }) || "/") as Route;
-  const serverHrefOther: Route = (qs({ server: server === "cn" ? undefined : "cn", market: market === "neutral" ? "neutral" : undefined, history: mode === "history" ? "1" : undefined }) || "/") as Route;
-  const itemServerQ = server === "cn" ? "?server=cn" : "";
+  const marketHrefOther: Route = (qs({ market: market === "neutral" ? undefined : "neutral" }) || "/") as Route;
   const view = parseMarketView(raw);
-  const [{ signals, latestSnapshotAt }, watchedIds, latestRound, recipes, vendorPrices, sellerPrices, shoppingLists] = await Promise.all([
+  const [{ signals, latestSnapshotAt }, watchedIds, latestRound, recipes, vendorPrices, sellerPrices, shoppingLists, itemNames] = await Promise.all([
     getMarketSignals(market, mode, server),
     getWatchedItemIds(),
     // 雷达 universe：该模式最新一轮扫描的在售物品集合（按当前服务器）。
@@ -70,10 +76,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     getRecipes(),
     getItemVendorPrices(),
     getItemSellerPrices(),
-    getShoppingLists()
+    getShoppingLists(),
+    // 配方显示层本地化索引（EN 模式按 itemId/中文名映射英文名）。
+    getItemNames()
   ]);
+  const nameIndex = buildItemNameIndex(itemNames);
   const listOptions = shoppingLists.map((list) => ({ id: list.id, name: list.name }));
-  const freshness = describeFreshness(latestSnapshotAt, new Date(), AUCTIONATOR_STALE_MAX_AGE_MS);
+  const freshness = describeFreshness(latestSnapshotAt, new Date(), AUCTIONATOR_STALE_MAX_AGE_MS, lang);
   const watchedSignals = signals.filter((signal) => watchedIds.has(signal.itemId));
   // 雷达阈值：默认常量（market-rules.ts）+ 网页"雷达设置"面板的覆盖
   // （RadarRule 单行，经 /api/radar-rules 读写；mergeRadarRules 合并）。
@@ -92,7 +101,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const priceByItemId = new Map(signals.map((signal) => [signal.itemId, signal.price]));
   const turnoverByItemId = new Map(signals.map((signal) => [signal.itemId, signal.turnoverScore]));
   // 分解榜：买绿/蓝装 → 分解 → 材料挂 AH 的期望套利；材料价取在售信号，缺价按 0 标注。
-  const matNameByItemId = new Map(signals.map((signal) => [signal.itemId, signal.name]));
+  const matNameByItemId = new Map(signals.map((signal) => [signal.itemId, displayName(signal.name, signal.nameEn, lang)]));
   const allDisenchant = buildDisenchantBoard(signals, priceByItemId, matNameByItemId);
   const disenchant = latestRound === null ? allDisenchant : allDisenchant.filter((row) => latestRound.has(row.itemId));
   // P0-B: full-recipe profit library. Revenue side = live AH price (自扫P10
@@ -102,9 +111,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // the vendorP the addon dumped with each recipe (freshest).
   const floors = buildRecipeFloors(recipes, vendorPrices, sellerPrices);
   const scrollItemIds = await getScrollItemIds();
-  const recipeRows = computeRecipeProfits(recipes, priceByItemId, floors.costFloor, floors.revenueFloor, scrollItemIds);
+  const recipeRows = computeRecipeProfits(recipes, priceByItemId, floors.costFloor, floors.revenueFloor, scrollItemIds)
+    .map((row) => localizeRecipeProfitRow(row, nameIndex, lang));
   // 中间材料（次级材料）：配方产物且被其它配方用作材料，按单位利润排序。
-  const secondaryRows = buildSecondaryMaterialRows(recipes, priceByItemId, floors.costFloor, floors.revenueFloor);
+  const secondaryRows = buildSecondaryMaterialRows(recipes, priceByItemId, floors.costFloor, floors.revenueFloor)
+    .map((row) => localizeSecondaryRow(row, nameIndex, lang));
+  // 中间材料悬停要展示该材料的前五档价格档位（转录补档数据，一轮批量取）。
+  const secondaryTiersByItemId = await getItemPriceTiersByItemIds(secondaryRows.map((row) => row.item.itemId), market, server);
   // 配方产出物集合：扫描物品若被某配方产出（成品），在列表中标记"产品"徽章。
   const productItemIds = new Set<number>();
   for (const recipe of recipes) for (const output of recipe.outputs) productItemIds.add(output.itemId);
@@ -120,44 +133,33 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-border bg-terminal-panel px-4 py-3">
         <div className="flex items-center gap-3">
           <h1 className="font-mono text-[21px] font-semibold uppercase text-terminal-amber">AH</h1>
-          {mode !== "history" && (
-            <Link href={historyHref} className="font-mono text-[15px] text-terminal-amber underline">查看 Beta 历史数据（P10）→</Link>
-          )}
         </div>
         <div className="flex items-center gap-3 font-mono text-[15px] text-terminal-muted">
           <span className={freshness.stale ? "flex items-center gap-1 text-terminal-red" : "flex items-center gap-1 text-terminal-green"}>
-            <RadioTower size={14} /> {serverLabel}·{marketLabel}·数据更新于 {freshness.label}
+            <RadioTower size={14} /> {serverLabelText}·{marketLabel}·{L(lang, "updated", "数据更新于")} {freshness.label}
           </span>
-          <Link href={serverHrefOther} className="flex items-center gap-1 text-terminal-amber hover:underline">{server === "cn" ? "← 欧服" : "中国服 →"}</Link>
-          <Link href={marketHrefOther} className="flex items-center gap-1 text-terminal-amber hover:underline">{market === "neutral" ? "← 联盟市场" : "中立市场 →"}</Link>
-          <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><Hammer size={14} /> 配方库</Link>
-          <Link href="/lists" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ShoppingCart size={14} /> 购物清单</Link>
-          <Link href="/tools/disenchant-calc" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><FlaskConical size={14} /> 分解计算器</Link>
+          <Link href={marketHrefOther} className="flex items-center gap-1 text-terminal-amber hover:underline">{market === "neutral" ? L(lang, "← Alliance market", "← 联盟市场") : L(lang, "Neutral market →", "中立市场 →")}</Link>
+          <Link href="/recipes" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><Hammer size={14} /> {L(lang, "Recipes", "配方库")}</Link>
+          <Link href="/lists" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><ShoppingCart size={14} /> {L(lang, "Shopping Lists", "购物清单")}</Link>
+          <Link href="/tools/disenchant-calc" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-terminal-amber hover:underline"><FlaskConical size={14} /> {L(lang, "Disenchant Calc", "分解计算器")}</Link>
+          <LangToggle lang={lang} />
         </div>
       </div>
 
-      {mode === "history" && (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border border-terminal-amber/50 bg-amber-500/10 px-4 py-2 font-mono text-xs">
-          <span className="flex items-center gap-2 text-terminal-amber">
-            <RadioTower size={14} /> 历史模式 · Beta 删档数据 · P10 口径（{DATA_SWITCH_DAY} 前自研插件）——仅供参考，与当前 Auctionator 最低价不同
-          </span>
-          <Link href={historyHref} className="text-terminal-amber underline">← 返回当前数据（Auctionator 最低价）</Link>
-        </div>
-      )}
       <div className="grid gap-3 xl:grid-cols-[1fr_360px]">
         <div className="space-y-3">
           <Panel>
             <PanelHeader title={
               <span className="flex flex-wrap items-center gap-x-3">
-                <span>机会总览</span>
-                <span className="normal-case tracking-normal text-[10px] text-terminal-muted">建议：每天较晚时段扫描（档位更全）；raid 重置前后消耗品/材料易现卖出窗口；中立市场时有时无，抓到即对比。</span>
+                <span>{L(lang, "Opportunities", "机会总览")}</span>
+                <span className="normal-case tracking-normal text-[10px] text-terminal-muted">{L(lang, "Tip: scan late in the day (more tiers listed); consumables/mats move around raid reset; the neutral AH comes and goes — compare when you catch it.", "建议：每天较晚时段扫描（档位更全）；raid 重置前后消耗品/材料易现卖出窗口；中立市场时有时无，抓到即对比。")}</span>
               </span>
-            } action={<span className="font-mono text-xs text-terminal-green">最低买入价 vs 7日参考价</span>} />
+            } action={<span className="font-mono text-xs text-terminal-green">{L(lang, "Min buyout vs 7d ref", "最低买入价 vs 7日参考价")}</span>} />
             {signals.length === 0 ? (
               <div className="p-3 font-mono text-xs text-terminal-muted">
-                {mode === "history"
-                  ? "历史模式无 addon 数据。"
-                  : "暂无市场数据。请在游戏内用 Auctionator 全量扫描拍卖行（每次进入拍卖行时），然后重跑导入。"}
+                {market === "neutral"
+                  ? L(lang, `No neutral-market data yet (check the top badge: current view ${serverLabelText}·Neutral). The neutral AH is at the camp between Elwynn Forest and Redridge — go there, click "Scan Neutral AH", then /reload to flush the data and auto-import.`, `暂无中立市场数据（注意顶部标签：当前是 ${serverLabelText}·中立）。中立拍卖行在艾尔文森林/赤脊山交界营地——到那里点「扫描中立拍卖行」，完成后 /reload 落盘即自动导入。`)
+                  : L(lang, `No market data yet (check the top badge: current view ${serverLabelText}·${marketLabel}). Run a full Auctionator scan in game, then /reload to flush the data and auto-import.`, `暂无市场数据（注意顶部标签：当前是 ${serverLabelText}·${marketLabel}）。请在游戏内用 Auctionator 全量扫描拍卖行，完成后 /reload 落盘即自动导入。`)}
               </div>
             ) : (
               <OpportunityTabs
@@ -171,11 +173,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 productItemIds={productItemIds}
                 tierGapByItemId={tierGapByItemId}
                 server={server}
+                lang={lang}
               />
             )}
           </Panel>
           <Panel>
-            <PanelHeader title="市场监控" />
+            <PanelHeader title={L(lang, "Market Monitor", "市场监控")} />
             <MarketTable
               rows={marketPage.rows}
               watchedItemIds={pageWatchedIds}
@@ -193,30 +196,30 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         <div className="space-y-3">
           {signals.length === 0 ? (
             <Panel>
-              <PanelHeader title="利润计算" />
+              <PanelHeader title={L(lang, "Profit Calc", "利润计算")} />
               <div className="p-3 font-mono text-xs text-terminal-muted">
-                本服务器暂无市场数据，利润计算不可用。请在游戏内用 Auctionator 全量扫描拍卖行（每次进入拍卖行时），然后重跑导入。
+                {L(lang, "No market data on this server yet — profit calc unavailable. Run a full Auctionator scan in game (each time you visit the AH), then re-run the import.", "本服务器暂无市场数据，利润计算不可用。请在游戏内用 Auctionator 全量扫描拍卖行（每次进入拍卖行时），然后重跑导入。")}
               </div>
             </Panel>
           ) : (
             <>
-              <SecondaryMaterialsPanel rows={secondaryRows} prices={priceByItemId} floorPrices={floors.costFloor} turnoverByItemId={turnoverByItemId} server={server} />
+              <SecondaryMaterialsPanel rows={secondaryRows} prices={priceByItemId} floorPrices={floors.costFloor} turnoverByItemId={turnoverByItemId} tiersByItemId={secondaryTiersByItemId} server={server} />
               <FavoriteRecipesPanel rows={recipeRows} prices={priceByItemId} floorPrices={floors.costFloor} lists={listOptions} server={server} />
             </>
           )}
           <Panel>
-            <PanelHeader title="关注物品" />
+            <PanelHeader title={L(lang, "Watchlist", "关注物品")} />
             <div className="flex items-center gap-2 border-b border-terminal-border px-3 py-1.5">
-              <CopyListButton names={watchedSignals.map((s) => s.name)} listNamePrefix="关注" />
-              {watchedSignals.length > 0 && <span className="text-[10px] text-terminal-muted">共 {watchedSignals.length} 项</span>}
+              <CopyListButton names={watchedSignals.map((s) => displayName(s.name, s.nameEn, lang))} listNamePrefix={L(lang, "Watch", "关注")} />
+              {watchedSignals.length > 0 && <span className="text-[10px] text-terminal-muted">{L(lang, `${watchedSignals.length} items`, `共 ${watchedSignals.length} 项`)}</span>}
             </div>
             <div className="space-y-2 p-3 font-mono text-xs">
-              {watchedSignals.length === 0 && <div className="text-terminal-muted">市场表中点 ☆ 添加关注</div>}
+              {watchedSignals.length === 0 && <div className="text-terminal-muted">{L(lang, "Click ☆ in the market table to watch", "市场表中点 ☆ 添加关注")}</div>}
               {watchedSignals.map((signal) => (
                 <div key={signal.itemId} className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-2">
                     <WatchStar itemId={signal.itemId} watched />
-                    <Link href={`/items/${signal.itemId}${itemServerQ}`} target="_blank" data-no-ladder className={`inline-flex items-center gap-1 ${qualityColorClass(signal.quality)}`}><ItemIcon itemId={signal.itemId} size={16} />{signal.name}</Link>
+                    <Link href={`/items/${signal.itemId}`} target="_blank" data-no-ladder className={`inline-flex items-center gap-1 ${qualityColorClass(signal.quality)}`}><ItemIcon itemId={signal.itemId} size={16} />{displayName(signal.name, signal.nameEn, lang)}</Link>
                     {productItemIds.has(signal.itemId) && <ProductBadge itemId={signal.itemId} />}
                   </span>
                   <span className="flex items-center gap-3">
@@ -231,9 +234,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       </div>
       <InstructionsPanel />
       <footer className="mt-3 border border-terminal-border bg-terminal-panel px-4 py-2 font-mono text-[10px] leading-relaxed text-terminal-muted">
-        {mode === "history"
-          ? "历史模式：数据来源 = 旧自研插件 Beta 删档扫描（P10 口径，截至 2026-10 停用）；仅供开服前参考，与当前 Auctionator 最低价口径不同。"
-          : "数据来源：Auctionator 插件（Forever 客户端适配版）SavedVariables 导入——价格口径 = 最低买入价（m）；7日参考 = 近 7 日每日收盘的中位数。旧 Beta 版自研插件数据（P10）保留在库中，可在页头切换到历史模式参考。"}
+        {L(lang, "Data source: Auctionator addon (Forever-client adapted) SavedVariables import — price = lowest buyout (m); 7d ref = median of the last 7 daily closes.", "数据来源：Auctionator 插件（Forever 客户端适配版）SavedVariables 导入——价格口径 = 最低买入价（m）；7日参考 = 近 7 日每日收盘的中位数。")}
       </footer>
     </main>
   );

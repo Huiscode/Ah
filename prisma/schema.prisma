@@ -11,6 +11,10 @@ model Item {
   id               String            @id @default(cuid())
   itemId           Int               @unique @map("item_id")
   name             String
+  // 英文名（foreverchanges.pro 英文站 /item/{id} 回填，scripts/backfill-item-names-en.ts）。
+  // EN 界面（默认）优先显示 nameEn，缺失回退中文 name；复制到游戏 Auctionator 的
+  // 搜索词同样取显示名——欧服英文客户端需要英文名才能命中。
+  nameEn           String?           @map("name_en")
   quality          String
   category         String
   subCategory      String            @map("sub_category")

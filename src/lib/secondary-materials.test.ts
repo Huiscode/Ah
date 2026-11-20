@@ -86,5 +86,13 @@ describe("buildSecondaryMaterialRows", () => {
     const margins = rows.map((row) => row.marginPercent);
     expect([...margins].sort((a, b) => b - a)).toEqual(margins);
   });
+
+  it("loss-making intermediates are hidden (2026-11-09: profitable rows only)", () => {
+    // bar sell 15: round(15*0.95)-20 = -6 loss -> excluded; bolt still profitable -> kept.
+    const lowBarPrices = new Map(prices).set(2, 15);
+    const rows = buildSecondaryMaterialRows(recipes, lowBarPrices, new Map(), new Map());
+    expect(rows.some((row) => row.item.itemId === 2)).toBe(false);
+    expect(rows.some((row) => row.item.itemId === 5)).toBe(true);
+  });
 });
 

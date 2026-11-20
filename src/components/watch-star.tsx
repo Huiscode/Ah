@@ -3,8 +3,10 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toggleWatchlist } from "@/app/actions";
+import { useLL } from "@/components/lang-provider";
 
 export function WatchStar({ itemId, watched }: { itemId: number; watched: boolean }) {
+  const tr = useLL();
   const [isWatched, setIsWatched] = useState(watched);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -29,7 +31,7 @@ export function WatchStar({ itemId, watched }: { itemId: number; watched: boolea
         });
       }}
       disabled={pending}
-      title={isWatched ? "移出关注" : "加入关注"}
+      title={isWatched ? tr("Remove from watchlist", "移出关注") : tr("Add to watchlist", "加入关注")}
       className={isWatched ? "text-terminal-amber" : "text-terminal-muted hover:text-slate-300"}
     >
       {isWatched ? "★" : "☆"}

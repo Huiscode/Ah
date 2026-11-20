@@ -5,6 +5,8 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { parseImportText, baseNameOf } from "@/lib/shopping-list";
+import { L } from "@/lib/i18n";
+import { getLang } from "@/lib/i18n-server";
 
 export async function toggleWatchlist(itemId: number) {
   const existing = await prisma.watchlist.findUnique({ where: { itemId } });
@@ -36,20 +38,22 @@ export async function getShoppingListOptions(): Promise<{ id: string; name: stri
 }
 
 export async function createShoppingList(name: string) {
+  const lang = await getLang();
   const cleaned = (name ?? "").trim().replace(/[\n^]/g, "");
-  if (!cleaned) throw new Error("清单名不能为空");
+  if (!cleaned) throw new Error(L(lang, "List name cannot be empty", "清单名不能为空"));
   const existing = await prisma.shoppingList.findUnique({ where: { name: cleaned } });
-  if (existing) throw new Error(`清单"${cleaned}"已存在`);
+  if (existing) throw new Error(L(lang, `List "${cleaned}" already exists`, `清单"${cleaned}"已存在`));
   const created = await prisma.shoppingList.create({ data: { name: cleaned } });
   revalidateLists();
   return created.id;
 }
 
 export async function renameShoppingList(id: string, name: string) {
+  const lang = await getLang();
   const cleaned = (name ?? "").trim().replace(/[\n^]/g, "");
-  if (!cleaned) throw new Error("清单名不能为空");
+  if (!cleaned) throw new Error(L(lang, "List name cannot be empty", "清单名不能为空"));
   const existing = await prisma.shoppingList.findUnique({ where: { name: cleaned } });
-  if (existing && existing.id !== id) throw new Error(`清单"${cleaned}"已存在`);
+  if (existing && existing.id !== id) throw new Error(L(lang, `List "${cleaned}" already exists`, `清单"${cleaned}"已存在`));
   await prisma.shoppingList.update({ where: { id }, data: { name: cleaned } });
   revalidateLists();
 }
@@ -63,8 +67,9 @@ export async function deleteShoppingList(id: string) {
 // （baseNameOf 剥离随机前缀，导入 Auctionator 一次命中全部前缀变体）。
 export async function addItemsToList(listId: string, items: ListItemInput[]) {
   if (!items.length) return;
+  const lang = await getLang();
   const list = await prisma.shoppingList.findUnique({ where: { id: listId }, include: { items: true } });
-  if (!list) throw new Error("清单不存在");
+  if (!list) throw new Error(L(lang, "List not found", "清单不存在"));
   const existing = new Set(list.items.map((item) => item.name));
   const seen = new Set<string>();
   const rows = items
@@ -93,8 +98,9 @@ export async function removeShoppingListItem(id: string) {
 // 同名清单覆盖（与游戏内 Import 语义一致：ClearItems + AppendItems）。
 // 物品名匹配 Item 表：先按原名精确匹配，未命中按基础名匹配（兼容全名/搜索词）。
 export async function importShoppingListText(text: string) {
+  const lang = await getLang();
   const parsed = parseImportText(text);
-  if (!parsed.length) throw new Error("未识别到可导入的清单文本（需为'清单名^物品1^物品2'格式）");
+  if (!parsed.length) throw new Error(L(lang, "No importable list text recognized (expected 'listName^item1^item2' format)", "未识别到可导入的清单文本（需为'清单名^物品1^物品2'格式）"));
 
   const allItems = await prisma.item.findMany({ select: { itemId: true, name: true } });
   const byName = new Map(allItems.map((i) => [i.name, i.itemId]));
@@ -136,13 +142,15 @@ export async function importShoppingListText(text: string) {
 }
 
 // 添加物品用的轻量搜索：按名称子串或精确物品 ID 匹配，返回前 20。
+// 名称匹配同时查中文名与英文名（name_en 回填后英文客户端用户可直接搜英文）。
 export async function searchItems(query: string) {
   const q = (query ?? "").trim();
   if (!q) return [];
   const numeric = /^\d+$/.test(q) ? Number.parseInt(q, 10) : null;
+  const nameCond = { OR: [{ name: { contains: q } }, { nameEn: { contains: q } }] };
   const rows = await prisma.item.findMany({
-    where: numeric ? { OR: [{ itemId: numeric }, { name: { contains: q } }] } : { name: { contains: q } },
-    select: { itemId: true, name: true, quality: true, icon: true },
+    where: numeric ? { OR: [{ itemId: numeric }, nameCond] } : nameCond,
+    select: { itemId: true, name: true, nameEn: true, quality: true, icon: true },
     orderBy: { itemId: "asc" },
     take: 20
   });

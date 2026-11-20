@@ -1,22 +1,17 @@
-// Lua 5.1 syntax gate for the addon files. Run with the temp luaparse install:
-//   node scripts/lua-syntax-check.js
-const luaparse = require("C:/Users/Hz/Documents/Workspace/Ah/.tmp-luacheck/node_modules/luaparse");
+// fengari 语法检查：只 load 不执行（等价 luaparse 的语法验证）
+const { lua, lauxlib, to_luastring } = require("fengari");
 const fs = require("fs");
-const path = require("path");
-
-const dir = "C:/Users/Hz/Documents/Workspace/Ah/addon/WoWderhoiAH";
-const files = fs.readdirSync(dir).filter((f) => f.endsWith(".lua")).sort();
-let failed = 0;
-
-for (const file of files) {
-  const src = fs.readFileSync(path.join(dir, file), "utf8");
-  try {
-    luaparse.parse(src, { luaVersion: "5.1", wait: false });
-    console.log("OK   " + file);
-  } catch (err) {
-    failed += 1;
-    console.log("FAIL " + file + " -> line " + (err.line ?? "?") + ": " + err.message);
-  }
+const file = process.argv[2];
+const src = fs.readFileSync(file, "utf8");
+// 去 BOM
+const clean = src.replace(/^\uFEFF/, "");
+const L = lauxlib.luaL_newstate();
+const status = lauxlib.luaL_loadbuffer(L, to_luastring(clean), null, to_luastring(file));
+if (status === lua.LUA_OK) {
+  console.log("SYNTAX OK:", file);
+  process.exit(0);
+} else {
+  const err = lua.lua_tojsstring(L, -1);
+  console.error("SYNTAX ERROR in", file, ":", err);
+  process.exit(1);
 }
-console.log(failed === 0 ? "All Lua files parse clean." : failed + " file(s) failed.");
-process.exit(failed ? 1 : 0);

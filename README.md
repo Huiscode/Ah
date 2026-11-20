@@ -25,8 +25,8 @@ Two parts, one fully local data loop — no Battle.net API:
   high-density interface: market monitor table, intraday/daily charts,
   price alerts and watchlists, crafting profit rankings.
 
-New here? Start with [docs/first-day.md](docs/first-day.md) — the full
-path from installing the addon to your first real price curve, ~30 min.
+New here? Start with [docs/AI.md](docs/AI.md) — the project's single
+context document (architecture, data pipeline, conventions, pitfalls).
 
 ## Features
 
@@ -150,7 +150,7 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 - **游戏内插件**（`addon/WoWderhoiAH`）——扫描拍卖行、逐次积累价格历史，提供 tooltip 行情、双窗口价格走势图，以及独立的 **WAH 交易页**：捡漏雷达、核验后一键购买、压价卖单预填。插件即数据后端。
 - **桌面终端**（Next.js 16）——类 Bloomberg 的深色高密度界面：市场监控表、盘中/日线图表、预警与关注列表、制造利润排行。
 
-新用户从 [docs/first-day.md](docs/first-day.md) 开始：从安装插件到看到第一条真实价格曲线的完整路径，约 30 分钟。
+新用户从 [docs/AI.md](docs/AI.md) 开始：项目唯一上下文文档（架构、数据链路、口径与坑）。
 
 ### 核心功能
 
