@@ -1,0 +1,18 @@
+## Interface: 16001, 120100, 50504, 38000, 20506, 11508, 11509
+## Title: WoWderhoiAH Transcript
+## Notes: WoWderhoiAH sidecar for Auctionator: market detection (Alliance/Neutral), price tiers, vendor prices. Auctionator itself stays unmodified.
+## Notes-zhCN: WoWderhoiAH 旁挂插件：市场识别（联盟/中立）、前五档价格、商人价。Auctionator 本体保持原版，可随意更新。
+## Version: 1.0.0
+## Author: WoWderhoiAH
+## Dependencies: Auctionator
+## SavedVariables: WAHTranscribeDB, WAHTranscribeState, WAHVendorDB, WAHReloadOpts, WAHScanTimes
+## IconTexture: Interface\AddOns\Auctionator\Images\Logo
+
+Core.lua
+Market.lua
+DatabaseNeutral.lua
+Hooks.lua
+AutoReload.lua
+Transcript.lua
+VendorPrice.lua
+TierList.lua

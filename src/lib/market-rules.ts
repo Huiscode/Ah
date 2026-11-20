@@ -16,23 +16,42 @@ export const SCAN_PIPELINE_VERSION = 4;
 export const AH_CUT = 0.05;
 
 // DealRadarRules are web-side thresholds (no plugin authority anymore).
+//
+// 2026-11-20 雷达重构（用户拍板"完整版"）：进池按"总利润 = 单件利润 × 可买量"判定，
+// 四种赚金策略各有明确的买/卖动作：
+//   vendor 必赚：买下所有低于 NPC 收购价的档位 → 卖给 NPC（零风险）
+//   flip   扫货回挂：买下便宜档位 → 以 min(下一档 −1 铜, 7日参考) 重新挂出
+//   cross  跨市场：本市场买 → 另一市场以其最低价 −1 铜挂出（联盟 ↔ 中立）
+//   band   波段（原"可做差价"榜并入）：高波动、需求广的物品跌破 7 日带下沿 → 回到 7 日参考价卖出
+// 前五档（转录补档）存在时按真实档位算可买量；没有档位的物品可买量按 1 计、只校验单件门槛。
+//
+// version：RadarRule 表保存的是"整份规则"。口径变了必须升版本，旧版本的保存值整体作废，
+// 否则旧的 minProfit=50c 等会悄悄覆盖新默认值。
+export const RADAR_RULES_VERSION = 2;
+
 export type DealRadarRules = {
-  minProfit: number;
-  minHistory: number;
-  minMed7Distinct: number;
-  staleWindowMs: number;
+  version: number;
+  vendorMinTotalProfit: number; // 必赚：总利润下限（铜）
+  flipMinUnitProfit: number;    // 扫货/跨市场：单件净利下限（铜）
+  flipMinUnitRatio: number;     // 扫货/跨市场：单件净利 ≥ 买入价 × N%
+  flipMinTotalProfit: number;   // 扫货/跨市场：总净利下限（铜；仅在有真实档位时校验）
+  minHistory: number;           // 7 日参考至少 N 天日线
+  minMed7Distinct: number;      // 7 日窗口内至少 N 个不同收盘价（防单人压价曲线）
+  staleWindowMs: number;        // 本市场数据新鲜度窗口
+  crossMaxAgeMs: number;        // 跨市场：两边数据都必须在此窗口内（中立市场时有时无）
 };
 
-// 2026-10-14 用户拍板：移除 maxDiscount（折扣下限）、supplyCap（供应上限）、
-// discount（折扣线）、minProfitRatio（最低利润率）——门槛只留绝对利润、
-// 历史天数与可信度，深折扣一律视为捡漏机会。
 export const dealRadarRules: DealRadarRules = {
-  minProfit: 50, // 50c absolute dust floor: below this the spread is noise, not a deal
-  minHistory: 2, // med7 needs 2+ days of daily closes before it means anything
-  // Credibility guard on med7 itself: a flat series is one seller, not a market.
-  minMed7Distinct: 2, // a flat 7d series is one seller, not a market
-  // 新鲜度窗口：手动全量扫描（Auctionator/transcript）低频，默认 7 天。
-  staleWindowMs: 7 * 24 * 60 * 60 * 1000
+  version: RADAR_RULES_VERSION,
+  vendorMinTotalProfit: 1000,     // 10 银
+  flipMinUnitProfit: 2000,        // 20 银
+  flipMinUnitRatio: 15,           // 15%
+  flipMinTotalProfit: 10000,      // 1 金
+  minHistory: 3,
+  minMed7Distinct: 2,
+  // 新鲜度窗口：手动全量扫描低频，默认 7 天。
+  staleWindowMs: 7 * 24 * 60 * 60 * 1000,
+  crossMaxAgeMs: 48 * 60 * 60 * 1000
 };
 
 // LocalFilterRules are web-only secondary filters over the current database.
@@ -48,22 +67,22 @@ export const localFilterDefaults: LocalFilterRules = {
   maxPrice: 0
 };
 
-// Legacy route-2 overrides may still sit in RadarRule; merge them over the
-// defaults, accepting only the known fields with sane types. (The plugin
-// panel that wrote them is retired, so this is only a safety net.)
+// Saved overrides (RadarRule row) merge over the defaults, accepting only known
+// numeric fields. Rows saved under an older rule version are ignored entirely.
 export function mergeRadarRules(overrides: unknown): DealRadarRules {
   if (typeof overrides !== "object" || overrides === null) return dealRadarRules;
   const source = overrides as Record<string, unknown>;
+  if (source.version !== RADAR_RULES_VERSION) return dealRadarRules;
   const merged = { ...dealRadarRules } as Record<string, unknown>;
   for (const key of Object.keys(dealRadarRules)) {
+    if (key === "version") continue;
     const value = source[key];
-    if (typeof value === "number" && Number.isFinite(value)) merged[key] = value;
-    else if (typeof value === "boolean") merged[key] = value;
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) merged[key] = value;
   }
   return merged as DealRadarRules;
 }
 
-// 可做差价榜（buildSpreadCandidates）阈值：起伏大 × 需求广 × 有人在卖。
+// 波段策略（原"可做差价"榜，2026-11-20 并入雷达）阈值：起伏大 × 需求广 × 有人在卖。
 export type SpreadRules = {
   minVolatilityRatio: number; // 7 日带宽 ÷ 参考价（%）：低于此起伏视为无差价空间
   minTurnover: number;        // 流通分下限：至少被 N 个配方使用（需求广度）

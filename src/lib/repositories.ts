@@ -233,16 +233,18 @@ export async function getItemPriceTiers(itemId: number, market: string = "factio
 
 // 批量版单品价格档位：一次查询多个物品各自的最新转录轮档位（中间材料面板
 // 悬停展示用，避免逐物品 N 次查询）。返回 itemId → 档位数组（单价升序）。
-export async function getItemPriceTiersByItemIds(itemIds: number[], market: string = "faction", server: string = DEFAULT_SERVER): Promise<Map<number, Array<{ price: number; qty: number }>>> {
+export async function getItemPriceTiersByItemIds(itemIds: number[] | "all", market: string = "faction", server: string = DEFAULT_SERVER): Promise<Map<number, Array<{ price: number; qty: number }>>> {
   const out = new Map<number, Array<{ price: number; qty: number }>>();
-  if (itemIds.length === 0) return out;
+  if (itemIds !== "all" && itemIds.length === 0) return out;
+  // "all"：雷达按真实档位算可买量，需要该市场每个物品各自最新一轮的档位。
+  const idFilter = itemIds === "all" ? Prisma.empty : Prisma.sql`AND "item_id" IN (${Prisma.join(itemIds)})`;
   const rows = await prisma.$queryRaw<Array<{ itemId: number | bigint; price: number | bigint; qty: number | bigint }>>(
     Prisma.sql`
     WITH latest AS (
       SELECT "item_id", MAX("ts") AS "ts"
       FROM "AuctionTier"
       WHERE "source" = 'transcript' AND "market" = ${market} AND "server" = ${server}
-        AND "item_id" IN (${Prisma.join(itemIds)})
+        ${idFilter}
       GROUP BY "item_id"
     )
     SELECT t."item_id" AS "itemId", t."price" AS "price", t."qty" AS "qty"
@@ -287,8 +289,8 @@ export async function getMarketUniverse(market: string = "faction", mode: Market
       )
       SELECT * FROM ranked WHERE rn <= 30 ORDER BY "item_id", "date" ASC`,
     getMed7Aggregates(undefined, mode, market, server),
-    // 转录档位只有联盟市场数据；中立市场无档位，跳过转录合成。
-    mode === "history" || market !== "faction" ? Promise.resolve(new Map<number, SnapshotRaw>()) : getTranscriptLatestSnapshots(undefined, market, server)
+    // 转录档位按市场分开（2026-11-20 起中立市场也有）。
+    mode === "history" ? Promise.resolve(new Map<number, SnapshotRaw>()) : getTranscriptLatestSnapshots(undefined, market, server)
   ]);
 
   const snapsByItem = new Map<number, SnapshotRaw[]>();
@@ -368,8 +370,8 @@ export async function getItemDetail(itemId: number, mode: MarketMode = "current"
   if (row) {
     for (const s of (row as any).snapshots) { s.minPrice = Number(s.minPrice); s.marketPrice = Number(s.marketPrice); s.altPrice = s.altPrice === null ? undefined : Number(s.altPrice); }
     for (const d of (row as any).dailySummaries) { d.openPrice = Number(d.openPrice); d.closePrice = Number(d.closePrice); d.highPrice = Number(d.highPrice); d.lowPrice = Number(d.lowPrice); }
-    // M4：当前模式且该物品有 transcript 档位 → 快照替换为有效最低价合成行（转录只扫联盟市场）。
-    if (mode === "current" && market === "faction") {
+    // M4：当前模式且该物品有 transcript 档位 → 快照替换为有效最低价合成行（按市场分开）。
+    if (mode === "current") {
       const transcriptSnaps = await getTranscriptLatestSnapshots([itemId], market, server);
       const snap = transcriptSnaps.get(itemId);
       if (snap) {
@@ -510,9 +512,8 @@ export async function getItemMetaVersion(): Promise<number> {
   return row._max.updatedAt?.getTime() ?? 0;
 }
 
-// M2 跨市场倒卖与中立市场（/neutral /arbitrage）随中立市场整体下线，相关
-// 查询已归档（archive/lib/cross-market.ts、archive/pages/）。中立/账本数据
-// 不再新进；旧行保留在库中供历史模式展示。
+// M2 跨市场倒卖与中立市场（/neutral /arbitrage）旧页面已归档（archive/lib/cross-market.ts、
+// archive/pages/）。2026-11-20 起跨市场作为捡漏雷达的一种策略（buildDealRadar 的 cross）回归。
 
 // 最新一轮扫描的物品宇宙（雷达 universe）。当前模式 = transcript 最新轮 ∪
 // Auctionator 最新轮（**并集**：转录是渐进覆盖，部分扫描时不能让雷达宇宙缩水
@@ -521,16 +522,16 @@ export async function getItemMetaVersion(): Promise<number> {
 export async function getLatestRoundItemIds(mode: MarketMode = "current", market: string = "faction", server: string = DEFAULT_SERVER): Promise<Set<number> | null> {
   const out = new Set<number>();
   if (mode === "current") {
-    // 转录档位只扫联盟市场；中立市场不合并转录宇宙。
-    if (market === "faction") {
+    // 转录档位按市场分开采集（2026-11-20 起中立市场也有）。
+    {
       const latest = await prisma.auctionTier.findFirst({
-        where: { source: "transcript", market: "faction", server },
+        where: { source: "transcript", market, server },
         orderBy: { ts: "desc" },
         select: { ts: true }
       });
       if (latest) {
         const rows = await prisma.auctionTier.findMany({
-          where: { source: "transcript", market: "faction", server, ts: latest.ts },
+          where: { source: "transcript", market, server, ts: latest.ts },
           distinct: ["itemId"],
           select: { itemId: true }
         });
@@ -571,8 +572,8 @@ export async function getLatestPricesByItemIds(itemIds: number[], mode: MarketMo
   if (itemIds.length === 0) return new Map();
   const out = new Map<number, number>();
   if (mode === "current") {
-    // 转录档位只扫联盟市场；中立市场直接走 auctionator 快照。
-    if (market === "faction") {
+    // 转录档位按市场分开；无档位的物品回退 auctionator 快照。
+    {
       const transcriptSnaps = await getTranscriptLatestSnapshots(itemIds, market, server);
       for (const [itemId, snap] of transcriptSnaps) out.set(itemId, toNumber(snap.market_price));
       itemIds = itemIds.filter((id) => !out.has(id)); // 剩余物品回退 auctionator

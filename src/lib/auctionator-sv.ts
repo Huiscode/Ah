@@ -151,7 +151,8 @@ function decodePriceDatabase(block: string, realmSlot: string): Record<string, A
     if (!obj || typeof obj !== "object") throw new Error(`CBOR 解码结果不是对象（槽 ${realmSlot}）`);
     return obj as Record<string, AuctionatorItemBlock>;
   }
-  // 明文 Lua 表槽（Forever：PvP_N 已排除 Auctionator 启动串行化编码，以表保存在存档）。
+  // 明文 Lua 表槽：PvP_N 在扫过中立市场的会话里以表落盘；否则被 Auctionator
+  // 启动串行化编码成 CBOR 字符串（走上面分支）。两种都要支持。
   const plain = parsePlainTableSlot(block, realmSlot);
   if (plain !== null) return plain;
   throw new Error(`AUCTIONATOR_PRICE_DATABASE 找不到 [${realmSlot}] 槽（__dbversion=${version ?? "?"}；请先在游戏内用 Auctionator 扫描）`);
@@ -262,8 +263,15 @@ export function readAuctionatorSavedVars(path: string, realmSlot: string): Aucti
   // POSTING_HISTORY 是明文（当前 { __dbversion=1 } 空对象）；结构随版本变化，导入端做最小适配。
   const postingHistory: Record<string, unknown> = { __dbversion: postingBlock !== undefined ? extractIntField(postingBlock, "__dbversion") : undefined };
 
-  // WAHScanTimes 是驼峰顶层变量（rawGlobals 正则只抓全大写名），单独提取明文表：
-  // WAHScanTimes = { ["faction"] = <秒>, ["neutral"] = <秒> }
+  const scanTimes = parseScanTimes(source);
+
+  return { priceDatabase, vendorPriceCache, postingHistory, timeOfLastBrowseScan, scanTimes, rawGlobals };
+}
+
+/** WAHScanTimes 是驼峰顶层变量（rawGlobals 正则只抓全大写名），单独提取明文表：
+ *  WAHScanTimes = { ["faction"] = <秒>, ["neutral"] = <秒> }。
+ *  2026-11-20 前寄存在 Auctionator.lua，之后在旁挂插件存档 WoWderhoiAH-Transcript.lua。 */
+export function parseScanTimes(source: string): Record<string, number> {
   const scanTimesBlock = extractTopLevelVariable(source, "WAHScanTimes");
   const scanTimes: Record<string, number> = {};
   if (scanTimesBlock !== null) {
@@ -272,6 +280,16 @@ export function readAuctionatorSavedVars(path: string, realmSlot: string): Aucti
       if (v !== null) scanTimes[key] = v;
     }
   }
+  return scanTimes;
+}
 
-  return { priceDatabase, vendorPriceCache, postingHistory, timeOfLastBrowseScan, scanTimes, rawGlobals };
+/** 合并多处 WAHScanTimes：同一市场取较新的时间戳。 */
+export function mergeScanTimes(...sources: Array<Record<string, number>>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const src of sources) {
+    for (const [market, t] of Object.entries(src)) {
+      if (out[market] === undefined || t > out[market]) out[market] = t;
+    }
+  }
+  return out;
 }

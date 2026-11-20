@@ -1,5 +1,6 @@
 ﻿import { describe, expect, it } from "vitest";
 import { buildDealRadar, buildMarketSignal, buildMoverBoard, buildSpreadCandidates, buildWeekdaySeasonality, computeBand, type MarketSignal } from "@/lib/analytics";
+import { dealRadarRules, mergeRadarRules, RADAR_RULES_VERSION } from "@/lib/market-rules";
 import { generateDemoHistory } from "@/lib/demo-history";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -115,128 +116,107 @@ describe("buildMarketSignal", () => {
 });
 
 describe("buildDealRadar", () => {
-  // Auctionator 口径：必赚（NPC 倒卖）= 最低买入价低于 NPC 卖价，无历史
-  // 要求、无利润下限；捡漏 = 最低买入价显著低于 7日参考，门控
-  // 50c 绝对利润 + 2 天历史 + 参考可信度。挂单数门已删除（Auctionator 无
-  // 挂单数）；折扣线/折扣下限/供应上限/最低利润率 2026-10-14 用户拍板
-  // 移除——深折扣一律视为捡漏机会。
-  const liquid = { quantity: 100, numAuctions: 0 };
-
-  function signals(items: Parameters<typeof buildMarketSignal>[0][]) {
-    return items.map((item) => buildMarketSignal(item, now)).filter((s): s is MarketSignal => s !== null);
+  // 2026-11-20 重构：四种策略按"总利润 = 单件 × 可买量"进池（规则见 market-rules.ts）。
+  // 默认门槛：必赚总利润 ≥ 10 银；扫货/跨市场单件 ≥ max(20 银, 买价 15%)、
+  // 总利润 ≥ 1 金（仅有真实档位时校验）；7 日参考需 ≥ 3 天、≥ 2 个不同收盘。
+  function sig(overrides: Partial<MarketSignal>): MarketSignal {
+    return {
+      itemId: 1,
+      name: "材料",
+      category: "材料",
+      quality: "common",
+      icon: null,
+      source: "auctionator",
+      price: 100,
+      minPrice: 100,
+      quantity: 50,
+      numAuctions: 0,
+      vendorPrice: 0,
+      med7: 0,
+      med7Samples: 0,
+      med7Distinct: 0,
+      discountPercent: 0,
+      changePercent: 0,
+      latestAt: now,
+      turnoverScore: 0,
+      isVendorItem: false,
+      bandLow: 0,
+      bandHigh: 0,
+      volatilityRatio: 0,
+      zone: "none",
+      ...overrides
+    };
   }
+  const credible = { med7Samples: 3, med7Distinct: 3 };
 
-  it("flags vendor arbitrage without any history depth", () => {
+  it("vendor: sweeps every tier below the NPC price, no history needed", () => {
+    const tiers = new Map([[1, [{ price: 400, qty: 5 }, { price: 900, qty: 2 }, { price: 1200, qty: 10 }]]]);
+    const deals = buildDealRadar([sig({ minPrice: 400, price: 400, vendorPrice: 1000 })], undefined, now, { tiersByItemId: tiers });
+    expect(deals).toHaveLength(1);
+    expect(deals[0]).toMatchObject({ kind: "vendor", buyQty: 7, sellPrice: 1000, unitProfit: 100, totalProfit: 600 * 5 + 100 * 2, depthKnown: true });
+  });
+
+  it("vendor: drops known-depth flips whose total is under 10 silver", () => {
+    const tiers = new Map([[1, [{ price: 999, qty: 1 }]]]);
+    expect(buildDealRadar([sig({ minPrice: 999, vendorPrice: 1000 })], undefined, now, { tiersByItemId: tiers })).toHaveLength(0);
+  });
+
+  it("flip: buys cheap tiers and relists 1c under the next tier, capped by the 7d ref", () => {
+    // k=1：回挂 51999 不够赚；k=2：回挂 89999，两档都过单件门槛；k=3：第三档 90000 单件不够 → 取 k=2
+    const tiers = new Map([[1, [{ price: 50000, qty: 2 }, { price: 52000, qty: 1 }, { price: 90000, qty: 5 }]]]);
+    const deals = buildDealRadar([sig({ minPrice: 50000, price: 50000, med7: 100000, ...credible })], undefined, now, { tiersByItemId: tiers });
+    expect(deals).toHaveLength(1);
+    expect(deals[0]).toMatchObject({ kind: "flip", buyQty: 3, sellPrice: 89999, unitProfit: 33499 });
+    expect(deals[0].totalProfit).toBe(Math.floor(89999 * 0.95 * 3 - (50000 * 2 + 52000)));
+  });
+
+  it("flip: without tiers only the unit gates apply and depth is assumed 1", () => {
+    const ok = sig({ itemId: 1, minPrice: 7000, med7: 10000, ...credible });
+    const thin = sig({ itemId: 2, minPrice: 8000, med7: 10000, ...credible }); // 单件 1500 < 20 银
+    const deals = buildDealRadar([ok, thin], undefined, now);
+    expect(deals.map((d) => d.itemId)).toEqual([1]);
+    expect(deals[0]).toMatchObject({ depthKnown: false, buyQty: 1, unitProfit: 2500 });
+  });
+
+  it("flip: needs 3 days of history and a non-flat reference", () => {
+    const shallow = sig({ itemId: 1, minPrice: 7000, med7: 10000, med7Samples: 2, med7Distinct: 2 });
+    const camper = sig({ itemId: 2, minPrice: 7000, med7: 10000, med7Samples: 3, med7Distinct: 1 });
+    expect(buildDealRadar([shallow, camper], undefined, now)).toHaveLength(0);
+  });
+
+  it("cross: buys here and undercuts the other market when both sides are fresh", () => {
+    const here = sig({ itemId: 1, minPrice: 10000 });
+    const fresh = sig({ itemId: 1, minPrice: 20000 });
+    const deals = buildDealRadar([here], undefined, now, { otherSignals: [fresh], otherMarket: "neutral" });
+    expect(deals).toHaveLength(1);
+    expect(deals[0]).toMatchObject({ kind: "cross", sellMarket: "neutral", sellPrice: 19999, unitProfit: Math.floor(19999 * 0.95 - 10000) });
+
+    const stale = sig({ itemId: 1, minPrice: 20000, latestAt: new Date(now.getTime() - 3 * DAY) });
+    expect(buildDealRadar([here], undefined, now, { otherSignals: [stale], otherMarket: "neutral" })).toHaveLength(0);
+  });
+
+  it("band: a volatile, demanded item below its 7d band reverts to the reference", () => {
+    const dip = sig({ minPrice: 900, price: 900, med7: 1000, zone: "buy", volatilityRatio: 30, turnoverScore: 2, quantity: 10 });
+    const deals = buildDealRadar([dip], undefined, now);
+    expect(deals).toHaveLength(1);
+    expect(deals[0]).toMatchObject({ kind: "band", sellPrice: 1000, unitProfit: 50 });
+  });
+
+  it("orders every play by total profit", () => {
+    const tiers = new Map([[2, [{ price: 400, qty: 50 }]]]);
     const deals = buildDealRadar(
-      signals([history([{ daysAgo: 0, marketPrice: 900, minPrice: 400, ...liquid }], { vendorPrice: 1000 })]),
-      undefined, now
+      [sig({ itemId: 1, minPrice: 7000, med7: 10000, ...credible }), sig({ itemId: 2, minPrice: 400, vendorPrice: 1000 })],
+      undefined, now, { tiersByItemId: tiers }
     );
-    expect(deals).toHaveLength(1);
-    expect(deals[0].vendor).toBe(true);
-    expect(deals[0].profit).toBe(600); // vendorPrice 1000 - minPrice 400
+    expect(deals.map((d) => [d.itemId, d.totalProfit])).toEqual([[2, 30000], [1, 2500]]);
   });
+});
 
-  it("flags vendor arbitrage below the 5s floor — the NPC buy is risk-free", () => {
-    // minPrice 999 vs vendorPrice 1000: a 1c spread, far under RADAR_MIN_PROFIT.
-    // Reselling to the NPC is guaranteed, so it still belongs on the radar.
-    const deals = buildDealRadar(
-      signals([history([{ daysAgo: 0, marketPrice: 999, minPrice: 999, ...liquid }], { vendorPrice: 1000 })]),
-      undefined, now
-    );
-    expect(deals).toHaveLength(1);
-    expect(deals[0].vendor).toBe(true);
-    expect(deals[0].profit).toBe(1);
-  });
-
-  it("requires the 2-day depth and 50c floor together", () => {
-    const base = [
-      { daysAgo: 2, marketPrice: 9800, ...liquid },
-      { daysAgo: 1, marketPrice: 10000, ...liquid }
-    ];
-    const qualifying = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 7000, ...liquid }]);
-    // 利润率门槛 2026-10-14 移除：只要绝对净利 ≥50c、历史够深、med7 可信，
-    // 低价即视为捡漏（利润率不再是门槛）。
-    const thinProfit = history([...base, { daysAgo: 0, marketPrice: 10200, minPrice: 9000, ...liquid }], { itemId: 2 });
-    const shallowHistory = history([{ daysAgo: 0, marketPrice: 10200, minPrice: 7000, ...liquid }], { itemId: 3 });
-    const subFloor = history(
-      [
-        { daysAgo: 2, marketPrice: 98, ...liquid },
-        { daysAgo: 1, marketPrice: 100, ...liquid },
-        { daysAgo: 0, marketPrice: 102, minPrice: 75, ...liquid }
-      ],
-      { itemId: 5 }
-    );
-    const deals = buildDealRadar(signals([qualifying, thinProfit, shallowHistory, subFloor]), undefined, now);
-    expect(deals.map((deal) => deal.itemId)).toEqual([2770, 2]);
-    expect(deals[0].vendor).toBe(false);
-    expect(deals[0].profit).toBe(2500);
-    expect(deals[1].profit).toBe(500);
-  });
-
-  it("no auction-count gate: a thin listing can still qualify if the reference holds", () => {
-    // quantity=2（在售量极少）：旧口径的挂单数门会拦下，新口径没有挂单数
-    // 概念——只要 med7 可信、价格够低，就入选（用户选择先观察，不加
-    // 替代门槛）。
-    const thin = history(
-      [
-        { daysAgo: 2, marketPrice: 9800, ...liquid },
-        { daysAgo: 1, marketPrice: 10000, ...liquid },
-        { daysAgo: 0, marketPrice: 10200, minPrice: 7000, quantity: 2 }
-      ],
-      { itemId: 4 }
-    );
-    const deals = buildDealRadar(signals([thin]), undefined, now);
-    expect(deals.map((deal) => deal.itemId)).toEqual([4]);
-  });
-
-  it("orders vendor deals first, then by absolute profit", () => {
-    const smallVendor = history([{ daysAgo: 0, marketPrice: 900, minPrice: 400, ...liquid }], { vendorPrice: 1000, itemId: 1 });
-    const bigMedian = history(
-      [
-        { daysAgo: 2, marketPrice: 49000, ...liquid },
-        { daysAgo: 1, marketPrice: 50000, ...liquid },
-        { daysAgo: 0, marketPrice: 51000, minPrice: 25000, ...liquid }
-      ],
-      { itemId: 2 }
-    );
-    const deals = buildDealRadar(signals([bigMedian, smallVendor]), undefined, now);
-    expect(deals.map((deal) => deal.itemId)).toEqual([1, 2]);
-  });
-
-  it("rejects a flat 7d series — one camper's ask is not a reference price", () => {
-    // Every scan saw the same m: a single seller holding the bottom of a
-    // thin book. med7 is that player's asking price, and nothing ever
-    // traded against it, so the "discount" measures nothing.
-    const camper = history([
-      { daysAgo: 2, marketPrice: 49240, ...liquid },
-      { daysAgo: 1, marketPrice: 49240, ...liquid },
-      { daysAgo: 0, marketPrice: 49240, minPrice: 40000, ...liquid }
-    ]);
-    expect(buildDealRadar(signals([camper]), undefined, now)).toHaveLength(0);
-  });
-
-  it("keeps deep discounts — the discount floor was removed (2026-10-14)", () => {
-    // 用户拍板移除 maxDiscount（折扣下限）：87% off 不再视为"参考崩坏"，
-    // 而是捡漏机会（极低价绝不剔）。其余门槛仍须满足（3 天历史/利润/可信度）。
-    const absurd = history([
-      { daysAgo: 2, marketPrice: 49000, ...liquid },
-      { daysAgo: 1, marketPrice: 49240, ...liquid },
-      { daysAgo: 0, marketPrice: 49500, minPrice: 6240, ...liquid }
-    ]);
-    const deals = buildDealRadar(signals([absurd]), undefined, now);
-    expect(deals).toHaveLength(1);
-    expect(deals[0].discountPercent).toBeCloseTo((1 - 6240 / 49240) * 100, 3);
-  });
-
-  it("exempts vendor arbitrage from the med7 guards — the NPC price is a fact", () => {
-    // Single scan, flat series, 90% below the NPC price: none of the
-    // reference-credibility guards apply, because the NPC always buys.
-    const deals = buildDealRadar(
-      signals([history([{ daysAgo: 0, marketPrice: 1000, minPrice: 100, ...liquid }], { vendorPrice: 1000 })]),
-      undefined, now
-    );
-    expect(deals).toHaveLength(1);
-    expect(deals[0].vendor).toBe(true);
+describe("mergeRadarRules", () => {
+  it("drops saved rules from an older rule version so new defaults take effect", () => {
+    expect(mergeRadarRules({ minProfit: 50, minHistory: 2 })).toEqual(dealRadarRules);
+    expect(mergeRadarRules({ version: RADAR_RULES_VERSION, minHistory: 5, flipMinUnitProfit: -1 }))
+      .toEqual({ ...dealRadarRules, minHistory: 5 });
   });
 });
 

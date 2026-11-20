@@ -21,7 +21,6 @@
 ## Category-zhCN: 拍卖
 ## Category-zhTW: 拍賣
 ## SavedVariables: AUCTIONATOR_CONFIG, AUCTIONATOR_SAVEDVARS, AUCTIONATOR_SHOPPING_LISTS, AUCTIONATOR_PRICE_DATABASE, AUCTIONATOR_POSTING_HISTORY, AUCTIONATOR_VENDOR_PRICE_CACHE, AUCTIONATOR_RECENT_SEARCHES, AUCTIONATOR_SELLING_GROUPS
-## SavedVariables: WAHTranscribeDB, WAHTranscribeState, WAHVendorDB, WAHReloadOpts, WAHScanTimes
 ## SavedVariablesPerCharacter: AUCTIONATOR_CHARACTER_CONFIG
 ## OptionalDeps: LibAHTab
 ## IconTexture: Interface\AddOns\Auctionator\Images\Logo
@@ -50,9 +49,3 @@ Source_LegacyAH\Manifest.xml [AllowLoadGameType vanilla, tbc, wrath]
 
 Source_TBC\Constants\Main.lua [AllowLoadGameType tbc, wrath]
 Source_Forever\Constants.lua [AllowLoadGameType camelot][ExcludeLoadGameType classic, standard]
-Source_Forever\Market.lua [AllowLoadGameType camelot][ExcludeLoadGameType classic, standard]
-Source_Forever\DatabaseNeutral.lua [AllowLoadGameType camelot][ExcludeLoadGameType classic, standard]
-Source_Forever\TierList.lua [AllowLoadGameType camelot][ExcludeLoadGameType classic, standard]
-Source_Forever\AutoReload.lua [AllowLoadGameType camelot][ExcludeLoadGameType classic, standard]
-Source_Forever\Transcript.lua [AllowLoadGameType camelot][ExcludeLoadGameType classic, standard]
-Source_Forever\VendorPrice.lua [AllowLoadGameType camelot][ExcludeLoadGameType classic, standard]

@@ -30,16 +30,24 @@ context document (architecture, data pipeline, conventions, pitfalls).
 
 ## Features
 
-### Deal radar (same rules in game and terminal)
+### Deal radar (one actionable play per row)
 
-- **Vendor arbitrage**: listings below the NPC sell price — zero market
-  risk, no history needed.
-- **P10 median discount**: min price 15%+ below the 7-day P10 median,
-  gated by liquidity (3+ auctions), history depth (3+ scans), and
-  absolute profit (5s+) — filters out discounts nobody will ever buy.
-- Sorting: vendor arbitrage first, then by absolute profit. The in-game
-  WAH tab searches straight from a radar row and buys after verifying
-  the listing is unchanged.
+Rows are ranked by **total profit = unit profit × buyable quantity**. When
+the top-5 price tiers are known, the radar "sweeps" them (tries buying the
+first k tiers and keeps the most profitable plan); otherwise it assumes one
+unit and checks only the per-unit gates.
+
+- **Vendor**: buy every listing below the NPC price and sell to the NPC
+  (total ≥ 10s, no history needed).
+- **Flip**: buy the cheap tiers and relist 1c under the next tier, capped by
+  the 7-day reference (unit ≥ max(20s, 15% of buy), total ≥ 1g, ≥ 3 days of
+  history).
+- **Cross**: buy here, undercut the other market (Alliance ↔ Neutral); both
+  sides must be ≤ 48h old.
+- **Band**: a volatile, in-demand item that dropped below its 7-day band,
+  sold back at the 7-day reference.
+
+All thresholds are editable in the radar settings panel.
 
 ### Price statistics
 
@@ -99,23 +107,21 @@ npm run perf:seed   # deterministic synthetic market (leaves dev.db alone)
 npm run perf:run    # page/import latency budget gate
 ```
 
-## Data pipeline (in-game addon)
+## Data pipeline (in-game addons)
 
-1. Copy `addon/WoWderhoiAH` into the game directory at
-   `_classic_beta_\Interface\AddOns\WoWderhoiAH` (the WoW: Forever Beta client
-   uses the `_classic_beta_` layout; TBC used `_anniversary_`).
-2. In game, open the AH and run `/wahscan` (or enable `/wahauto`).
-3. Log out briefly or `/reload` — the client only writes
-   SavedVariables to disk on exit/reload. The scan lands at
-   `_classic_beta_\WTF\Account\<ACCOUNT>\SavedVariables\WoWderhoiAH_ScanData.lua`.
-4. Point `AQT_SAVEDVARS_PATH` in `.env` at that file, then:
+Two addons, Auctionator stays **stock** (update it from CurseForge/WowUp
+freely); all project logic lives in the sidecar addon
+`addon-wah/WoWderhoiAH-Transcript` (market detection Alliance/Neutral,
+top-5 price tiers, vendor prices).
 
-```powershell
-npm run addon:watch
-```
-
-The watcher POSTs every new scan to `/api/import/addon-scan`;
-duplicate scan timestamps are skipped automatically.
+1. Set `AQ_AUCTIONATOR_SV_PATH` in `.env` (see `.env.example`), then
+   `npm run addon:deploy` — copies the sidecar into the game's `AddOns`
+   folder (first run also migrates `WAH*` saved data; close the game).
+2. In game, open the AH and click **Full Scan**. The market is detected
+   automatically (`/wahmarket` shows why; `/wahmarket neutral|faction`
+   forces it). Top-5 tiers are fetched right after the scan.
+3. `/reload` to flush SavedVariables, with `npm run watch` running — it
+   imports `Auctionator.lua` + `WoWderhoiAH-Transcript.lua` automatically.
 
 ## Key modules
 
@@ -154,11 +160,13 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 
 ### 核心功能
 
-**捡漏雷达**（游戏内与终端同一套规则）
+**捡漏雷达**（每行一个可执行的赚金动作，按总利润 = 单件利润 × 可买量排序）
 
-- **NPC 必赚**：挂单价低于 NPC 收购价，零市场风险，无需历史数据。
-- **P10中位折扣**：最低价低于 7 日P10中位 15% 以上，且同时过三道闸门——流动性（≥3 个挂单）、历史深度（≥3 次扫描）、绝对利润（≥5 银）——滤掉没人接盘的垃圾折扣。
-- 排序：NPC 必赚优先，其余按绝对利润降序。游戏内 WAH 页可直接从雷达行发起搜索，核验挂单未变后购买。
+- **必赚**：买下所有低于 NPC 收购价的挂单卖给 NPC（总利润 ≥ 10 银，无需历史）。
+- **扫货**：买下便宜档位，在下一档下方 1 铜回挂（不超过 7 日参考；单件 ≥ max(20 银, 买价 15%)，总利润 ≥ 1 金，历史 ≥ 3 天）。
+- **跨市场**：这里买，在另一市场（联盟 ↔ 中立）压价 1 铜卖出；两边数据都需 ≤ 48 小时。
+- **波段**：高波动、需求广的物品跌破 7 日带下沿，回到 7 日参考价卖出。
+- 有前五档时按真实档位计算可买量；门槛都可在雷达设置里调整。
 
 **价格统计**
 
@@ -183,4 +191,4 @@ an issue; see [CONTRIBUTING.md](CONTRIBUTING.md). Security notes in
 
 ### 本地开发与数据采集
 
-开发命令与数据管道步骤见上方英文版（命令相同）：`npm run dev` 起终端，游戏内 `/wahscan` 扫描后小退/`/reload` 落盘，`npm run addon:watch` 自动入库。关键模块清单同上。
+开发命令与数据管道步骤见上方英文版（命令相同）：`npm run dev` 起终端；`npm run addon:deploy` 把旁挂插件 WoWderhoiAH-Transcript 装进游戏（Auctionator 保持原版、可随意更新）；游戏内点「完整扫描」（市场自动识别，`/wahmarket` 查看/手动指定）后 `/reload` 落盘，`npm run watch` 自动入库。

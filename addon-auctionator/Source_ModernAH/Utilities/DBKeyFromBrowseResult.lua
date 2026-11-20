@@ -1,10 +1,5 @@
 local function IsGear(itemID)
   local classType = select(6, C_Item.GetItemInfoInstant(itemID))
-  if classType == nil then
-    -- 物品信息未缓存（如中立拍卖行首次扫到的物品）→ 保守按非装备处理，
-    -- 避免 IsEquipment(nil) 报错风暴（原版无此保护）。
-    return false
-  end
   return Auctionator.Utilities.IsEquipment(classType)
 end
 

@@ -19,6 +19,8 @@
     "m1b": "tsx scripts/m1b-forever-library.ts",
     "watch": "tsx scripts/watch-auto-import.ts",
     "gen:tierlist": "tsx scripts/gen-tier-list.ts",
+    "addon:migrate-sv": "tsx scripts/migrate-wah-sv.ts",
+    "addon:deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-addon.ps1",
     "icons:fetch": "tsx scripts/fetch-icons.ts",
     "perf:seed": "tsx scripts/perf/seed.ts",
     "perf:run": "tsx scripts/perf/run.ts",

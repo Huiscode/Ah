@@ -1,4 +1,6 @@
--- WoWderhoiAH-Transcript v0.2.1：商人价转录模块
+if WAH.disabled then return end
+
+-- WoWderhoiAH-Transcript：商人价转录模块
 --
 -- 目标：把 NPC 商人的实时收购价（玩家卖给 NPC 的价格）落盘到
 --   WAHVendorDB，供网页端 vendor 价核对/更新。游戏内实时读到的是
@@ -15,9 +17,11 @@
 --
 -- 结构：WAHVendorDB.scans[itemId] = { p = 收购价（铜）, sp = 卖出单价（铜，0=未读到）, t = 服务器时间戳 }
 
-local addonName, ns = ...
-
-WAHVendorDB = WAHVendorDB or { version = 1, scans = {} }
+WAH.OnSavedVariablesLoaded(function()
+  if type(WAHVendorDB) ~= "table" or type(WAHVendorDB.scans) ~= "table" then
+    WAHVendorDB = { version = 1, scans = {} }
+  end
+end)
 
 local chatFrame = CreateFrame("Frame")
 local function chat(msg)

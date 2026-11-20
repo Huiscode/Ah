@@ -60,3 +60,9 @@ scripts/backfill-item-names-en.log
 
 # lark-cli 草稿工作区（临时，勿入库）
 draft_*_folder/
+
+# 补档清单：gen-tier-list.ts 每轮导入自动生成（运行时产物，入库会导致两台电脑 pull 冲突）
+addon-wah/WoWderhoiAH-Transcript/TierList.lua
+
+# 服务日志（launch-services.ps1）
+logs/

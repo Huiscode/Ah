@@ -41,10 +41,6 @@ function AuctionatorFullScanFrameMixin:IsAutoscanReady()
 end
 
 function AuctionatorFullScanFrameMixin:CanInitiate()
-  -- WoWderhoiAH（2026-10-15）：私服允许连续全量扫描时跳过 15 分钟冷却检查。
-  if Auctionator.Forever and Auctionator.Forever.AllowContinuousScan then
-    return not self.inProgress
-  end
   return
    ( self.state.TimeOfLastReplicateScan ~= nil and
      time() - self.state.TimeOfLastReplicateScan > 60 * 15 and
@@ -277,15 +273,9 @@ function AuctionatorFullScanFrameMixin:EndProcessing()
     end
   end
 
-  -- WoWderhoiAH：按当前市场选目标价格库（联盟 → 主库 "PvP"；中立 → 中立库 "PvP_N"）
-  local targetDatabase = Auctionator.Database
-  if Auctionator.Forever and Auctionator.Forever.DatabaseForCurrentScan then
-    targetDatabase = Auctionator.Forever.DatabaseForCurrentScan()
-  end
-
   MergeInfo(fixedScanData, fixedDbKeysMapping, function(allInfo)
     Auctionator.EventBus:Fire(self, Auctionator.FullScan.Events.ScanProgress, 0.99)
-    targetDatabase:ProcessScan(allInfo, function(count)
+    Auctionator.Database:ProcessScan(allInfo, function(count)
       Auctionator.EventBus:Fire(self, Auctionator.FullScan.Events.ScanComplete, fixedScanData)
       Auctionator.Utilities.Message(AUCTIONATOR_L_FINISHED_PROCESSING:format(count))
     end)

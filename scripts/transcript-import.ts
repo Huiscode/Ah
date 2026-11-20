@@ -16,11 +16,12 @@ import { lua, lauxlib, lualib, to_luastring, to_jsstring, type LuaState } from "
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { effectiveLowestPrice } from "@/lib/tier-filter";
+import { transcriptSvPath } from "@/lib/vendor-sv";
+import { flattenTranscriptDb, type TranscriptDb } from "@/lib/transcript-db";
 
 process.loadEnvFile();
 
-const SV_PATH = process.env.AQ_TRANSCRIPT_SV_PATH
-  ?? "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_\\WTF\\Account\\1120133458#1\\SavedVariables\\WoWderhoiAH-Transcript.lua";
+const SV_PATH = transcriptSvPath();
 // 服务器短标识（双服隔离键）："eu"（欧服/默认主服）| "cn"（中国服）。
 // server 列、网页 ?server= 参数、DailySummary 唯一键全部以此为准，严禁混服。
 const SERVER_KEY = process.env.AQ_SERVER_KEY ?? "eu";
@@ -82,9 +83,6 @@ function luaToJs(L: LuaState, idx: number): unknown {
   return null;
 }
 
-type RawTier = { p?: number; q?: number };
-type RawScan = { t?: number; market?: string; tiers?: RawTier[] };
-
 async function main() {
   let source: string;
   try {
@@ -107,57 +105,46 @@ async function main() {
     process.exit(1);
   }
   lua.lua_getglobal(L, to_luastring("WAHTranscribeDB"));
-  const db = luaToJs(L, -1) as { version?: number; scans?: Record<string, RawScan> } | null;
+  const db = luaToJs(L, -1) as TranscriptDb | null;
   lua.lua_close(L);
-  // 无 WAHTranscribeDB / scans 为空均为正常态（该存档可能来自未装转录模块的客户端，
-  // 如欧服目录现为 FalconAH 版只写 FAL* 全局；或本轮扫描无补档候选）：
+  // 无 WAHTranscribeDB / 条目为空均为正常态（旁挂插件还没落盘；或本轮扫描无补档候选）：
   // 优雅退出而非 exit(1)——watch 里非零退出会抛错导致每 2 秒无限重试。
-  if (!db || typeof db !== "object" || !db.scans) {
-    console.log("存档里没有 WAHTranscribeDB.scans，本次跳过转录导入。");
-    return;
-  }
-
-  const scans = Object.entries(db.scans);
+  const scans = flattenTranscriptDb(db);
   if (scans.length === 0) {
-    console.log("WAHTranscribeDB.scans 为空（本轮无补档候选），本次跳过转录导入。");
+    console.log(`存档里没有 WAHTranscribeDB 档位条目（${SV_PATH}），本次跳过转录导入。`);
     return;
   }
 
   const tiers: Array<{ itemId: number; ts: Date; server: string; faction: string; market: string; source: string; price: bigint; qty: number }> = [];
   const daily: Array<{ itemId: number; date: Date; server: string; source: string; market: string; openPrice: bigint; closePrice: bigint; highPrice: bigint; lowPrice: bigint; volume: number }> = [];
-  const byDay = new Map<string, Map<number, { ts: number; price: bigint; qty: number }>>();
-  const marketById = new Map<number, string>();
+  // 每日代表价按 (市场, 物品) 分开：同一物品联盟/中立各有一条。
+  const byDay = new Map<string, Map<string, { itemId: number; market: string; ts: number; price: bigint; qty: number }>>();
 
-  for (const [key, scan] of scans) {
-    const itemId = Number(key);
-    if (!Number.isInteger(itemId) || !scan || typeof scan.t !== "number") continue;
-    const market = scan.market === "neutral" ? "neutral" : "faction";
-    marketById.set(itemId, market);
+  for (const scan of scans) {
+    const { itemId, market } = scan;
     const ts = new Date(scan.t * 1000);
     const utcDay = new Date(Date.UTC(ts.getUTCFullYear(), ts.getUTCMonth(), ts.getUTCDate())).getTime();
-    const raw = (scan.tiers ?? []).map((t) => ({ price: Math.round(t.p ?? 0), qty: Math.round(t.q ?? 0) }));
-    const result = effectiveLowestPrice(raw);
-    for (const t of raw) {
+    const result = effectiveLowestPrice(scan.tiers);
+    for (const t of scan.tiers) {
       if (t.price > 0 && t.qty > 0) {
         tiers.push({ itemId, ts, server: SERVER_KEY, faction: FACTION, market, source: SOURCE, price: BigInt(t.price), qty: t.qty });
       }
     }
     if (result.effectivePrice !== null) {
-      const dayMap = byDay.get(String(utcDay)) ?? new Map<number, { ts: number; price: bigint; qty: number }>();
-      const prev = dayMap.get(itemId);
+      const dayMap = byDay.get(String(utcDay)) ?? new Map();
+      const key = `${market}:${itemId}`;
+      const prev = dayMap.get(key);
       // 同日多次扫描：保留最后一次（ts 最大）的有效价。
-      if (!prev || scan.t > prev.ts) dayMap.set(itemId, { ts: scan.t, price: BigInt(result.effectivePrice), qty: result.effectiveQty });
+      if (!prev || scan.t > prev.ts) dayMap.set(key, { itemId, market, ts: scan.t, price: BigInt(result.effectivePrice), qty: result.effectiveQty });
       byDay.set(String(utcDay), dayMap);
     }
   }
 
   for (const [dayKey, itemMap] of byDay) {
     const date = new Date(Number(dayKey));
-    for (const [itemId, v] of itemMap) {
-      // 每日行的 market 与对应扫描条目一致（同日同物品只会有一条，取最后轮）。
-      const market = marketById.get(Number(itemId)) ?? "faction";
+    for (const v of itemMap.values()) {
       daily.push({
-        itemId, date, server: SERVER_KEY, source: SOURCE, market,
+        itemId: v.itemId, date, server: SERVER_KEY, source: SOURCE, market: v.market,
         openPrice: v.price, closePrice: v.price, highPrice: v.price, lowPrice: v.price, volume: v.qty
       });
     }

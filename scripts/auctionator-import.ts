@@ -15,10 +15,11 @@
 // 快照/每日 DELETE 按 market 隔离，联盟与中立互不污染；旧 source='addon' 数据不触碰。
 //
 // 跑法：npx tsx scripts/auctionator-import.ts
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync } from "node:fs";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { readAuctionatorSavedVars, auctionatorDayToUtcDay, type AuctionatorItemBlock, type AuctionatorParsed } from "@/lib/auctionator-sv";
+import { readAuctionatorSavedVars, auctionatorDayToUtcDay, parseScanTimes, mergeScanTimes, type AuctionatorItemBlock, type AuctionatorParsed } from "@/lib/auctionator-sv";
+import { transcriptSvPath } from "@/lib/vendor-sv";
 
 process.loadEnvFile();
 
@@ -178,6 +179,20 @@ async function main() {
   } catch (e) {
     console.log(`中立槽 ${NEUTRAL_SLOT} 未找到，跳过中立导入（${e instanceof Error ? e.message : String(e)}）`);
   }
+
+  // 2026-11-20 起 WAHScanTimes 由旁挂插件写在 WoWderhoiAH-Transcript.lua：与 Auctionator.lua
+  // 里的旧值合并（同市场取较新），两种存档布局都能拿到每市场真实扫描时间。
+  let sidecarScanTimes: Record<string, number> = {};
+  const sidecarPath = transcriptSvPath();
+  if (sidecarPath !== SV_PATH) {
+    try {
+      sidecarScanTimes = parseScanTimes(readFileSync(sidecarPath, "latin1"));
+    } catch {
+      // 旁挂插件尚未落盘：只用 Auctionator.lua 里的值
+    }
+  }
+  parsedFaction.scanTimes = mergeScanTimes(parsedFaction.scanTimes, sidecarScanTimes);
+  if (parsedNeutral) parsedNeutral.scanTimes = mergeScanTimes(parsedNeutral.scanTimes, sidecarScanTimes);
 
   const faction = buildMarketData(parsedFaction, "faction", FACTION);
   const neutral = parsedNeutral ? buildMarketData(parsedNeutral, "neutral", NEUTRAL_FACTION) : null;

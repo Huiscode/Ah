@@ -131,7 +131,7 @@ function Auctionator.Variables.InitializeDatabase()
     -- a constant overflow when the client parses the saved variables.
     for key, data in pairs(AUCTIONATOR_PRICE_DATABASE) do
       -- Convert one realm at a time, no need to hold up a login indefinitely
-      if key ~= "__dbversion" and key ~= realm and key ~= "PvP_N" and type(data) == "table" then
+      if key ~= "__dbversion" and key ~= realm and type(data) == "table" then
         if C_EncodingUtil then
           AUCTIONATOR_PRICE_DATABASE[key] = C_EncodingUtil.SerializeCBOR(data)
         else

@@ -1,6 +1,6 @@
 import { FlaskConical, Hammer, RadioTower, ShoppingCart, Star } from "lucide-react";
 import type { Route } from "next";
-import { buildDealRadar, buildMoverBoard, buildSpreadCandidates, buildDisenchantBoard } from "@/lib/analytics";
+import { buildDealRadar, buildMoverBoard, buildDisenchantBoard } from "@/lib/analytics";
 import { buildRecipeFloors, computeRecipeProfits } from "@/lib/recipe-profits";
 import { buildSecondaryMaterialRows } from "@/lib/secondary-materials";
 import { mergeRadarRules } from "@/lib/market-rules";
@@ -66,7 +66,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // 切回默认视图时 qs 会全空（空 href 点击等于刷新当前页，跳不回去）→ 空串回退根路径 "/"。
   const marketHrefOther: Route = (qs({ market: market === "neutral" ? undefined : "neutral" }) || "/") as Route;
   const view = parseMarketView(raw);
-  const [{ signals, latestSnapshotAt }, watchedIds, latestRound, recipes, vendorPrices, sellerPrices, shoppingLists, itemNames] = await Promise.all([
+  const otherMarket = market === "neutral" ? "faction" : "neutral";
+  const [{ signals, latestSnapshotAt }, watchedIds, latestRound, recipes, vendorPrices, sellerPrices, shoppingLists, itemNames, otherMarketData, tiersByItemId] = await Promise.all([
     getMarketSignals(market, mode, server),
     getWatchedItemIds(),
     // 雷达 universe：该模式最新一轮扫描的在售物品集合（按当前服务器）。
@@ -78,7 +79,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     getItemSellerPrices(),
     getShoppingLists(),
     // 配方显示层本地化索引（EN 模式按 itemId/中文名映射英文名）。
-    getItemNames()
+    getItemNames(),
+    // 跨市场策略：另一市场的信号（联盟 ↔ 中立）。
+    getMarketSignals(otherMarket, mode, server),
+    // 雷达按真实前五档算可买量。
+    getItemPriceTiersByItemIds("all", market, server)
   ]);
   const nameIndex = buildItemNameIndex(itemNames);
   const listOptions = shoppingLists.map((list) => ({ id: list.id, name: list.name }));
@@ -87,12 +92,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   // 雷达阈值：默认常量（market-rules.ts）+ 网页"雷达设置"面板的覆盖
   // （RadarRule 单行，经 /api/radar-rules 读写；mergeRadarRules 合并）。
   const radarRules = mergeRadarRules(await getRadarRules());
-  const allDeals = buildDealRadar(signals, radarRules);
+  const allDeals = buildDealRadar(signals, radarRules, new Date(), {
+    tiersByItemId,
+    otherSignals: otherMarketData.signals,
+    otherMarket
+  });
   // 该模式最新扫描轮 owns the radar's universe：只推荐该模式数据源在售的物品。
   const deals = latestRound === null ? allDeals : allDeals.filter((deal) => latestRound.has(deal.itemId));
-  // 可做差价榜 / 异动榜：同样只在最新扫描轮在售的物品中推荐（买得到才上榜）。
-  const allSpreads = buildSpreadCandidates(signals);
-  const spreads = latestRound === null ? allSpreads : allSpreads.filter((row) => latestRound.has(row.itemId));
+  // 异动榜：同样只在最新扫描轮在售的物品中推荐（买得到才上榜）。
   const allMovers = buildMoverBoard(signals);
   const movers = latestRound === null ? allMovers : allMovers.filter((row) => latestRound.has(row.itemId));
   // 价格档位差距（市场价 vs 最低价 %）：最新快照轮，供雷达"价格档位差距 ≥"筛选用。
@@ -154,17 +161,16 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                 <span>{L(lang, "Opportunities", "机会总览")}</span>
                 <span className="normal-case tracking-normal text-[10px] text-terminal-muted">{L(lang, "Tip: scan late in the day (more tiers listed); consumables/mats move around raid reset; the neutral AH comes and goes — compare when you catch it.", "建议：每天较晚时段扫描（档位更全）；raid 重置前后消耗品/材料易现卖出窗口；中立市场时有时无，抓到即对比。")}</span>
               </span>
-            } action={<span className="font-mono text-xs text-terminal-green">{L(lang, "Min buyout vs 7d ref", "最低买入价 vs 7日参考价")}</span>} />
+            } action={<span className="font-mono text-xs text-terminal-green">{L(lang, "Sorted by total profit", "按总利润排序")}</span>} />
             {signals.length === 0 ? (
               <div className="p-3 font-mono text-xs text-terminal-muted">
                 {market === "neutral"
-                  ? L(lang, `No neutral-market data yet (check the top badge: current view ${serverLabelText}·Neutral). The neutral AH is at the camp between Elwynn Forest and Redridge — go there, click "Scan Neutral AH", then /reload to flush the data and auto-import.`, `暂无中立市场数据（注意顶部标签：当前是 ${serverLabelText}·中立）。中立拍卖行在艾尔文森林/赤脊山交界营地——到那里点「扫描中立拍卖行」，完成后 /reload 落盘即自动导入。`)
+                  ? L(lang, `No neutral-market data yet (check the top badge: current view ${serverLabelText}·Neutral). Open a neutral auction house in game — the addon detects it (goblin auctioneer / neutral zone; force with /wahmarket neutral) — click "Full Scan", then /reload to flush the data and auto-import.`, `暂无中立市场数据（注意顶部标签：当前是 ${serverLabelText}·中立）。在游戏里打开中立拍卖行（插件按拍卖师阵营/区域自动识别，必要时 /wahmarket neutral 手动指定），点「完整扫描」，完成后 /reload 落盘即自动导入。`)
                   : L(lang, `No market data yet (check the top badge: current view ${serverLabelText}·${marketLabel}). Run a full Auctionator scan in game, then /reload to flush the data and auto-import.`, `暂无市场数据（注意顶部标签：当前是 ${serverLabelText}·${marketLabel}）。请在游戏内用 Auctionator 全量扫描拍卖行，完成后 /reload 落盘即自动导入。`)}
               </div>
             ) : (
               <OpportunityTabs
                 deals={deals}
-                spreads={spreads}
                 movers={movers}
                 disenchant={disenchant}
                 prices={priceByItemId}

@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased — 2026-11-20
+
+### Changed
+
+- **Auctionator is stock again.** All project logic moved out of the patched
+  Auctionator copy into the sidecar addon `addon-wah/WoWderhoiAH-Transcript`
+  (`## Dependencies: Auctionator`), which hooks Auctionator at runtime:
+  scan-button routing, per-market price writes, continuous scanning, tier
+  backfill, vendor prices. Auctionator can now be updated from
+  CurseForge/WowUp without losing anything; a login self-check warns if an
+  update breaks a hook. `npm run addon:deploy` installs it (and on first run
+  restores stock Auctionator and migrates the `WAH*` saved data).
+- **Deal radar redesigned around total profit** (unit profit × buyable
+  quantity, swept across the real top-5 tiers). Four plays: Vendor, Flip,
+  Cross-market (Alliance ↔ Neutral, back from retirement) and Band (the
+  former Spreads tab, now merged). New settings fields; saved rules from the
+  old rule set are ignored (`RADAR_RULES_VERSION`).
+- Top-5 tiers are stored per market (`WAHTranscribeDB` v2); the importer
+  reads both layouts.
+- `TierList.lua` is a runtime artifact now (gitignored) so `git pull` no
+  longer conflicts between machines.
+
+### Fixed
+
+- Scan button greyed out at the neutral auction house: market detection now
+  checks the auctioneer's faction and map IDs before the zone whitelist,
+  prints a diagnosis when unknown, and supports `/wahmarket neutral|faction`.
+- Tier backfill never ran after a scan (`advance` was called before its
+  `local` definition) and a stale `running` flag blocked every later run;
+  throttled queries waited out an 8s timeout. Queries now wait for the AH
+  throttle, time out after 4s with one retry, only accept results for the
+  queried item, and are sorted by price.
+- Price writes from the Selling tab at the neutral AH leaked into the
+  Alliance slot.
+
 ## v0.2.1 — 2026-07-27
 
 ### Changed

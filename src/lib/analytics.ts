@@ -189,7 +189,12 @@ export function buildMarketSignal(item: MarketHistory, now: Date, mode: SignalMo
   };
 }
 
+export type DealKind = "vendor" | "flip" | "cross" | "band";
+export type PriceTier = { price: number; qty: number };
+
 export type DealRadarRow = {
+  key: string; // kind:itemId（同一物品可同时出现在扫货与跨市场两行）
+  kind: DealKind;
   itemId: number;
   name: string;
   nameEn?: string | null;
@@ -197,102 +202,191 @@ export type DealRadarRow = {
   category: string;
   icon?: string | null; // in-game icon texture name, when known
   source?: SnapshotSource; // channel backing this deal's reference; absent = auctionator
-  minPrice: number;
-  reference: number; // vendorPrice for vendor deals, med7 otherwise
-  profit: number; // copper spread between reference and current price
-  vendor: boolean;
+  buyPrice: number; // 最便宜一档单价（买入起点）
+  buyQty: number; // 建议买入数量（扫到的档位合计；无档位数据时按 1）
+  buyCost: number; // 买入总花费
+  depthKnown: boolean; // true = 有前五档真实档位；false = 只知道最低价
+  sellPrice: number; // 目标卖价（NPC 收购价 / 回挂价 / 另一市场挂价）
+  sellMarket?: "faction" | "neutral"; // 跨市场：去哪个市场卖
+  unitProfit: number; // 最贵一件买入的税后单件净利（保守口径）
+  totalProfit: number; // 全部买入量的税后总净利
+  roiPercent: number; // totalProfit / buyCost
+  reference: number; // vendorPrice / med7 / 另一市场最低价
+  minPrice: number; // = buyPrice（兼容旧字段）
+  profit: number; // = unitProfit（兼容旧字段）
+  vendor: boolean; // = kind === "vendor"
   discountPercent: number;
   changePercent: number;
-  quantity: number;
+  quantity: number; // 本市场在售总量
   numAuctions: number;
   turnoverScore: number; // #recipes that use this item as reagent; higher = faster sell-through
 };
 
-// Deal radar. 口径 = Auctionator 最低买入价：
-//   必赚（NPC 倒卖）：v[ NPC 卖价] > m[当前最低买入价]——NPC 必收，零风险。
-//   捡漏：m ≤ 7日参考(med7) × discount，且满足绝对利润/利润率/历史深度/
-//         参考可信度门槛。Auctionator 无挂单数（numAuctions 恒 0），
-//         因此原"挂单数 ≥ N"流动性门删除（用户选择先观察，不加替代门槛）。
-// 门槛来源：网页侧常量（market-rules.ts）——插件下线后不再有游戏内权威
-// 面板同步。
-export function buildDealRadar(signals: MarketSignal[], rules: DealRadarRules = dealRadarRules, now: Date = new Date()): DealRadarRow[] {
-  const {
-    minProfit: RADAR_MIN_PROFIT,
-    minHistory: RADAR_MIN_HISTORY,
-    minMed7Distinct: RADAR_MIN_MED7_DISTINCT,
-    staleWindowMs: RADAR_STALE_WINDOW_MS
-  } = rules;
+export type DealRadarContext = {
+  /** 本市场前五档（升序）。缺失的物品按"只知道最低价、可买量 1"处理。 */
+  tiersByItemId?: Map<number, PriceTier[]>;
+  /** 另一市场的信号（跨市场策略）。 */
+  otherSignals?: MarketSignal[];
+  otherMarket?: "faction" | "neutral";
+  spreadRules?: SpreadRules;
+};
+
+// 可买的订单簿：档位里低于当前最低价的已成交/撤单（档位比快照旧），丢掉；
+// 最低价那一档不在档位里时补一条数量未知（按 1）的。
+function orderBook(signal: MarketSignal, tiers: PriceTier[] | undefined): { book: PriceTier[]; depthKnown: boolean } {
+  const min = signal.minPrice;
+  if (!tiers || tiers.length === 0) return { book: [{ price: min, qty: 1 }], depthKnown: false };
+  const live = tiers.filter((t) => t.price >= min && t.qty > 0).sort((a, b) => a.price - b.price);
+  if (live.length === 0 || live[0].price > min) live.unshift({ price: min, qty: 1 });
+  return { book: live, depthKnown: true };
+}
+
+type Sweep = { k: number; target: number; qty: number; cost: number; unitProfit: number; totalProfit: number };
+
+// 扫货：买下前 k 档，在 target（由 targetFor(k) 给出）卖出。逐个 k 试，取总利润最大且
+// 最贵一档仍过单件门槛的方案。unitGate(price) 返回该买入价需要的最低单件净利。
+function bestSweep(
+  book: PriceTier[],
+  targetFor: (k: number) => number,
+  netOf: (target: number) => number,
+  unitGate: (price: number) => number
+): Sweep | null {
+  let best: Sweep | null = null;
+  let qty = 0;
+  let cost = 0;
+  for (let k = 1; k <= book.length; k++) {
+    const tier = book[k - 1];
+    qty += tier.qty;
+    cost += tier.price * tier.qty;
+    const target = targetFor(k);
+    if (!(target > 0)) continue;
+    const net = netOf(target);
+    const unitProfit = Math.floor(net - tier.price);
+    // 第 k 档是已买入里最贵的一档，它的单件净利就是整笔的最差单件；不达标时
+    // 继续试更深的 k（下一档更远 → 回挂价更高）。
+    if (unitProfit < unitGate(tier.price)) continue;
+    const totalProfit = Math.floor(net * qty - cost);
+    if (!best || totalProfit > best.totalProfit) best = { k, target, qty, cost, unitProfit, totalProfit };
+  }
+  return best;
+}
+
+function baseRow(signal: MarketSignal) {
+  return {
+    itemId: signal.itemId,
+    name: signal.name,
+    nameEn: signal.nameEn,
+    quality: signal.quality,
+    category: signal.category,
+    icon: signal.icon,
+    source: signal.source,
+    discountPercent: signal.discountPercent,
+    changePercent: signal.changePercent,
+    quantity: signal.quantity,
+    numAuctions: signal.numAuctions,
+    turnoverScore: signal.turnoverScore
+  };
+}
+
+function makeRow(
+  signal: MarketSignal,
+  kind: DealKind,
+  sweep: Sweep,
+  book: PriceTier[],
+  depthKnown: boolean,
+  reference: number,
+  sellMarket?: "faction" | "neutral"
+): DealRadarRow {
+  return {
+    ...baseRow(signal),
+    key: `${kind}:${signal.itemId}`,
+    kind,
+    buyPrice: book[0].price,
+    buyQty: sweep.qty,
+    buyCost: sweep.cost,
+    depthKnown,
+    sellPrice: sweep.target,
+    sellMarket,
+    unitProfit: sweep.unitProfit,
+    totalProfit: sweep.totalProfit,
+    roiPercent: sweep.cost > 0 ? (sweep.totalProfit / sweep.cost) * 100 : 0,
+    reference,
+    minPrice: book[0].price,
+    profit: sweep.unitProfit,
+    vendor: kind === "vendor"
+  };
+}
+
+// Deal radar（2026-11-20 重构，规则见 market-rules.ts 顶部注释）。
+// 价格口径 = 当前最低买入价（Auctionator m / 转录有效最低价）；参考价 = 同源 7 日收盘中位数。
+export function buildDealRadar(
+  signals: MarketSignal[],
+  rules: DealRadarRules = dealRadarRules,
+  now: Date = new Date(),
+  context: DealRadarContext = {}
+): DealRadarRow[] {
   const deals: DealRadarRow[] = [];
+  const tiersByItemId = context.tiersByItemId;
+  const otherById = new Map((context.otherSignals ?? []).map((s) => [s.itemId, s]));
+  const spread = context.spreadRules ?? spreadRules;
+  const flipGate = (price: number) => Math.max(rules.flipMinUnitProfit, (price * rules.flipMinUnitRatio) / 100);
+  const afterCut = (target: number) => target * (1 - AH_CUT);
+  const passesTotal = (sweep: Sweep, depthKnown: boolean, floor: number) => !depthKnown || sweep.totalProfit >= floor;
+
   for (const signal of signals) {
-    // Skip NPC-sold containers/consumables (empty vials, lead vials, dyes,
-    // thread). Their AH price is capped at the vendor floor, so flipping them
-    // never makes money; the radar should never surface them.
+    // NPC 卖的容器/消耗品（空瓶、染料、线）：AH 价被商人价封顶，倒卖永远不赚钱。
     if (signal.isVendorItem) continue;
-    // Freshness gate: skip deals whose latest observation is older than the
-    // stale window. Auctionator/transcript 扫描是手动全量，窗口默认 7 天
-    // （dealRadarRules.staleWindowMs，可经网页设置面板调整；isStale 默认
-    // 2 小时是给实时数据的，这里必须显式传雷达窗口）。
-    if (isStale(signal.latestAt, now, RADAR_STALE_WINDOW_MS)) continue;
-    // Class 1: vendor arbitrage. Listed below the NPC sell price is a
-    // guaranteed profit with zero market risk — no history needed, and no
-    // profit floor either: the NPC always buys, so even a 1c spread is
-    // free money the moment you're already at the AH.
-    if (signal.vendorPrice > 0 && signal.minPrice > 0 && signal.minPrice < signal.vendorPrice) {
-      deals.push({
-        itemId: signal.itemId,
-        name: signal.name,
-        nameEn: signal.nameEn,
-        quality: signal.quality,
-        category: signal.category,
-        icon: signal.icon,
-        source: "auctionator",
-        minPrice: signal.minPrice,
-        reference: signal.vendorPrice,
-        profit: signal.vendorPrice - signal.minPrice,
-        vendor: true,
-        discountPercent: (1 - signal.minPrice / signal.vendorPrice) * 100,
-        changePercent: signal.changePercent,
-        quantity: signal.quantity,
-        numAuctions: signal.numAuctions,
-        turnoverScore: signal.turnoverScore
-      });
-    // Class 2: median discount. Requires history depth (2+ days) AND a
-    // worthwhile absolute spread — otherwise the list fills with illiquid
-    // junk nobody ever buys. med7 credibility guard: a flat series is one
-    // camper's ask. 2026-10-14 用户拍板移除：折扣线（discount）、折扣下限
-    // （maxDiscount）、供应上限（supplyCap）与最低利润率（minProfitRatio）
-    // ——门槛只留绝对利润、历史天数与可信度，深折扣一律视为捡漏机会。
-    } else if (signal.med7Samples >= RADAR_MIN_HISTORY && signal.med7 > 0 && signal.minPrice > 0
-      && signal.med7 * (1 - AH_CUT) - signal.minPrice >= RADAR_MIN_PROFIT
-      && signal.med7Distinct >= RADAR_MIN_MED7_DISTINCT) {
-      deals.push({
-        itemId: signal.itemId,
-        name: signal.name,
-        nameEn: signal.nameEn,
-        quality: signal.quality,
-        category: signal.category,
-        icon: signal.icon,
-        source: signal.source,
-        minPrice: signal.minPrice,
-        reference: signal.med7,
-        profit: Math.floor(signal.med7 * (1 - AH_CUT) - signal.minPrice),
-        vendor: false,
-        discountPercent: signal.discountPercent,
-        changePercent: signal.changePercent,
-        quantity: signal.quantity,
-        numAuctions: signal.numAuctions,
-        turnoverScore: signal.turnoverScore
-      });
+    if (signal.minPrice <= 0) continue;
+    // isStale 默认 2 小时是给实时数据的，这里必须显式传雷达窗口。
+    if (isStale(signal.latestAt, now, rules.staleWindowMs)) continue;
+    const { book, depthKnown } = orderBook(signal, tiersByItemId?.get(signal.itemId));
+
+    // 必赚：所有低于 NPC 收购价的档位都买，NPC 必收、不扣拍卖行税，无需历史。
+    let vendorRow = false;
+    if (signal.vendorPrice > 0 && signal.minPrice < signal.vendorPrice) {
+      const sweep = bestSweep(book, () => signal.vendorPrice, (t) => t, () => 1);
+      if (sweep && passesTotal(sweep, depthKnown, rules.vendorMinTotalProfit)) {
+        deals.push(makeRow(signal, "vendor", sweep, book, depthKnown, signal.vendorPrice));
+        vendorRow = true;
+      }
+    }
+
+    // 扫货回挂：7 日参考可信时，买下便宜档位，挂在"下一档 −1 铜"（不超过 7 日参考）。
+    const med7Credible = signal.med7 > 0 && signal.med7Samples >= rules.minHistory && signal.med7Distinct >= rules.minMed7Distinct;
+    let flipRow = false;
+    if (!vendorRow && med7Credible) {
+      const targetFor = (k: number) => (k < book.length ? Math.min(signal.med7, book[k].price - 1) : signal.med7);
+      const sweep = bestSweep(book, targetFor, afterCut, flipGate);
+      if (sweep && passesTotal(sweep, depthKnown, rules.flipMinTotalProfit)) {
+        deals.push(makeRow(signal, "flip", sweep, book, depthKnown, signal.med7));
+        flipRow = true;
+      }
+    }
+
+    // 波段（原"可做差价"）：高波动 × 需求广 × 有货，且已跌破 7 日带下沿 → 回到参考价卖出。
+    if (!vendorRow && !flipRow && signal.zone === "buy" && signal.med7 > 0
+      && signal.volatilityRatio >= spread.minVolatilityRatio
+      && signal.turnoverScore >= spread.minTurnover
+      && signal.quantity >= spread.minQuantity) {
+      const sweep = bestSweep(book, () => signal.med7, afterCut, () => 1);
+      if (sweep) deals.push(makeRow(signal, "band", sweep, book, depthKnown, signal.med7));
+    }
+
+    // 跨市场：本市场买 → 另一市场以其最低价 −1 铜挂出（另一市场 7 日参考可信时不超过它）。
+    const other = otherById.get(signal.itemId);
+    if (other && context.otherMarket && other.minPrice > 0
+      && now.getTime() - signal.latestAt.getTime() <= rules.crossMaxAgeMs
+      && now.getTime() - other.latestAt.getTime() <= rules.crossMaxAgeMs) {
+      const otherMedCredible = other.med7 > 0 && other.med7Samples >= rules.minHistory && other.med7Distinct >= rules.minMed7Distinct;
+      const target = otherMedCredible ? Math.min(other.minPrice - 1, other.med7) : other.minPrice - 1;
+      const sweep = bestSweep(book, () => target, afterCut, flipGate);
+      if (sweep && passesTotal(sweep, depthKnown, rules.flipMinTotalProfit)) {
+        deals.push(makeRow(signal, "cross", sweep, book, depthKnown, other.minPrice, context.otherMarket));
+      }
     }
   }
-  // Vendor deals first (risk-free), then by turnover score (faster sellers),
-  // then by absolute profit. High-turnover items liquidate quickly; stacking
-  // profit on a slow mover ties up gold that could be rotating on a fast one.
-  return deals.sort((left, right) => {
-    if (left.vendor !== right.vendor) return left.vendor ? -1 : 1;
-    if (left.turnoverScore !== right.turnoverScore) return right.turnoverScore - left.turnoverScore;
-    return right.profit - left.profit;
-  });
+  // 单一排序指标：总利润（可在表头切换）。
+  return deals.sort((left, right) => right.totalProfit - left.totalProfit || right.unitProfit - left.unitProfit);
 }
 
 export type SpreadCandidateRow = {
@@ -314,7 +408,8 @@ export type SpreadCandidateRow = {
   discountPercent: number;
 };
 
-// 可做差价榜：起伏大 × 需求广 × 有人在卖 = 均值回归最赚钱的标的池。
+// 可做差价候选：起伏大 × 需求广 × 有人在卖 = 均值回归标的池。独立榜单已并入雷达
+// （buildDealRadar 的 band 策略复用同一组 spreadRules 门槛）。
 // 门槛在 market-rules.ts（spreadRules，可配）：起伏比 ≥ minVolatilityRatio
 // （7 日带宽 ÷ 参考价）、流通分 ≥ minTurnover（被 N 个配方使用）、
 // 在售量 ≥ minQuantity（买得到）。zone 非 none（有真实波动带）才上榜。

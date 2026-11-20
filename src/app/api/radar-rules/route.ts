@@ -1,7 +1,7 @@
 // 雷达设置读写：GET 返回当前生效阈值（默认 + RadarRule 覆盖合并），
 // POST 保存覆盖到 RadarRule 单行（id=1），page.tsx 读取后传给 buildDealRadar。
 import { NextRequest, NextResponse } from "next/server";
-import { dealRadarRules, mergeRadarRules } from "@/lib/market-rules";
+import { mergeRadarRules, RADAR_RULES_VERSION } from "@/lib/market-rules";
 import { getRadarRules } from "@/lib/repositories";
 import { prisma } from "@/lib/prisma";
 import { L } from "@/lib/i18n";
@@ -9,11 +9,9 @@ import { getLang } from "@/lib/i18n-server";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// 接受字段：与 DealRadarRules 对应；staleWindow 用天为单位（UI 友好）。
-// 2026-10-14 用户拍板：discount（折扣线）、maxDiscount、supplyCap、
-// minProfitRatio（最低利润率）已从规则移除。
-const NUMERIC_FIELDS = ["minProfit", "minHistory", "minMed7Distinct"] as const;
-const DAY_FIELDS = ["staleWindowDays"] as const;
+// 接受字段：与 DealRadarRules 对应（金额单位：铜）；staleWindow 用天为单位（UI 友好）。
+// 保存时打上 RADAR_RULES_VERSION：口径升级后旧版本的保存值整体作废（见 mergeRadarRules）。
+const NUMERIC_FIELDS = ["vendorMinTotalProfit", "flipMinUnitProfit", "flipMinUnitRatio", "flipMinTotalProfit", "minHistory", "minMed7Distinct"] as const;
 
 export async function GET() {
   const rules = mergeRadarRules(await getRadarRules());
@@ -35,7 +33,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: L(lang, "Request body must be an object", "请求体必须是对象") }, { status: 400 });
   }
   const source = body as Record<string, unknown>;
-  const merged: Record<string, number> = { ...dealRadarRules };
+  // 以当前生效值为底（而非默认值），只提交部分字段时不会把其他已保存的值冲掉。
+  const merged: Record<string, number> = { ...mergeRadarRules(await getRadarRules()), version: RADAR_RULES_VERSION };
   for (const field of NUMERIC_FIELDS) {
     const value = source[field];
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) merged[field] = value;

@@ -6,8 +6,9 @@
 // 新鲜度门槛），~200 个 × 0.2s ≈ 1 分钟内完成。
 //
 // 跑法：npm run gen:tierlist（手动）；watch-auto-import 每轮导入后自动执行。
-// 输出：addon-auctionator\Source_Forever\TierList.lua（受控副本，随 robocopy 同步游戏），
-// 并直接复制到游戏目录（游戏目录路径从 AQ_AUCTIONATOR_SV_PATH 推导）。
+// 输出：addon-wah\WoWderhoiAH-Transcript\TierList.lua（运行时产物，已 gitignore，避免每轮
+// 导入都让仓库出现改动、两台电脑 git pull 冲突），并直接复制到游戏目录的旁挂插件里
+// （游戏目录路径从 AQ_AUCTIONATOR_SV_PATH 推导）。
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,8 +25,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TOP_K = Number(process.env.TIER_TOP_K ?? 150);
 
 async function main() {
-  const [{ signals }, recipes, vendorPrices, sellerPrices, ruleOverrides] = await Promise.all([
-    getMarketSignals("faction", "current", "eu"),
+  const server = process.env.AQ_SERVER_KEY ?? "eu";
+  const [{ signals }, { signals: neutralSignals }, recipes, vendorPrices, sellerPrices, ruleOverrides] = await Promise.all([
+    getMarketSignals("faction", "current", server),
+    getMarketSignals("neutral", "current", server),
     getRecipes(),
     getItemVendorPrices(),
     getItemSellerPrices(),
@@ -39,10 +42,18 @@ async function main() {
   const secondaryRows = buildSecondaryMaterialRows(recipes, priceByItemId, floors.costFloor, floors.revenueFloor);
   const ids = new Set<number>(secondaryRows.map((r) => r.item.itemId));
 
-  // 2) 雷达池按利润排序的前 K：必赚（vendor 倒卖）与捡漏都按绝对利润降序
-  const deals = buildDealRadar(signals, radarRules);
-  const ranked = [...deals].sort((a, b) => b.profit - a.profit);
-  for (const deal of ranked.slice(0, TOP_K)) ids.add(deal.itemId);
+  // 2) 雷达候选按单件利润排序的前 K（两个市场 + 跨市场）。不传档位 → 只校验单件门槛，
+  //    正好是"值得去采前五档"的候选；采到档位后网页再按总利润严格筛选。
+  const now = new Date();
+  const deals = [
+    ...buildDealRadar(signals, radarRules, now, { otherSignals: neutralSignals, otherMarket: "neutral" }),
+    ...buildDealRadar(neutralSignals, radarRules, now, { otherSignals: signals, otherMarket: "faction" })
+  ];
+  const ranked = [...deals].sort((a, b) => b.unitProfit - a.unitProfit);
+  for (const deal of ranked) {
+    if (ids.size >= secondaryRows.length + TOP_K) break;
+    ids.add(deal.itemId);
+  }
 
   const sorted = [...ids].sort((a, b) => a - b);
   const ts = Math.floor(Date.now() / 1000);
@@ -55,9 +66,9 @@ ${lines.join("\n")}
 }
 WAH_TIER_LIST_TS = ${ts}
 `;
-  const repoFile = join(ROOT, "addon-auctionator", "Source_Forever", "TierList.lua");
+  const repoFile = join(ROOT, "addon-wah", "WoWderhoiAH-Transcript", "TierList.lua");
   writeFileSync(repoFile, lua, "utf8");
-  console.log(`生成 ${repoFile}: ${sorted.length} 个物品（中间材料 ${secondaryRows.length} + 雷达前 ${Math.min(TOP_K, ranked.length)}，去重后）`);
+  console.log(`生成 ${repoFile}: ${sorted.length} 个物品（中间材料 ${secondaryRows.length} + 雷达候选 ${sorted.length - secondaryRows.length}，去重后）`);
 
   // 直接复制到游戏目录（从存档路径推导 _forever_ 根）。.env 值里的 \\ 双反斜杠
   // 原样保留在字符串里（Windows 容忍），先归一化成单反斜杠再匹配。
@@ -67,7 +78,7 @@ WAH_TIER_LIST_TS = ${ts}
     const m = norm.match(/^(.*WTF[\\/])Account[\\/]/);
     if (m) {
       const gameDir = m[1].replace(/WTF[\\/]$/, "");
-      const target = join(gameDir, "Interface", "AddOns", "Auctionator", "Source_Forever", "TierList.lua");
+      const target = join(gameDir, "Interface", "AddOns", "WoWderhoiAH-Transcript", "TierList.lua");
       try {
         mkdirSync(dirname(target), { recursive: true });
         copyFileSync(repoFile, target);

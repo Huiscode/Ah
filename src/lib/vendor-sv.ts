@@ -1,11 +1,11 @@
-// 游戏内商人价（WAHVendorDB）解析。与 WAHTranscribeDB 同存于
-// WoWderhoiAH-Transcript.lua 存档；由插件 VendorPrice.lua 在打开商人
+// 游戏内商人价（WAHVendorDB）解析。与 WAHTranscribeDB 同存于旁挂插件存档
+// WoWderhoiAH-Transcript.lua（路径解析见 resolveTranscriptSvPath）；由插件 VendorPrice.lua 在打开商人
 // 窗口时实时记录 NPC 收购价（C_Item.GetItemInfo 第 11 返回 sellPrice）。
 //
 // 权威顺序（用户 2026-10-14 拍板）：游戏内实时商人价 > foreverchanges 网站
 // 核对 > Auctionator 旧缓存（已弃用）。audit（网站核对）启动时应跳过已有
 // 游戏内值的物品，避免把更准的值覆盖回网站值。
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { lua, lauxlib, lualib, to_luastring, to_jsstring, type LuaState } from "fengari";
 
 export type VendorGameEntry = { p: number; sp: number; t: number };
@@ -13,8 +13,42 @@ export type VendorGameEntry = { p: number; sp: number; t: number };
 export const DEFAULT_TRANSCRIPT_SV_PATH =
   "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_\\WTF\\Account\\1120133458#1\\SavedVariables\\WoWderhoiAH-Transcript.lua";
 
+const LEGACY_SV = /Auctionator\.lua$/i;
+// 旁挂插件存档与 Auctionator.lua 在同一次登出/重载时落盘，mtime 相差极小；
+// 远早于 Auctionator.lua 的同名文件是 2026-10-15 之前独立插件留下的死文件。
+const LIVE_WINDOW_MS = 10 * 60 * 1000;
+
+function mtimeOf(path: string): number | null {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * WAH* 存档（WAHTranscribeDB/WAHVendorDB/WAHScanTimes）所在文件。
+ *
+ * 2026-11-20 起 WAH* 由旁挂插件 WoWderhoiAH-Transcript 落盘到同名存档；此前
+ * （2026-10-15 ~ 11-20）寄存在 Auctionator.lua，旧 .env 因此把 AQ_TRANSCRIPT_SV_PATH
+ * 指向 Auctionator.lua。为免改 .env：路径指向 Auctionator.lua 时，若同目录
+ * WoWderhoiAH-Transcript.lua 是"活的"（不早于 Auctionator.lua 10 分钟），用它；
+ * 否则（旁挂插件尚未部署）继续读 Auctionator.lua。
+ */
+export function resolveTranscriptSvPath(envPath: string | undefined, auctionatorPath: string | undefined): string {
+  if (envPath && !LEGACY_SV.test(envPath)) return envPath;
+  const base = envPath ?? auctionatorPath;
+  if (!base) return DEFAULT_TRANSCRIPT_SV_PATH;
+  const sibling = base.replace(LEGACY_SV, "WoWderhoiAH-Transcript.lua");
+  if (!envPath) return sibling;
+  const siblingTime = mtimeOf(sibling);
+  const legacyTime = mtimeOf(envPath);
+  if (siblingTime !== null && (legacyTime === null || siblingTime >= legacyTime - LIVE_WINDOW_MS)) return sibling;
+  return envPath;
+}
+
 export function transcriptSvPath(): string {
-  return process.env.AQ_TRANSCRIPT_SV_PATH ?? DEFAULT_TRANSCRIPT_SV_PATH;
+  return resolveTranscriptSvPath(process.env.AQ_TRANSCRIPT_SV_PATH, process.env.AQ_AUCTIONATOR_SV_PATH);
 }
 
 /** Lua 值 → JS（只处理数字/字符串/布尔/表；表自动区分数组与记录）。 */
